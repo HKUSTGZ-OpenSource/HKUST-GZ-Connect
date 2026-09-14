@@ -22,10 +22,13 @@ function parseScriptEntries(markup, page) {
       const match = rest.match(/^\s+([a-zA-Z][\w-]*)\s*=\s*(["'])(.*?)\2/su);
       if (!match) throw new TypeError('noncanonical Renderer script attributes');
       const name = match[1].toLowerCase();
-      if (!['src','type'].includes(name) || values.has(name)) throw new TypeError('ambiguous Renderer script attributes');
+      if (!['src','type','defer'].includes(name) || values.has(name)) throw new TypeError('ambiguous Renderer script attributes');
       values.set(name,match[3]); rest = rest.slice(match[0].length);
     }
     const src = values.get('src'), type = (values.get('type') || '').toLowerCase();
+    if (values.has('defer') && (values.get('defer') !== 'defer' || type === 'module')) {
+      throw new TypeError('noncanonical Renderer script defer');
+    }
     if (!src || src.startsWith('/') || !/^[a-zA-Z0-9_./-]+\.(?:js|mjs)$/u.test(src) ||
         !['','module','text/javascript','application/javascript'].includes(type)) {
       throw new TypeError('noncanonical Renderer script source or type');

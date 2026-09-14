@@ -55,6 +55,10 @@ The proposed [static Renderer policy](renderer-boundaries.md) separately adds fr
 public-entrypoint checks to the architecture command. It is not the runtime lifecycle registry
 and does not replace independent review or claim remote CI has executed.
 
+The proposed [localization boundary](renderer-localization.md) splits the two control/chrome
+locale dictionaries into domain owners with duplicate and missing-key tests. Its temporary
+compatibility facade does not complete the removal of legacy HTML-order coupling.
+
 1. Add an explicit Renderer bootstrap and a checked feature registry.
 2. Freeze the list of existing `window.*` feature exports; CI rejects new ones.
 3. Give each feature one public entrypoint with injected dependencies.

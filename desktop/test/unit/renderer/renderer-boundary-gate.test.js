@@ -263,7 +263,7 @@ test('mutable member escapes are rejected and migrated DOM/network globals requi
 
 test('static feature ownership includes the bounded host and native entrypoints without retired globals', () => {
   const registry=require('../../../scripts/renderer-feature-registry.json');
-  assert.deepEqual(registry.features.map(({id})=>id).sort(),['campus-data','feature-host','official-favorites']);
+  assert.deepEqual(registry.features.map(({id})=>id).sort(),['campus-data','feature-host','localization','official-favorites']);
   assert.deepEqual(registry.features.find(({id})=>id==='feature-host').allowedDependencies,['campus-data','official-favorites']);
   for (const feature of registry.features) {
     assert.deepEqual(Object.keys(require(path.resolve(__dirname,'../../..',feature.entrypoint))).sort(),

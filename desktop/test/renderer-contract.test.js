@@ -7,6 +7,10 @@ const test = require('node:test');
 
 const rendererDir = path.join(__dirname, '..', 'renderer');
 const html = fs.readFileSync(path.join(rendererDir, 'index.html'), 'utf8');
+const { parseScriptEntries } = require('../scripts/renderer-html-entrypoints');
+const scriptEntries = parseScriptEntries(html,'renderer/index.html');
+const scriptIndex = file => scriptEntries.findIndex(entry =>
+  entry.file === path.posix.normalize(path.posix.join('renderer',file)));
 const css = fs.readFileSync(path.join(rendererDir, 'styles.css'), 'utf8')
   + fs.readFileSync(path.join(rendererDir, 'features/campus-data/view.css'), 'utf8');
 const appJs = fs.readFileSync(path.join(rendererDir, 'app.js'), 'utf8');
@@ -25,11 +29,8 @@ test('login fields keep native keyboard and password-manager semantics', () => {
   assert.match(html, /id="lgPass"[^>]*autocomplete="current-password"/);
   assert.doesNotMatch(html, /id="lgPass"[^>]*(?:disabled|readonly)/);
   assert.match(css, /\.inp\s*\{[^}]*-webkit-user-select:\s*text/);
-  assert.match(html, /<script src="\.\.\/lib\/browser\/auth\/login-flow\.js"><\/script>/);
-  assert.match(
-    html,
-    /<script src="\.\.\/lib\/resources\/presentation\/resource-view\.js"><\/script>/,
-  );
+  assert.ok(scriptIndex('../lib/browser/auth/login-flow.js') > 0);
+  assert.ok(scriptIndex('../lib/resources/presentation/resource-view.js') > 0);
   assert.match(appJs, /updateLoginProgress\(s\)/);
   assert.match(appJs, /const \{ evaluateLoginProgress \} = window\.loginFlow/);
   assert.match(appJs, /window\.campusCategoryStacks\.render/u);
@@ -43,8 +44,8 @@ test('login owns a modular bilingual School selector with an explicit unreviewed
   assert.match(html, /id="customGatewayConfirmation"[^>]*hidden/u);
   assert.match(html, /id="confirmCustomGateway"/u);
   assert.match(html, /class="gateway-warning"/u);
-  const selectorScript = html.indexOf('<script src="school-profile-selector.js"></script>');
-  const appScript = html.indexOf('<script type="module" src="app.js"></script>');
+  const selectorScript = scriptIndex('school-profile-selector.js');
+  const appScript = scriptIndex('app.js');
   assert.ok(selectorScript > 0 && selectorScript < appScript);
   assert.match(css, /@media\s*\(max-width:\s*459px\)/u);
   assert.match(appJs, /expectedProfileId: expectedProfileId|expectedProfileId \}/u);
@@ -57,8 +58,8 @@ test('Control Tower owns a modular Integration Center instead of scattered secre
   assert.match(html, /id="integrationDialog"/u);
   assert.match(html, /id="confirmIntegration"/u);
   assert.doesNotMatch(html, /data-copy="(?:pac|clash|ssh)"/u);
-  const integrationScript = html.indexOf('<script src="integration-center.js"></script>');
-  const appScript = html.indexOf('<script type="module" src="app.js"></script>');
+  const integrationScript = scriptIndex('integration-center.js');
+  const appScript = scriptIndex('app.js');
   assert.ok(integrationScript > 0 && integrationScript < appScript);
   assert.doesNotMatch(appJs, /prepareIntegration|confirmIntegration|listIntegrations/u);
 });
@@ -114,7 +115,7 @@ test('Campus Workspace data modules use isolated state projections without porta
   assert.match(html, /class="official-main-deck"[^>]*id="officialMainDeck"/u);
   assert.match(html, /id="officialCatalogDialog"/u);
   assert.match(html, /id="officialFavoriteDialog"/u);
-  assert.doesNotMatch(html, /<script src="official-favorite-dialog\.js"><\/script>/u);
+  assert.equal(scriptIndex('official-favorite-dialog.js'),-1);
   assert.match(serviceWorkspaceJs, /const APPS_PAGE_SIZE = 12/u);
   assert.match(serviceWorkspaceJs, /const DESK_PAGE_SIZE = 6/u);
   assert.match(serviceWorkspaceJs, /renderPager/u);
@@ -178,7 +179,7 @@ test('weekly timetable maps Monday through Sunday into bounded two-hour course s
 test('dashboard usability layer keeps status shortcuts feedback and recovery outside Main', () => {
   assert.match(html, /id="navConnectionState"/u);
   assert.match(html, /id="globalToast"[^>]*aria-live="polite"/u);
-  assert.match(html, /<script src="usability-controller\.js"><\/script>/u);
+  assert.ok(scriptIndex('usability-controller.js') > 0);
   assert.match(usabilityControllerJs, /PAGE_SHORTCUTS/u);
   assert.match(usabilityControllerJs, /event\.key\.toLowerCase\(\) === 'k'/u);
   assert.match(serviceWorkspaceJs, /ArrowLeft[\s\S]*ArrowRight[\s\S]*Home[\s\S]*End/u);
@@ -202,16 +203,16 @@ test('personal categories drive the card board with ID-only resource actions', (
   assert.match(categoryStacksJs, /cardBoardController\.create/u);
   assert.match(categoryStacksJs, /getCardBoardLayout/u);
   assert.match(categoryStacksJs, /commitCardBoardLayout/u);
-  const workspaceModelScript = html.indexOf('<script src="campus-workspace-model.js"></script>');
-  const cardModelScript = html.indexOf('<script src="components/card-board/card-board-model.js"></script>');
-  const cardControllerScript = html.indexOf('<script src="components/card-board/card-board-controller.js"></script>');
-  const categoryStacksScript = html.indexOf('<script src="campus-category-stacks.js"></script>');
+  const workspaceModelScript = scriptIndex('campus-workspace-model.js');
+  const cardModelScript = scriptIndex('components/card-board/card-board-model.js');
+  const cardControllerScript = scriptIndex('components/card-board/card-board-controller.js');
+  const categoryStacksScript = scriptIndex('campus-category-stacks.js');
   assert.ok(workspaceModelScript > 0 && workspaceModelScript < cardModelScript &&
     cardModelScript < cardControllerScript && cardControllerScript < categoryStacksScript,
   'taxonomy and shared Card Board must load before category composition');
-  const groupDialogScript = html.indexOf('<script src="group-dialog.js"></script>');
-  const serviceWorkspaceScript = html.indexOf('<script src="campus-service-workspace.js"></script>');
-  const appScript = html.indexOf('<script type="module" src="app.js"></script>');
+  const groupDialogScript = scriptIndex('group-dialog.js');
+  const serviceWorkspaceScript = scriptIndex('campus-service-workspace.js');
+  const appScript = scriptIndex('app.js');
   assert.ok(groupDialogScript > 0 && groupDialogScript < appScript &&
     serviceWorkspaceScript > 0 && serviceWorkspaceScript < appScript,
     'the service workspace modules must load before the shell composition');

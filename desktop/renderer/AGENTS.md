@@ -10,6 +10,8 @@
 - Native features import peers only through registered public entrypoints and declared dependency
   edges. Static Renderer HTML scripts may load only registered bootstrap or existing legacy owners.
 - Use empty external script tags with quoted relative `src` and optional supported `type`.
+  Classic scripts may use canonical `defer="defer"`; module scripts are already deferred.
+  Async execution and other defer spellings are rejected. Startup order needs native regression.
   Inline/remote/encoded/duplicate script declarations, base-URL overrides and mixed loading modes
   are rejected. New script formats require a reviewed source-contract change, not an exception bypass.
 - The static gate is not a security sandbox and does not replace review of dynamic code or runtime
