@@ -281,6 +281,7 @@ class CampusBrowserManager {
 
   close() {
     const browser = this.browser;
+    browser?.downloadController?.retire();
     this.browser = null;
     this.lastPortalSessionUrl = '';
     return browser?.close() ?? null;
@@ -313,8 +314,11 @@ class CampusBrowserManager {
     if (!browser) { this.lastPortalSessionUrl = ''; return true; }
     if (typeof browser.closeForContextSwitch !== 'function') return false;
     if (await browser.closeForContextSwitch() !== true) return false;
-    if (this.browser === browser) this.browser = null;
-    this.lastPortalSessionUrl = '';
+    browser.downloadController?.retire();
+    if (this.browser === browser) {
+      this.browser = null;
+      this.lastPortalSessionUrl = '';
+    }
     return this.browser === null;
   }
 

@@ -1295,6 +1295,7 @@ test('downloads use the native save picker and surface failures', async () => {
   const prompts = [];
   const shown = [];
   const dialog = {
+    showSaveDialog: () => { throw new Error('must use native download picker'); },
     showMessageBox: async () => ({ response: 0 }),
   };
   const { browser, sessions } = createFakeBrowser({
@@ -1308,13 +1309,14 @@ test('downloads use the native save picker and surface failures', async () => {
   await browser.configure(1080, ROUTE_CAMPUS);
   assert.equal(campusSession.listenerCount('will-download'), 1,
     'reconfiguring the same session must not stack download handlers');
+  await browser.createWindow();
 
   const makeItem = (filename) => {
     const item = new EventEmitter();
     item.filename = filename;
     item.getFilename = () => item.filename;
     item.cancel = () => { item.cancelled = true; };
-    item.setSaveDialogOptions = (options) => { prompts.push(options); };
+    item.setSaveDialogOptions = options => { prompts.push(options); };
     item.getSavePath = () => `/tmp/${filename}`;
     item.getTotalBytes = () => 100;
     item.getReceivedBytes = () => item.received || 0;
@@ -1347,8 +1349,8 @@ test('downloads use the native save picker and surface failures', async () => {
   const cancelled = makeItem('取消.zip');
   campusSession.emit('will-download', {}, cancelled);
   cancelled.emit('done', {}, 'cancelled');
-  assert.equal(browser.downloadState, null,
-    'native save-dialog cancellation clears the pending download state');
+  assert.equal(browser.downloadState, null, 'native cancellation clears progress without an error');
+  assert.equal(errors.length, 1);
 
   const bare = new CampusBrowser({});
   const headless = makeItem('no-dialog.bin');

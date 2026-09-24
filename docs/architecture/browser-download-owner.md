@@ -23,14 +23,16 @@ CampusBrowser shrinks from 1,854 to 1,804 lines; the download owner is 94 lines 
 the already-merged #126 native-save fix. This is one
 independently reviewable seam, not completion of the 600-line Browser ownership target.
 
-## Current behavior and remaining lifecycle work
+## Native behavior and lifecycle follow-up
 
-The #126 fix now owned by this module configures Electron's native save picker and registers
-completion synchronously during `will-download`; the refactor must not restore the legacy
-asynchronous `showSaveDialog` path. The [Electron DownloadItem contract](https://www.electronjs.org/docs/latest/api/download-item#downloaditemsetsavedialogoptionsoptions)
-limits save-dialog configuration to that callback. Session listener retirement and deferred
-completion effects after a context switch remain separate #113 lifecycle work. EventEmitter tests
-cover the synchronous registration contract but do not replace native DownloadItem validation.
+The historical structure-only checkpoint at `b484809` retained an asynchronous custom
+`showSaveDialog` flow; it is not the behavior of the current main-based branch. #126 moved
+save-picker configuration and terminal callback registration into `will-download`, matching the
+[Electron DownloadItem contract](https://www.electronjs.org/docs/latest/api/download-item#downloaditemsetsavedialogoptionsoptions).
+This owner extraction preserves that fix. The separate #113 follow-up adds Session listener
+retirement, active-transfer cancellation and stale completion fencing without changing routing or
+credentials. EventEmitter tests cover ownership; native fixture evidence is recorded separately in
+[native-browser-downloads.md](../engineering/native-browser-downloads.md).
 
 Native follow-up must use a loopback synthetic download, an isolated temporary destination and
 exact-source native Electron evidence on Mac, Windows 5070 and Linux 5070. It must not use a live
