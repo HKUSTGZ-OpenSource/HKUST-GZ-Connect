@@ -23,8 +23,8 @@ function compilerEnvironment() {
     if (installation && !/[\r\n"%]/u.test(installation)) {
       const setup = path.join(installation, 'Common7', 'Tools', 'VsDevCmd.bat');
       const result = spawnSync(process.env.ComSpec || 'cmd.exe',
-        ['/d', '/s', '/c', `call "${setup}" -no_logo -arch=x64 >nul && set`],
-        { encoding: 'utf8', windowsHide: true });
+        ['/d', '/s', '/c', `"call "${setup}" -no_logo -arch=amd64 >nul && set"`],
+        { encoding: 'utf8', windowsHide: true, windowsVerbatimArguments: true });
       // Never print the environment dump: a CI environment can contain secrets.
       if (result.status !== 0) throw new Error('Visual C++ environment initialization failed');
       const env = { ...process.env };
