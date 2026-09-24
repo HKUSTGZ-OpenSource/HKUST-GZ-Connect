@@ -24,7 +24,7 @@ let loginPending = false;
 let usabilityFeature = null, serviceWorkspace = null, groupDialogFeature = null, favoriteDialogFeature = null, campusDataFeature = null;
 let proxyAuthFeature = null, browserNewTabSettings = null;
 let addWebsiteFeature = null;
-rendererFeatures.mount('auth-challenge', { api: window.api, document, i18n: window.I18N, target: window });
+['auth-challenge', 'integration-center'].forEach(id => rendererFeatures.mount(id, { api: window.api, document, i18n: window.I18N, target: window }));
 function activeLoginProfileId() {
   return window.schoolProfileSelectorFeature?.credentialProfileId?.() || null;
 }

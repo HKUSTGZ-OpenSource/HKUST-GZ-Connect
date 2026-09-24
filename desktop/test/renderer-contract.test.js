@@ -58,9 +58,8 @@ test('Control Tower owns a modular Integration Center instead of scattered secre
   assert.match(html, /id="integrationDialog"/u);
   assert.match(html, /id="confirmIntegration"/u);
   assert.doesNotMatch(html, /data-copy="(?:pac|clash|ssh)"/u);
-  const integrationScript = scriptIndex('integration-center.js');
-  const appScript = scriptIndex('app.js');
-  assert.ok(integrationScript > 0 && integrationScript < appScript);
+  assert.equal(scriptIndex('integration-center.js'), -1);
+  assert.match(appJs, /\['auth-challenge', 'integration-center'\]\.forEach\(id => rendererFeatures.mount\(id/);
   assert.doesNotMatch(appJs, /prepareIntegration|confirmIntegration|listIntegrations/u);
 });
 

@@ -1,4 +1,5 @@
-import { ADAPTERS, adapterView, previewView } from './model.mjs';
+import { ADAPTERS, adapterView, previewView, validHandle } from './model.mjs';
+import { createLifetime } from './lifetime.mjs';
 
 export function createIntegrationCenter({
   api,
@@ -29,9 +30,10 @@ export function createIntegrationCenter({
   let t = translate;
   let views = [];
   let preview = null;
-  let timer = null;
+  const life = createLifetime({ setTimeoutFn, clearTimeoutFn });
   let busy = false;
   let bound = false;
+  let retired = false;
   let lastTrigger = null;
 
   function errorMessage(code) {
@@ -44,19 +46,25 @@ export function createIntegrationCenter({
     ]);
     return t(`integration.error.${specific.has(code) ? code : 'generic'}`);
   }
-  function clearTimer() {
-    if (timer !== null) clearTimeoutFn(timer);
-    timer = null;
+  async function discard(value) {
+    if (!validHandle(value?.confirmationHandle)) return;
+    try { await api.cancelIntegration({ confirmationHandle: value.confirmationHandle }); } catch {}
+  }
+  function expire() {
+    void cancel(); elements.integrationError.textContent = errorMessage('INTEGRATION_TARGET_CHANGED');
   }
   function closeDialog() {
-    clearTimer();
+    life.clearTimer();
     preview = null;
+    elements.integrationPreviewName.textContent = '';
+    elements.integrationPreviewSummary.replaceChildren();
+    elements.integrationPreviewWarnings.replaceChildren();
     elements.integrationDialogError.textContent = '';
     if (elements.integrationDialog.open) elements.integrationDialog.close();
     restoreTriggerFocus();
   }
   function restoreTriggerFocus() {
-    if (!lastTrigger) return;
+    if (!lastTrigger || !life.alive()) return;
     const target = [...elements.integrationList.querySelectorAll?.('[data-integration-action]') || []]
       .find((candidate) => candidate.dataset.integrationActionAdapter === lastTrigger.adapterId &&
         candidate.dataset.integrationAction === lastTrigger.action);
@@ -70,10 +78,6 @@ export function createIntegrationCenter({
     value.dataset.integrationActionAdapter = adapterId;
     value.textContent = label;
     value.disabled = busy;
-    value.addEventListener('click', () => {
-      lastTrigger = { adapterId, action };
-      prepare(adapterId, action);
-    });
     return value;
   }
   function render() {
@@ -124,7 +128,10 @@ export function createIntegrationCenter({
     }));
   }
   async function refresh() {
-    const result = await api.listIntegrations();
+    if (!life.alive()) return false;
+    const ticket = life.request(); let result;
+    try { result = await api.listIntegrations(); } catch { result = { ok: false }; }
+    if (!life.current(ticket)) return false;
     if (!result?.ok || !Array.isArray(result.integrations)) {
       views = [];
       elements.integrationError.textContent = errorMessage(result?.code);
@@ -136,11 +143,15 @@ export function createIntegrationCenter({
     render(); return true;
   }
   async function prepare(adapterId, action) {
-    if (busy) return;
-    busy = true; render(); elements.integrationError.textContent = '';
+    if (!life.alive() || busy || !ADAPTERS.has(adapterId) || !['copy', 'save'].includes(action) ||
+        (adapterId === 'vscode_remote_ssh' && action !== 'copy')) return;
+    const previous = preview, ticket = life.begin(); busy = true; void discard(previous);
+    if (!life.current(ticket)) return;
+    closeDialog(); render(); elements.integrationError.textContent = '';
     let result;
     try { result = await api.prepareIntegration({ adapterId, action }); }
     catch { result = { ok: false, code: 'generic' }; }
+    if (!life.current(ticket)) { await discard(result?.preview); return; }
     busy = false; render();
     if (!result?.ok) {
       if (result?.code !== 'INTEGRATION_EXPORT_CANCELLED') {
@@ -150,28 +161,27 @@ export function createIntegrationCenter({
       return;
     }
     preview = previewView(result.preview, now());
-    if (!preview) {
-      await api.cancelIntegration().catch(() => {});
+    if (!preview || preview.adapterId !== adapterId || preview.action !== action) {
+      preview = null; void discard(result.preview);
       elements.integrationError.textContent = errorMessage('generic');
       return;
     }
     renderPreview();
-    elements.integrationDialog.showModal();
-    timer = setTimeoutFn(() => {
-      api.cancelIntegration().catch(() => {});
-      closeDialog();
-      elements.integrationError.textContent = errorMessage('INTEGRATION_TARGET_CHANGED');
-    }, Math.max(0, preview.expiresAt - now()));
-    timer?.unref?.();
+    try { elements.integrationDialog.showModal(); }
+    catch { void cancel(); elements.integrationError.textContent = errorMessage('generic'); return; }
+    life.schedule(expire, Math.max(0, preview.expiresAt - now()));
   }
   async function confirm() {
-    if (!preview || busy) return;
+    if (!life.alive() || !preview || busy) return;
+    if (preview.expiresAt <= now()) { void cancel(); return; }
+    const ticket = life.begin(); life.schedule(expire, Math.max(0, preview.expiresAt - now()));
     const handle = preview.confirmationHandle;
     const action = preview.action;
     busy = true; elements.confirmIntegration.disabled = true;
     let result;
     try { result = await api.confirmIntegration({ confirmationHandle: handle }); }
     catch { result = { ok: false, code: 'generic' }; }
+    if (!life.current(ticket)) return;
     busy = false; elements.confirmIntegration.disabled = false;
     if (!result?.ok) {
       const message = errorMessage(result?.code);
@@ -180,27 +190,49 @@ export function createIntegrationCenter({
       return;
     }
     closeDialog();
-    await refresh();
-    elements.integrationStatus.textContent = t(`integration.success.${action}`);
+    if (await refresh() && life.current(ticket)) {
+      elements.integrationStatus.textContent = t(`integration.success.${action}`);
+    }
   }
   async function cancel() {
-    await api.cancelIntegration().catch(() => {});
-    closeDialog();
+    if (!life.alive()) return;
+    const previous = preview; life.begin(); busy = false; elements.confirmIntegration.disabled = false;
+    closeDialog(); render(); await discard(previous);
   }
   function bind() {
     if (bound) return;
     bound = true;
-    elements.confirmIntegration.addEventListener('click', confirm);
-    elements.cancelIntegration.addEventListener('click', cancel);
-    elements.closeIntegrationDialog.addEventListener('click', cancel);
-    elements.integrationDialog.addEventListener('cancel', (event) => {
+    life.listen(elements.integrationList, 'click', event => {
+      const target = event.target.closest?.('[data-integration-action]');
+      if (!target || !elements.integrationList.contains(target)) return;
+      const { integrationAction: action, integrationActionAdapter: adapterId } = target.dataset;
+      lastTrigger = { adapterId, action }; void prepare(adapterId, action);
+    });
+    life.listen(elements.confirmIntegration, 'click', confirm);
+    life.listen(elements.cancelIntegration, 'click', cancel);
+    life.listen(elements.closeIntegrationDialog, 'click', cancel);
+    life.listen(elements.integrationDialog, 'cancel', (event) => {
       event.preventDefault(); cancel();
     });
   }
   function setTranslator(next) {
-    if (typeof next !== 'function') return;
+    if (!life.alive() || typeof next !== 'function') return;
     t = next; render(); renderPreview();
   }
-  function start() { bind(); render(); }
-  return Object.freeze({ cancel, confirm, prepare, refresh, setTranslator, start });
+  function start() {
+    if (!life.start()) return false;
+    try { bind(); render(); return life.alive(); } catch (error) { dispose(); throw error; }
+  }
+  function dispose() {
+    if (retired) return false;
+    retired = true;
+    const previous = preview;
+    try { life.dispose(); } finally {
+      void discard(previous);
+      busy = false; lastTrigger = null; closeDialog(); views = [];
+      elements.integrationList.replaceChildren(); elements.confirmIntegration.disabled = false;
+    }
+    return true;
+  }
+  return Object.freeze({ cancel, confirm, prepare, refresh, setTranslator, start, dispose });
 }

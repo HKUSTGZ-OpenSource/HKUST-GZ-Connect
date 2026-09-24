@@ -100,7 +100,7 @@ test('legacy facade and automatic startup are retired without weakening package 
   const renderer=path.resolve(__dirname,'../../../renderer');
   assert.equal(fs.existsSync(path.join(renderer,'auth-challenge.js')),false);
   assert.doesNotMatch(fs.readFileSync(path.join(renderer,'index.html'),'utf8'),/src="auth-challenge.js"/);
-  assert.match(fs.readFileSync(path.join(renderer,'app.js'),'utf8'),/rendererFeatures\.mount\('auth-challenge'/);
+  assert.match(fs.readFileSync(path.join(renderer,'app.js'),'utf8'),/\['auth-challenge', 'integration-center'\]\.forEach\(id => rendererFeatures.mount\(id/);
   const verifier=fs.readFileSync(path.resolve(renderer,'../build/verify-package.js'),'utf8');
   for (const name of ['index','controller','lifecycle']) assert.ok(verifier.includes(`/renderer/features/auth-challenge/${name}.mjs`));
 });

@@ -456,7 +456,11 @@ contextBridge.exposeInMainWorld('api', {
     pendingIntegration = null;
     return { ok: true };
   },
-  cancelIntegration: async () => {
+  cancelIntegration: async (request) => {
+    if (!request || typeof request.confirmationHandle !== 'string') {
+      throw new Error('renderer must use owned integration cancellation');
+    }
+    if (request.confirmationHandle !== pendingIntegration?.confirmationHandle) return { ok: true, cancelled: false };
     pendingIntegration = null;
     return { ok: true, cancelled: true };
   },

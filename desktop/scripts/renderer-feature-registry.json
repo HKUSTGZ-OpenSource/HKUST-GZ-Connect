@@ -147,10 +147,6 @@
     "renderer/i18n.js": [
       "I18N"
     ],
-    "renderer/integration-center.js": [
-      "integrationCenter",
-      "integrationCenterFeature"
-    ],
     "renderer/notification-drawer.js": [
       "notificationDrawer"
     ],
@@ -176,7 +172,7 @@
       "id": "integration-center",
       "root": "renderer/features/integration-center",
       "entrypoint": "renderer/features/integration-center/index.mjs",
-      "exports": ["adapterView", "createIntegrationCenter", "previewView"],
+      "exports": ["adapterView", "createIntegrationCenter", "create", "previewView"],
       "allowedDependencies": []
     },
     {
@@ -198,7 +194,7 @@
       "root": "renderer/features/feature-host",
       "entrypoint": "renderer/features/feature-host/index.mjs",
       "exports": ["FEATURE_DEFINITIONS", "createRendererFeatures"],
-      "allowedDependencies": ["campus-data", "official-favorites", "auth-challenge"]
+      "allowedDependencies": ["campus-data", "official-favorites", "auth-challenge", "integration-center"]
     },
     {
       "id": "campus-data",

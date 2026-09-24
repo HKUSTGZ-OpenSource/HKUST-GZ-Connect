@@ -17,13 +17,14 @@ or skipping subsequent owners. Definitions cannot be swapped after registry crea
 The initial checkpoint below registered only `campus-data`. The separate proposed
 [favorite lifecycle contribution](official-favorites-lifecycle.md) also registers official-favorites
 at its existing startup position. The separate [auth lifecycle unit](renderer-auth-challenge-lifecycle.md)
-also explicitly mounts interactive-auth. These three native owners use the host; legacy features remain on
+also explicitly mounts interactive-auth. The [integration lifetime repair](integration-renderer-lifecycle.md)
+adds the fourth native owner. These four native owners use the host; legacy features remain on
 their existing paths until their lifecycle contracts are reviewed. Direct native factory/start
 pairs in app.js reduce from two to zero across these two review units.
 It is a real running entrypoint, but not completion of the full Renderer registry/migration goal.
 
 The machine inventory adds one owned `feature-host` root whose allowed dependencies name the
-existing campus-data, official-favorites and auth-challenge public entrypoints. It does not expand the legacy global allowlist,
+existing campus-data, official-favorites, auth-challenge and integration-center public entrypoints. It does not expand the legacy global allowlist,
 permit private cross-feature imports or add an HTML bootstrap exception. This inventory change
 requires independent review along with the implementation.
 

@@ -9,11 +9,10 @@ const preview = {schemaVersion:1,adapterId:'clash_mihomo_yaml',action:'copy',
   confirmationHandle:'export-'+'a'.repeat(32),expiresAt:2000,containsLocalProxyCredential:true,
   warningCodes:['INTEGRATION_LOCAL_CREDENTIAL_PRIVATE'],changes:{create:1,replace:0,remove:0,unchanged:0}};
 
-test('native import is side-effect free and legacy facade preserves the same public API',()=>{
+test('native import is side-effect free and retired globals cannot return',()=>{
   assert.equal(Object.hasOwn(globalThis,'integrationCenter'),false);
-  assert.deepEqual(Object.keys(native).sort(),['adapterView','createIntegrationCenter','previewView']);
-  const legacy=require('../../../renderer/integration-center.js');
-  for(const key of Object.keys(native)) assert.equal(legacy[key],native[key]);
+  assert.deepEqual(Object.keys(native).sort(),['adapterView','create','createIntegrationCenter','previewView']);
+  assert.equal(fs.existsSync(path.join(renderer,'integration-center.js')),false);
 });
 
 test('projection rejects invalid handles, actions, adapters, expiry and warning codes',()=>{
@@ -52,9 +51,14 @@ test('controller construction requires injected APIs but does not query or expor
 });
 
 test('compatibility entry and native owners remain bounded and HTML loading is explicit',()=>{
-  for(const [file,limit] of [['integration-center.js',24],['features/integration-center/model.mjs',80],
+  for(const [file,limit] of [['features/integration-center/lifecycle.mjs',80],['features/integration-center/model.mjs',80],
+    ['features/integration-center/lifetime.mjs',80],
     ['features/integration-center/controller.mjs',250]]) {
     assert.ok(fs.readFileSync(path.join(renderer,file),'utf8').trimEnd().split('\n').length<=limit,file);
   }
-  assert.match(fs.readFileSync(path.join(renderer,'index.html'),'utf8'),/<script type="module" src="integration-center.js"><\/script>/);
+  assert.doesNotMatch(fs.readFileSync(path.join(renderer,'index.html'),'utf8'),/src="integration-center.js"/);
+  const verifier=fs.readFileSync(path.resolve(renderer,'../build/verify-package.js'),'utf8');
+  for(const name of ['index','model','controller','lifecycle','lifetime']) {
+    assert.ok(verifier.includes(`/renderer/features/integration-center/${name}.mjs`));
+  }
 });

@@ -67,6 +67,8 @@ async isolation, and explicitly mounts through the host. Neither unit is merged 
 The proposed [Integration Center boundary](renderer-integration-center.md) separates its redacted
 display model and injected controller. Its legacy initializer and cancellation/async lifetime
 remain outside the host until a separate behavior unit establishes complete ownership.
+The proposed [Main export-intent repair](integration-export-intents.md) supplies a necessary
+effect-boundary prerequisite; it does not substitute for Renderer teardown or native Windows acceptance.
 
 1. Add an explicit Renderer bootstrap and a checked feature registry.
 2. Freeze the list of existing `window.*` feature exports; CI rejects new ones.

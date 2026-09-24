@@ -10,8 +10,9 @@ const html = fs.readFileSync(path.join(renderer, 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(renderer, 'styles.css'), 'utf8');
 const app = fs.readFileSync(path.join(renderer, 'app.js'), 'utf8');
 const proxyFeature = fs.readFileSync(path.join(renderer, 'proxy-auth-migration.js'), 'utf8');
-const integrationFeature = ['integration-center.js', 'features/integration-center/model.mjs',
-  'features/integration-center/controller.mjs'].map(file=>fs.readFileSync(path.join(renderer,file),'utf8')).join('\n');
+const integrationFeature = ['features/integration-center/lifecycle.mjs', 'features/integration-center/model.mjs',
+  'features/integration-center/controller.mjs', 'features/integration-center/lifetime.mjs']
+  .map(file=>fs.readFileSync(path.join(renderer,file),'utf8')).join('\n');
 const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
 const integrationSuite = fs.readFileSync(
   path.join(__dirname, '..', 'lib', 'ipc', 'integration-center-suite.js'), 'utf8',

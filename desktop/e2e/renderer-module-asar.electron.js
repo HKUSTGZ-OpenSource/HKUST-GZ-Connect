@@ -88,22 +88,30 @@ async function run() {
   const localization = await window.webContents.executeJavaScript(`({
     language: document.documentElement.lang,
     schoolStarted: typeof window.schoolProfileSelectorFeature?.refresh === 'function',
-    integrationStarted: typeof window.integrationCenterFeature?.refresh === 'function',
+    integrationStarted: document.querySelectorAll('[data-integration-adapter]').length === 2,
+    legacyIntegration: 'integrationCenterFeature' in window || 'integrationCenter' in window,
     label: document.querySelector('[data-i18n="nav.browser"]')?.textContent,
     weeklyLabel: window.I18N.createT(document.documentElement.lang === 'en' ? 'en' : 'zh')('workspace.scheduleToday')
   })`);
   assert.equal(localization.language, locale === 'zh' ? 'zh-CN' : 'en');
   assert.equal(localization.schoolStarted,true,'deferred school initialization must not be skipped');
   assert.equal(localization.integrationStarted,true,'deferred integration initialization must not be skipped');
+  assert.equal(localization.legacyIntegration,false);
   assert.equal(localization.label,locale === 'zh' ? '校园工作台' : 'Workspace');
   assert.equal(localization.weeklyLabel,locale === 'zh' ? '本周' : 'This week');
   const integration = await window.webContents.executeJavaScript(`(async () => {
     document.getElementById('officialFavoriteDialog').close();
-    const owner = window.integrationCenterFeature;
-    await owner.refresh(); await owner.prepare('clash_mihomo_yaml','copy');
+    const until = async predicate => {
+      const deadline=Date.now()+5000;
+      while(!predicate() && Date.now()<deadline) await new Promise(resolve=>setTimeout(resolve,20));
+      if(!predicate()) throw new Error('integration UI did not settle');
+    };
+    document.querySelector('[data-integration-adapter="clash_mihomo_yaml"] [data-integration-action="copy"]').click();
+    await until(()=>document.getElementById('integrationDialog').open);
     const previewOpen = document.getElementById('integrationDialog').open;
     const summary = document.getElementById('integrationPreviewSummary').textContent;
-    await owner.confirm();
+    document.getElementById('confirmIntegration').click();
+    await until(()=>!document.getElementById('integrationDialog').open && /已复制|copied/i.test(document.getElementById('integrationStatus').textContent));
     document.querySelector('#appsList [data-favorite-entry]').click();
     return {previewOpen,summary,closed:!document.getElementById('integrationDialog').open,
       favoriteReopened:document.getElementById('officialFavoriteDialog').open,
@@ -116,22 +124,33 @@ async function run() {
   assert.equal(integration.rows,2); assert.equal(integration.installButtons,0);
   assert.match(integration.status,/已复制|copied/i); assert.match(integration.summary,/512/);
   const retired = await window.webContents.executeJavaScript(`(async () => {
+    document.querySelector('[data-integration-adapter="clash_mihomo_yaml"] [data-integration-action="copy"]').click();
+    const integrationDeadline=Date.now()+5000;
+    while(!document.getElementById('integrationDialog').open && Date.now()<integrationDeadline) await new Promise(resolve=>setTimeout(resolve,20));
+    if(!document.getElementById('integrationDialog').open) throw new Error('integration retirement fixture did not open');
     await window.api.testEmitAuthChallenge({kind:'otp',maskedDestination:'s***@example.test',
       expiresAtUnixMs:Date.now()+30000,resendAfterUnixMs:null,resendAvailable:true});
     document.getElementById('authChallengeResponse').value = 'synthetic-response';
     document.getElementById('authChallengeForm').dispatchEvent(new Event('submit',{cancelable:true}));
     window.dispatchEvent(new Event('pagehide'));
     window.dispatchEvent(new Event('pagehide'));
+    document.dispatchEvent(new CustomEvent('app-state-refreshed',{detail:{loggedIn:true}}));
+    document.dispatchEvent(new Event('app-locale-changed'));
+    await new Promise(resolve=>setTimeout(resolve,20));
     const auth = await window.api.testEmitAuthChallenge({kind:'otp',expiresAtUnixMs:null});
     return { calendarEmpty: document.getElementById('scheduleBody').innerHTML === '',
       favoriteOpen: document.getElementById('officialFavoriteDialog').open,
       authOpen:document.getElementById('authChallengeDialog').open,
       authEmpty:document.getElementById('authChallengeResponse').value === '',
       authDisabled:document.getElementById('authChallengeSubmit').disabled,
-      authListeners:auth.listeners, legacyAuth:Object.hasOwn(window,'authChallenge') };
+      authListeners:auth.listeners, legacyAuth:Object.hasOwn(window,'authChallenge'),
+      integrationOpen:document.getElementById('integrationDialog').open,
+      integrationRows:document.querySelectorAll('[data-integration-adapter]').length,
+      integrationPreview:document.getElementById('integrationPreviewName').textContent };
   })()`);
   assert.deepEqual(retired, { calendarEmpty:true, favoriteOpen:false, authOpen:false,
-    authEmpty:true, authDisabled:true, authListeners:0, legacyAuth:false },
+    authEmpty:true, authDisabled:true, authListeners:0, legacyAuth:false,
+    integrationOpen:false,integrationRows:0,integrationPreview:'' },
     'the registered owners retire their DOM and dialog on pagehide');
   await window.loadFile(path.join(archive, 'renderer/campus-browser.html'), {query:{lang:locale}});
   const chrome = await window.webContents.executeJavaScript(`({

@@ -5,6 +5,7 @@ const ACTIONS = new Set(['copy', 'save']);
 const STATES = new Set(['not-installed', 'current', 'stale', 'unavailable']);
 const COMPATIBILITY = new Set(['supported', 'unsupported', 'unavailable', 'conflict']);
 const HANDLES = /^export-[a-f0-9]{32}$/u;
+export const validHandle = value => typeof value === 'string' && HANDLES.test(value);
 
 export function adapterView(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
@@ -27,7 +28,7 @@ export function adapterView(value) {
 export function previewView(value, now = Date.now()) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || value.schemaVersion !== 1 ||
       !ADAPTERS.has(value.adapterId) || !ACTIONS.has(value.action) ||
-      typeof value.confirmationHandle !== 'string' || !HANDLES.test(value.confirmationHandle) ||
+      !validHandle(value.confirmationHandle) ||
       !Number.isSafeInteger(value.expiresAt) || value.expiresAt <= now ||
       typeof value.containsLocalProxyCredential !== 'boolean') return null;
   const changes = value.changes && typeof value.changes === 'object'
