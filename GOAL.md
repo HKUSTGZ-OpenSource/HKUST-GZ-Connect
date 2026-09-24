@@ -4,7 +4,7 @@
 - Authority: project maintainer
 - Baseline: `main@15738338ff2a280300b66e98a1823659f24630a4`
 - Started: 2026-09-04
-- Last verified: 2026-09-12 (`main@39850415c901aeaa77ecb86cd3ce49a2e75290a8`)
+- Last verified: 2026-09-24 (`main@39850415c901aeaa77ecb86cd3ce49a2e75290a8`)
 - Scope: repository governance, documentation truth, agent instructions, module boundaries,
   contributor workflow, GitHub protections and organization migration
 
@@ -45,7 +45,8 @@ high-risk rules. No instruction file is treated as a substitute for review or te
    requirement is satisfied. Published packages and the currently installed Mac candidate are
    distinct evidence, not interchangeable versions.
 5. Repository Rulesets, CODEOWNERS, templates, Dependabot, release Environment and immutable Action
-   policies are active, but one administrator and no independent reviewer prevent full enforcement.
+   policies are active. Two Organization owners are present, but the pending PRs still lack the
+   independent approvals required by protected `main`.
 6. The original repository transferred to `HKUSTGZ-OpenSource` on 2026-09-12 with explicit maintainer
    authorization. Organization default permission is now `read`. Repository ID, main, tags,
    releases/assets and PR heads/bases are preserved. Existing Organization Owner `HernanJiang`
@@ -192,6 +193,13 @@ another release, or change branch/tag protections. Previous #104/2.0.2 administr
 remain consumed. Stable remains 2.0.2; installed-app replacement and real-school validation remain
 separate operations. The migration receipt distinguishes completed identity checks from remaining
 role-specific workflow, team and release governance work.
+
+On 2026-09-24 the maintainer authorized merging reviewed PRs into `main` and converging the open
+queue. `main` still requires one independent approving review and seven strict status checks.
+The Windows helper prerequisite #131 and the dependent pre-login repair #129 passed their exact
+CI checks; neither is merged or released. The external download repair #126 remains separately
+reviewable and needs current-base CI after the prerequisite lands. Other draft modules and
+dependency upgrades remain unmerged until their own dependency, compatibility and review gates pass.
 
 ## Historical progress receipt — 2026-09-07
 
