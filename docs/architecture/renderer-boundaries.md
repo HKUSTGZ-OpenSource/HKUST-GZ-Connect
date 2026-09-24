@@ -1,6 +1,6 @@
 # Renderer static boundary policy
 
-- Status: Review candidate based on merged PR #109; exact current-head CI is tracked in PR #110
+- Status: Static boundary policy merged in #110; not a runtime sandbox or release
 - Owner: Architecture and Desktop maintainers; policy changes require independent review
 - Last verified locally: 2026-09-25
 - Applies to: Renderer JavaScript, the two explicitly shared browser helpers and static Renderer HTML

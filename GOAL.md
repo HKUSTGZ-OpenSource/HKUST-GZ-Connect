@@ -5,7 +5,7 @@
 - Baseline: `main@15738338ff2a280300b66e98a1823659f24630a4`
 - Started: 2026-09-04
 - Last verified: 2026-09-25 (before this documentation PR)
-- Development main at verification: `6f960af57466e6551a5e347ecc26ae9b902f69d9`
+- Development main at verification: `dc9113df96da92830091edb0c6a0860219d1dfbe`
 - Scope: repository governance, documentation truth, agent instructions, module boundaries,
   contributor workflow, GitHub protections and organization migration
 
@@ -38,8 +38,8 @@ high-risk rules. No instruction file is treated as a substitute for review or te
    `main`; runtime modularization must now consume those boundaries rather than create alternatives.
 2. `desktop/main.js`, `desktop/lib/browser/session/campus-browser.js`, the Renderer bootstrap/CSS,
    and `independent/src/bin/ec-engine.rs` are concurrency hot spots.
-3. Renderer feature files still depend on global `window.*` names and HTML script order that the
-   CommonJS architecture graph cannot see.
+3. Legacy Renderer globals and HTML script order remain migration debt. The merged static policy
+   and feature host enforce new boundaries, but `app.js` is not yet only a composition root.
 4. Stable `v2.0.2` is published from `main@39850415c901aeaa77ecb86cd3ce49a2e75290a8`.
    PRs #88, #95, #106 and #107 are merged. Four platform installers, a build receipt and SHA-256
    manifest are uploaded. The repository-ID updater is shipped; the historical 2.0.1 bridge
@@ -183,11 +183,13 @@ release assumptions.
 The [2026-09-08 integration snapshot](docs/governance/2026-09-08-integration-readiness.md) is
 historical. The 2.0.2 release lane #88/#95/#106/#107 is merged and published. Since that tag,
 the Windows helper, external-download and pre-login classification repairs (#131/#126/#129),
-Renderer/Browser ownership and fixture slices (#108–#120), and compatible Rust updates
-(#123/#124/#122) entered `main` in separately checked squash merges. Some lacked an independent
-approval and used the maintainer-authorized one-time administrator path; CI was not bypassed.
+Renderer/Browser ownership and fixture slices (#108–#120), compact connection layout (#133),
+Integration Center export feedback (#134), governance receipts and queue policy (#89/#136), and
+compatible Rust updates (#122–#124/#132/#135/#138) entered `main` in separately checked squash
+merges. Some lacked an independent approval and used the maintainer-authorized one-time
+administrator path; CI was not bypassed. The bot-authored #138 received an independent approval.
 These source changes have not been packaged or released. They are progress toward M1/M2, not proof
-that M1–M5 or G0–G4 are complete. #128 was closed without merging to preserve older-platform
+that M1–M5 or G0–G4 are complete. #128/#137 were closed without merging to preserve older-platform
 support. Neither local pass counts nor candidate source-size reductions make a post-tag change
 part of stable 2.0.2.
 The [2026-09-12 combination receipt](docs/governance/2026-09-12-combination-preflight.md) records
@@ -206,8 +208,8 @@ role-specific workflow, team and release governance work.
 On 2026-09-24/25 the maintainer directed convergence of the reviewed PR queue and authorized
 one-time administrator merges. #131, #126 and #129 are merged; #125 is closed by the download
 repair. #127 stays open because its Windows reporter supplied no sanitized log or stable reproduction;
-source/CI evidence cannot establish a successful real Gateway login. This documentation change is
-tracked by #89; #84 still needs actual Security/Release team decisions and post-transfer settings
+source/CI evidence cannot establish a successful real Gateway login. #89 is merged; #84 still
+needs actual Security/Release team decisions and post-transfer settings
 readback. The repository's live Secret Scanning and Push Protection read back as disabled on
 2026-09-25; the historical transfer snapshot must not be used to claim they are enabled now.
 

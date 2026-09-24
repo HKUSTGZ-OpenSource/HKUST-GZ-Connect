@@ -1,8 +1,8 @@
 # Official favorites module boundary
 
-- Status: Proposed review candidate; not merged to main, installed or released
+- Status: Historical review receipt; source merged in #109, not installed or released
 - Owner: Desktop Renderer maintainers
-- Last verified: 2026-09-10
+- Last verified: 2026-09-25
 - Applies to: Issue #79, structural follow-up to PR #108 at `649397b6df436624b0db90463b00807987550a86`
 
 ## Public contract

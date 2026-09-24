@@ -1,6 +1,6 @@
 # Browser download ownership seam
 
-- Status: Structural review candidate preserving merged #126; not a release
+- Status: Historical structural review receipt; source merged in #112 after #126, not a release
 - Owner: Desktop / Browser maintainers, issue #80
 - Last verified locally: 2026-09-25
 - Base: `main@e88f351` after the Renderer/integration chain

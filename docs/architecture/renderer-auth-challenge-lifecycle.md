@@ -1,6 +1,6 @@
 # Interactive-auth lifecycle and explicit activation
 
-- Status: Behavior review candidate based on merged #117; not installed or released
+- Status: Historical lifecycle review receipt; source merged in #118, not installed or released
 - Owner: Desktop / authentication UI maintainers, issue #79
 - Last verified locally: 2026-09-25
 - Base: `main@aec107f` after PR #117

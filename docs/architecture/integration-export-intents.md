@@ -1,6 +1,6 @@
 # Integration export intents and effect-boundary validation
 
-- Status: Main repair candidate based on merged #119; prior three-platform source acceptance passed, installers unverified, not deployed
+- Status: Historical Main repair receipt; source merged in #120, installers unverified, not deployed
 - Owner: Desktop / integration maintainers, issues #79 and #81
 - Last verified locally: 2026-09-25
 - Base: `main@a4a188d` after PR #119
