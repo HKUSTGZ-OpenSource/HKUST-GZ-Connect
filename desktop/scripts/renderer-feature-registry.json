@@ -173,6 +173,13 @@
   },
   "features": [
     {
+      "id": "integration-center",
+      "root": "renderer/features/integration-center",
+      "entrypoint": "renderer/features/integration-center/index.mjs",
+      "exports": ["adapterView", "createIntegrationCenter", "previewView"],
+      "allowedDependencies": []
+    },
+    {
       "id": "auth-challenge",
       "root": "renderer/features/auth-challenge",
       "entrypoint": "renderer/features/auth-challenge/index.mjs",

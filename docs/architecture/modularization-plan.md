@@ -42,7 +42,7 @@ Primary concurrency hot spots:
 
 ## Wave M1 — Renderer dependency authority
 
-The proposed [feature host](renderer-feature-host.md) now covers campus-data and official-favorites
+The proposed [feature host](renderer-feature-host.md) now covers campus-data, official-favorites and interactive-auth
 through separate lifecycle review units. Remaining owners require reviewed start/dispose contracts;
 the catalog must not silently wrap missing cleanup with a no-op.
 
@@ -63,6 +63,10 @@ The proposed [interactive-auth boundary](renderer-auth-challenge.md) establishes
 controller behind a transitional startup facade. The separately proposed
 [auth lifecycle unit](renderer-auth-challenge-lifecycle.md) removes that facade, owns teardown and
 async isolation, and explicitly mounts through the host. Neither unit is merged or released yet.
+
+The proposed [Integration Center boundary](renderer-integration-center.md) separates its redacted
+display model and injected controller. Its legacy initializer and cancellation/async lifetime
+remain outside the host until a separate behavior unit establishes complete ownership.
 
 1. Add an explicit Renderer bootstrap and a checked feature registry.
 2. Freeze the list of existing `window.*` feature exports; CI rejects new ones.

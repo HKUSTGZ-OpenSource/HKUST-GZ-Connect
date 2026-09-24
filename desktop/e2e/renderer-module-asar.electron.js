@@ -51,6 +51,10 @@ async function run() {
     while (!document.querySelector('#scheduleBody .week-table') && Date.now() < deadline) {
       await new Promise(resolve => setTimeout(resolve, 20));
     }
+    while (document.querySelectorAll('[data-integration-adapter]').length !== 2 && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    const initialIntegrationRows = document.querySelectorAll('[data-integration-adapter]').length;
     const initialAuthOpen = document.getElementById('authChallengeDialog').open;
     const initialAuthDescription = document.getElementById('authChallengeDescription').textContent;
     const auth = await window.api.testEmitAuthChallenge(null);
@@ -70,14 +74,14 @@ async function run() {
       days: document.querySelectorAll('#scheduleBody .week-day-head').length,
       legacyGlobal: Object.hasOwn(window, 'campusDataModules'), authListeners: auth.listeners,
       authOpen, inputCleared, authClosed, responseCount:submitted.responseCount,
-      initialAuthOpen, initialAuthDescription,
+      initialAuthOpen, initialAuthDescription, initialIntegrationRows,
       favoriteChooser: chooser.open,
       favoriteFactoryGlobal: typeof window.officialFavoriteDialog?.create,
       archive: location.pathname.includes('app.asar') };
   })()`);
   assert.deepEqual(state, { dashboard: true, days: 7, legacyGlobal: false, authListeners: 1,
     authOpen:true, inputCleared:true, authClosed:true, responseCount:1,
-    initialAuthOpen:true, initialAuthDescription:locale === 'zh'
+    initialAuthOpen:true, initialIntegrationRows:2, initialAuthDescription:locale === 'zh'
       ? '网关要求一次性验证码。请输入当前验证响应。'
       : 'The gateway requires a one-time code. Enter the current verification response.',
     favoriteChooser: true, favoriteFactoryGlobal: 'undefined', archive: true });
@@ -93,6 +97,24 @@ async function run() {
   assert.equal(localization.integrationStarted,true,'deferred integration initialization must not be skipped');
   assert.equal(localization.label,locale === 'zh' ? '校园工作台' : 'Workspace');
   assert.equal(localization.weeklyLabel,locale === 'zh' ? '本周' : 'This week');
+  const integration = await window.webContents.executeJavaScript(`(async () => {
+    document.getElementById('officialFavoriteDialog').close();
+    const owner = window.integrationCenterFeature;
+    await owner.refresh(); await owner.prepare('clash_mihomo_yaml','copy');
+    const previewOpen = document.getElementById('integrationDialog').open;
+    const summary = document.getElementById('integrationPreviewSummary').textContent;
+    await owner.confirm();
+    document.querySelector('#appsList [data-favorite-entry]').click();
+    return {previewOpen,summary,closed:!document.getElementById('integrationDialog').open,
+      favoriteReopened:document.getElementById('officialFavoriteDialog').open,
+      rows:document.querySelectorAll('[data-integration-adapter]').length,
+      status:document.getElementById('integrationStatus').textContent,
+      installButtons:document.querySelectorAll('[data-integration-action="install"]').length};
+  })()`);
+  assert.equal(integration.previewOpen,true); assert.equal(integration.closed,true);
+  assert.equal(integration.favoriteReopened,true,'retain the existing favorite retirement coverage');
+  assert.equal(integration.rows,2); assert.equal(integration.installButtons,0);
+  assert.match(integration.status,/已复制|copied/i); assert.match(integration.summary,/512/);
   const retired = await window.webContents.executeJavaScript(`(async () => {
     await window.api.testEmitAuthChallenge({kind:'otp',maskedDestination:'s***@example.test',
       expiresAtUnixMs:Date.now()+30000,resendAfterUnixMs:null,resendAvailable:true});
