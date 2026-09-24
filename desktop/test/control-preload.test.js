@@ -166,6 +166,13 @@ test('Integration Center preload exposes only list prepare confirm and cancel sc
   for (const retired of ['copyClashNode', 'sshConfig']) {
     assert.equal(typeof api[retired], 'undefined');
   }
+  const ownedPreview = { confirmationHandle: 'export-456' };
+  await api.cancelIntegration(ownedPreview);
+  assert.equal(invocations[4].channel, 'cancel-integration');
+  assert.equal(invocations[4].argumentCount, 2);
+  assert.equal(invocations[4].payload, ownedPreview);
+  await api.cancelIntegration(null);
+  assert.equal(invocations[5].payload, null, 'malformed payload must reach validation, not become global cancel');
 });
 
 test('routing manager open event is value-free and removable', () => {

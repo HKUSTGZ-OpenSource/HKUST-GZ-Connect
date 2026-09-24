@@ -1,0 +1,174 @@
+/* Calendar-owned presentation. :where keeps selector specificity unchanged. */
+.module-schedule .module-body { min-height: 0; }
+.module-schedule .week-refresh-notice { margin: 6px 0; color: var(--muted); font-size: 12px; }
+.module-schedule[data-state="loading"] .module-state { padding: 12px 0; min-height: 0; }
+:where(.module-schedule) .week-summary {
+  min-height: 28px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+:where(.module-schedule) .week-summary strong { color: var(--ink); font-size: 12.5px; font-weight: 650; }
+:where(.module-schedule) .week-summary span { color: var(--muted); font-size: 11px; }
+:where(.module-schedule) .week-navigation { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
+:where(.module-schedule) .week-navigation button { min-width: 32px; min-height: 32px; padding: 5px 10px; border: 1px solid #dce4ef; border-radius: 8px; background: white; color: var(--navy); font: inherit; font-size: 12px; cursor: pointer; }
+:where(.module-schedule) .week-navigation label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
+:where(.module-schedule) .week-navigation input { min-width: 0; width: 135px; min-height: 32px; padding: 4px 6px; border: 1px solid #dce4ef; border-radius: 8px; color: var(--ink); background: white; font: inherit; }
+:where(.module-schedule) .week-navigation :focus-visible { outline: 2px solid var(--navy); outline-offset: 2px; }
+:where(.module-schedule) .week-detail { position: fixed; inset: 0; margin: auto; height: fit-content; }
+:where(.module-schedule) .week-detail { width: min(480px, calc(100vw - 40px)); max-height: 80vh; overflow-y: auto; padding: 24px; border: 1px solid #dce4ef; border-radius: 14px; color: var(--ink); }
+:where(.module-schedule) .week-detail::backdrop { background: rgba(13, 36, 67, .25); }
+:where(.module-schedule) .week-detail h3, :where(.module-schedule) .week-detail p { overflow-wrap: anywhere; white-space: normal; margin: 0 0 16px; }
+:where(.module-schedule) .week-detail button { padding: 7px 12px; margin-right: 8px; border: 1px solid #dce4ef; border-radius: 8px; background: white; color: var(--navy); cursor: pointer; }
+:where(.module-schedule) .week-detail-item { margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid #e4eaf2; }
+:where(.module-schedule) .week-detail-item h4 { margin: 0 0 8px; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+:where(.module-schedule) .week-detail-item p { font-size: 12px; line-height: 1.5; margin-bottom: 6px; }
+:where(.module-schedule) .week-scroll {
+  max-width: 100%;
+  max-height: none;
+  margin-top: 6px;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  border: 1px solid #dce4ef;
+  border-radius: 11px;
+  background: #fff;
+  scrollbar-width: thin;
+}
+:where(.module-schedule) .week-scroll:focus-visible { outline: 1px solid #9aaecb; outline-offset: 1px; }
+:where(.module-schedule) .week-table { min-width: 0; width: 100%; }
+:where(.module-schedule) .week-head, :where(.module-schedule) .week-body { display: grid; grid-template-columns: 40px repeat(7, minmax(0, 1fr)); }
+:where(.module-schedule) .week-head { z-index: 4; min-height: 43px; border-bottom: 1px solid #dce4ef; background: #f7f9fc; }
+:where(.module-schedule) .week-time-head, :where(.module-schedule) .week-day-head { display: flex; align-items: center; justify-content: center; }
+:where(.module-schedule) .week-time-head { color: var(--muted); font-size: 10px; }
+:where(.module-schedule) .week-day-head {
+  min-width: 0;
+  border-left: 1px solid #e4eaf2;
+  flex-direction: column;
+  gap: 1px;
+  color: var(--muted);
+  font-size: 10px;
+}
+:where(.module-schedule) .week-day-head strong { color: var(--ink); font-size: 11px; font-weight: 650; }
+:where(.module-schedule) .week-day-head.is-today { color: var(--navy); background: #eaf1fb; }
+:where(.module-schedule) .week-day-head.is-today strong { color: var(--navy); }
+:where(.module-schedule) .week-body {
+  position: relative;
+  grid-template-rows: repeat(7, 38px);
+  min-height: 0;
+  background-image: linear-gradient(to bottom, transparent calc(100% - 1px), #edf1f6 calc(100% - 1px));
+}
+:where(.module-schedule) .week-day-lane { grid-row: 1 / -1; border-left: 1px solid #e4eaf2; }
+:where(.module-schedule) .week-body[data-slot-count="8"] { grid-template-rows: repeat(8, 38px); }
+:where(.module-schedule) .week-body[data-slot-count="9"] { grid-template-rows: repeat(9, 38px); }
+:where(.module-schedule) .week-body[data-slot-count="10"] { grid-template-rows: repeat(10, 38px); }
+:where(.module-schedule) .week-body[data-slot-count="11"] { grid-template-rows: repeat(11, 38px); }
+:where(.module-schedule) .week-body[data-slot-count="12"] { grid-template-rows: repeat(12, 38px); }
+:where(.module-schedule) .week-day-lane.is-today { background: rgba(232, 240, 251, .5); }
+:where(.module-schedule) .week-time {
+  z-index: 1;
+  grid-column: 1;
+  padding: 5px 6px 0 0;
+  color: #7a899d;
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+:where(.module-schedule) .week-event {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  z-index: 2;
+  min-width: 0;
+  margin: 0;
+  min-height: 0;
+  padding: 3px 5px;
+  overflow: hidden;
+  border: 1px solid #b8cbe4;
+  border-radius: 7px;
+  color: var(--navy);
+  background: #e8f0fb;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  font: inherit;
+  text-align: left;
+}
+:where(.module-schedule) button.week-event { cursor: pointer; }
+:where(.module-schedule) button.week-event:hover { border-color: #86a9d3; background: #dceafa; }
+:where(.module-schedule) .week-event:focus-visible { outline: 2px solid var(--navy); outline-offset: -2px; }
+:where(.module-schedule) .week-event time, :where(.module-schedule) .week-event small { flex: 0 0 auto; max-width: 100%; overflow: hidden; color: #58708f; font-size: 10px; line-height: 12px; text-overflow: ellipsis; white-space: nowrap; }
+:where(.module-schedule) .week-event strong { flex: 0 0 auto; width: 100%; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; font-size: 11px; line-height: 14px; overflow-wrap: anywhere; text-overflow: ellipsis; }
+:where(.module-schedule) .week-event.is-tall strong { -webkit-line-clamp: 2; }
+:where(.module-schedule) .week-event.is-inline { flex-direction: row; align-items: center; gap: 4px; padding: 3px 5px; }
+:where(.module-schedule) .week-event.is-inline time { font-size: 9px; line-height: 14px; }
+:where(.module-schedule) .week-event.is-inline strong { width: 0; flex: 1 1 0; }
+:where(.module-schedule) .week-event.is-group { border-left: 3px solid var(--gold); background: #edf2fa; }
+.module-schedule[data-week-size="mini"] .week-date-label { display: none; }
+.module-schedule[data-week-size="mini"] .week-navigation { gap: 5px; }
+.module-schedule[data-week-size="mini"] .week-navigation button { min-width: 27px; min-height: 28px; padding: 3px 7px; font-size: 11px; }
+.module-schedule[data-week-size="mini"] .week-navigation input { width: 124px; min-height: 28px; font-size: 11px; }
+.module-schedule[data-week-size="mini"] .week-summary { min-height: 23px; gap: 5px; }
+.module-schedule[data-week-size="mini"] .week-summary strong { font-size: 11px; }
+.module-schedule[data-week-size="mini"] .week-summary span { font-size: 10px; white-space: nowrap; }
+:where(.module-schedule) .week-table.is-mini .week-head, :where(.module-schedule) .week-table.is-mini .week-body { grid-template-columns: 0 repeat(7, minmax(0, 1fr)); }
+:where(.module-schedule) .week-table.is-mini .week-time-head, :where(.module-schedule) .week-table.is-mini .week-time { display: none; }
+:where(.module-schedule) .week-table.is-mini .week-head { min-height: 34px; }
+:where(.module-schedule) .week-table.is-mini .week-day-head { font-size: 9px; line-height: 13px; gap: 0; }
+:where(.module-schedule) .week-table.is-mini .week-day-head strong { font-size: 10px; line-height: 13px; }
+:where(.module-schedule) .week-table.is-mini .week-event { left: 1px; right: 1px; padding: 1px 2px; border-radius: 4px; flex-direction: column; align-items: stretch; gap: 0; }
+:where(.module-schedule) .week-table.is-mini .week-event time { font-size: 8px; line-height: 9px; }
+:where(.module-schedule) .week-table.is-mini .week-event strong { width: 100%; flex: 0 0 auto; font-size: 9px; line-height: 10px; -webkit-line-clamp: 1; }
+:where(.module-schedule) .week-table.is-mini .week-event.is-group { border-left-width: 2px; }
+:where(.module-schedule) .week-empty {
+  z-index: 3;
+  grid-column: 2 / -1;
+  grid-row: 1 / -1;
+  place-self: center;
+  padding: 13px 18px;
+  border: 1px solid rgba(214, 223, 235, .9);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .92);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  text-align: center;
+}
+:where(.module-schedule) .week-empty strong { color: var(--ink); font-size: 12px; }
+:where(.module-schedule) .week-empty span { color: var(--muted); font-size: 10.5px; }
+:where(.module-schedule) .week-event-day { position: relative; grid-row: 1 / -1; min-width: 0; }
+:where(.module-schedule) .week-day-head[data-day="0"], :where(.module-schedule) .week-day-lane[data-day="0"], :where(.module-schedule) .week-event-day[data-day="0"] { grid-column: 2; }
+:where(.module-schedule) .week-day-head[data-day="1"], :where(.module-schedule) .week-day-lane[data-day="1"], :where(.module-schedule) .week-event-day[data-day="1"] { grid-column: 3; }
+:where(.module-schedule) .week-day-head[data-day="2"], :where(.module-schedule) .week-day-lane[data-day="2"], :where(.module-schedule) .week-event-day[data-day="2"] { grid-column: 4; }
+:where(.module-schedule) .week-day-head[data-day="3"], :where(.module-schedule) .week-day-lane[data-day="3"], :where(.module-schedule) .week-event-day[data-day="3"] { grid-column: 5; }
+:where(.module-schedule) .week-day-head[data-day="4"], :where(.module-schedule) .week-day-lane[data-day="4"], :where(.module-schedule) .week-event-day[data-day="4"] { grid-column: 6; }
+:where(.module-schedule) .week-day-head[data-day="5"], :where(.module-schedule) .week-day-lane[data-day="5"], :where(.module-schedule) .week-event-day[data-day="5"] { grid-column: 7; }
+:where(.module-schedule) .week-day-head[data-day="6"], :where(.module-schedule) .week-day-lane[data-day="6"], :where(.module-schedule) .week-event-day[data-day="6"] { grid-column: 8; }
+:where(.module-schedule) .week-body [data-slot="0"] { grid-row-start: 1; }
+:where(.module-schedule) .week-body [data-slot="1"] { grid-row-start: 2; }
+:where(.module-schedule) .week-body [data-slot="2"] { grid-row-start: 3; }
+:where(.module-schedule) .week-body [data-slot="3"] { grid-row-start: 4; }
+:where(.module-schedule) .week-body [data-slot="4"] { grid-row-start: 5; }
+:where(.module-schedule) .week-body [data-slot="5"] { grid-row-start: 6; }
+:where(.module-schedule) .week-body [data-slot="6"] { grid-row-start: 7; }
+:where(.module-schedule) .week-body [data-slot="7"] { grid-row-start: 8; }
+:where(.module-schedule) .week-body [data-slot="8"] { grid-row-start: 9; }
+:where(.module-schedule) .week-body [data-slot="9"] { grid-row-start: 10; }
+:where(.module-schedule) .week-body [data-slot="10"] { grid-row-start: 11; }
+:where(.module-schedule) .week-body [data-slot="11"] { grid-row-start: 12; }
+:where(.module-schedule) .week-event[data-span="1"] { grid-row-end: span 1; }
+:where(.module-schedule) .week-event[data-span="2"] { grid-row-end: span 2; }
+:where(.module-schedule) .week-event[data-span="3"] { grid-row-end: span 3; }
+:where(.module-schedule) .week-event[data-span="4"] { grid-row-end: span 4; }
+:where(.module-schedule) .week-event[data-span="5"] { grid-row-end: span 5; }
+:where(.module-schedule) .week-event[data-span="6"] { grid-row-end: span 6; }
+:where(.module-schedule) .week-event[data-span="7"] { grid-row-end: span 7; }
+:where(.module-schedule) .week-event[data-span="8"] { grid-row-end: span 8; }
+:where(.module-schedule) .week-event[data-span="9"] { grid-row-end: span 9; }
+:where(.module-schedule) .week-event[data-span="10"] { grid-row-end: span 10; }
+:where(.module-schedule) .week-event[data-span="11"] { grid-row-end: span 11; }
+:where(.module-schedule) .week-event[data-span="12"] { grid-row-end: span 12; }
+.module-schedule .week-table[aria-busy="true"] .week-body { opacity: .45; }

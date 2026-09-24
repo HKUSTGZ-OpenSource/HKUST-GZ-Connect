@@ -22,6 +22,7 @@
     "test:idle-performance": "electron scripts/idle-performance-baseline.js",
     "test:routing-restart": "node e2e/routing-restart.electron.js",
     "test:renderer-layout": "electron e2e/resource-manager-layout.electron.js",
+    "test:renderer-asar": "node e2e/renderer-module-asar.js",
     "test:control-shell-layout": "electron e2e/control-shell-layout.electron.js",
     "test:workspace-layout": "electron e2e/campus-workspace-layout.electron.js",
     "test:main-integration": "electron e2e/main-integration.electron.js",
@@ -46,6 +47,7 @@
     "pretest:windows": "npm run build:windows-private-file"
   },
   "devDependencies": {
+    "acorn": "8.18.0",
     "@electron/asar": "^3.4.1",
     "electron": "^43.2.0",
     "electron-builder": "^26.15.3"
