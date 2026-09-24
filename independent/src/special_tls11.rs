@@ -8,7 +8,6 @@ use hmac::{Hmac, Mac};
 use md5::Md5;
 use rand::RngCore;
 use rand::rngs::OsRng;
-use rc4::cipher::consts::U16;
 use rc4::{KeyInit, Rc4, StreamCipher};
 use rsa::pkcs8::DecodePublicKey;
 use rsa::{Pkcs1v15Encrypt, RsaPublicKey};
@@ -36,7 +35,6 @@ const TLS_RECORD_HEADER_LEN: usize = 5;
 
 type HmacMd5 = Hmac<Md5>;
 type HmacSha1 = Hmac<Sha1>;
-type Rc4_128 = Rc4<U16>;
 
 struct ServerFlight {
     transcript: Zeroizing<Vec<u8>>,
@@ -46,7 +44,7 @@ struct ServerFlight {
 
 struct RecordCipher {
     mac_key: Zeroizing<[u8; SHA1_MAC_LEN]>,
-    cipher: Rc4_128,
+    cipher: Rc4,
     sequence: u64,
 }
 
@@ -64,9 +62,10 @@ enum HeartbeatMessage<'a> {
 }
 
 impl RecordCipher {
-    fn new(mac_key: [u8; SHA1_MAC_LEN], mut key: [u8; 16]) -> Self {
-        let cipher = Rc4_128::new((&key).into());
-        key.zeroize();
+    fn new(mac_key: [u8; SHA1_MAC_LEN], key: [u8; 16]) -> Self {
+        let key = Zeroizing::new(key);
+        let cipher = Rc4::new_from_slice(key.as_ref())
+            .expect("the fixed 16-byte TLS RC4 key is always supported");
         Self {
             mac_key: Zeroizing::new(mac_key),
             cipher,
@@ -827,6 +826,23 @@ mod tests {
         assert_eq!(
             writer.writes,
             vec![TLS_RECORD_HEADER_LEN + 19, TLS_RECORD_HEADER_LEN + 300]
+        );
+    }
+
+    #[test]
+    fn legacy_rc4_128_matches_published_keystream_vector() {
+        // RFC 6229, section 2, 128-bit key at offsets 0 and 16. This protects
+        // the vendor-compatibility adapter from a silent cipher migration.
+        let key = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let mut cipher = Rc4::new_from_slice(&key).expect("a 16-byte RC4 key is supported");
+        let mut output = [0_u8; 32];
+        cipher.apply_keystream(&mut output);
+        assert_eq!(
+            hex::encode(output),
+            concat!(
+                "9ac7cc9a609d1ef7b2932899cde41b97",
+                "5248c4959014126a6e8a84f11d1a9e1c"
+            )
         );
     }
 

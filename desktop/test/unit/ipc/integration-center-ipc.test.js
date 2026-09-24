@@ -15,7 +15,7 @@ function fixture(overrides = {}) {
     list: () => [{ adapterId: 'clash_mihomo_yaml' }],
     prepare: async (value) => { calls.push(['prepare', value]); return { confirmationHandle: 'export-1' }; },
     confirm: async (value) => { calls.push(['confirm', value]); return { ok: true }; },
-    cancel: () => { calls.push(['cancel']); return true; },
+    cancel: (...args) => { calls.push(['cancel', ...args]); return true; },
     ...overrides,
   };
   registerIntegrationCenterIpc({
@@ -50,6 +50,29 @@ test('IPC registers four exact channels and accepts only closed adapter action h
     confirmationHandle: 'export-1',
   })).ok, true);
   assert.deepEqual(f.handlers.get('cancel-integration')(), { ok: true, cancelled: true });
+});
+
+test('optional cancellation handle is validated without falling back to global cancellation',()=>{
+  const f=fixture();
+  for(const value of [null,{},[],{confirmationHandle:''},{confirmationHandle:'x'.repeat(65)},
+    {confirmationHandle:'valid',targetFile:'/forbidden'}, {confirmationHandle:undefined}]) {
+    assert.deepEqual(f.handlers.get('cancel-integration')({},value),{ok:false,code:'INTEGRATION_EXPORT_FAILED'});
+  }
+  assert.deepEqual(f.calls,[]);
+  assert.deepEqual(f.handlers.get('cancel-integration')({},{confirmationHandle:'export-123'}),
+    {ok:true,cancelled:true});
+  assert.deepEqual(f.calls,[['cancel','export-123']]);
+  assert.deepEqual(f.handlers.get('cancel-integration')(),{ok:true,cancelled:true});
+  assert.deepEqual(f.calls.at(-1),['cancel']);
+});
+
+test('scoped cancellation returns no sensitive error details and exposes nonmatching no-op',()=>{
+  const failed=fixture({cancel:()=>{throw new Error('synthetic private target');}});
+  assert.deepEqual(failed.handlers.get('cancel-integration')({},{confirmationHandle:'export-123'}),
+    {ok:false,code:'INTEGRATION_EXPORT_FAILED'});
+  const absent=fixture({cancel:()=>false});
+  assert.deepEqual(absent.handlers.get('cancel-integration')({},{confirmationHandle:'export-123'}),
+    {ok:true,cancelled:false});
 });
 
 test('errors collapse to stable value-free codes and never return paths or payloads', async () => {

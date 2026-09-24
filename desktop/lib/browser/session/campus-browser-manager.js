@@ -1,10 +1,32 @@
 'use strict';
 
-const { BLANK_CAMPUS_HOME, CampusBrowser } = require('./campus-browser');
-const { ROUTE_CAMPUS, ROUTE_DIRECT } = require('../../routing/policy/campus-route');
+const { BLANK_CAMPUS_HOME, CampusBrowser, normalizeCampusUrl } = require('./campus-browser');
+const { ROUTE_CAMPUS, ROUTE_DIRECT, routeForUrl } = require('../../routing/policy/campus-route');
 const { CampusCredentialVault } = require('../credentials/campus-credential-vault');
-const { normalizeOpenRequest } = require('../resources/campus-open-policy');
 const { CampusWorkspaceController } = require('../workspace/campus-workspace-controller');
+
+function normalizeOpenRequest(input, t, fallback) {
+  const source = input && typeof input === 'object' ? input : { url: input };
+  const url = normalizeCampusUrl(source.url, fallback, t);
+  const route = url === BLANK_CAMPUS_HOME
+    ? ROUTE_DIRECT
+    : [ROUTE_CAMPUS, ROUTE_DIRECT].includes(source.route)
+    ? source.route
+    : routeForUrl(url);
+  let displayName = '';
+  if (source.displayName != null) {
+    if (typeof source.displayName !== 'string' || !source.displayName.trim() ||
+        source.displayName.trim().length > 96 || /[\u0000-\u001f\u007f<>]/u.test(source.displayName)) {
+      throw new TypeError('Campus Browser display name is invalid');
+    }
+    displayName = source.displayName.trim();
+  }
+  return displayName ? { url, route, displayName } : { url, route };
+}
+
+function requiresCampusTunnel(route) {
+  return route !== ROUTE_DIRECT;
+}
 
 function browserProfilePresentation(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
@@ -259,6 +281,7 @@ class CampusBrowserManager {
 
   close() {
     const browser = this.browser;
+    browser?.downloadController?.retire();
     this.browser = null;
     this.lastPortalSessionUrl = '';
     return browser?.close() ?? null;
@@ -291,8 +314,11 @@ class CampusBrowserManager {
     if (!browser) { this.lastPortalSessionUrl = ''; return true; }
     if (typeof browser.closeForContextSwitch !== 'function') return false;
     if (await browser.closeForContextSwitch() !== true) return false;
-    if (this.browser === browser) this.browser = null;
-    this.lastPortalSessionUrl = '';
+    browser.downloadController?.retire();
+    if (this.browser === browser) {
+      this.browser = null;
+      this.lastPortalSessionUrl = '';
+    }
     return this.browser === null;
   }
 
@@ -320,4 +346,4 @@ class CampusBrowserManager {
   }
 }
 
-module.exports = { CampusBrowserManager, browserProfilePresentation, officialPortalHomeUrl };
+module.exports = { CampusBrowserManager, browserProfilePresentation, officialPortalHomeUrl, normalizeOpenRequest, requiresCampusTunnel };

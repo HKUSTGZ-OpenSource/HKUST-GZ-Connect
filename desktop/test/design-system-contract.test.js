@@ -40,8 +40,9 @@ test('control panel and Campus Browser share one bounded design-token vocabulary
     const surfaceAt = html.indexOf(html === controlHtml ? 'styles.css' : 'campus-browser.css');
     assert.ok(tokensAt > 0 && tokensAt < surfaceAt, 'design tokens must load before surface CSS');
   }
-  assert.equal((controlHtml.match(/<link rel="stylesheet"/gu) || []).length, 3,
-    'the control window must load tokens, its shell, and the shared card-board component only');
+  assert.deepEqual([...controlHtml.matchAll(/<link rel="stylesheet" href="([^"]+)"/gu)].map(match => match[1]),
+    ['design-tokens.css', 'styles.css', 'features/campus-data/view.css', 'components/card-board/card-board.css'],
+    'load tokens, shared shell, owned calendar presentation and shared card-board in order');
   assert.ok(controlHtml.indexOf('styles.css') < controlHtml.indexOf('components/card-board/card-board.css'),
     'component CSS must be layered after the canonical shell surface');
   assert.doesNotMatch(controlHtml, /styles\/(?:connection-strip|product-shell)\.css/u);

@@ -62,7 +62,7 @@ libc = "0.2"
 md-5 = "0.10"
 object = { version = "0.37", default-features = false, features = ["read_core", "elf", "macho", "pe"] }
 rand = "0.8"
-rc4 = { version = "0.1", features = ["zeroize"] }
+rc4 = { version = "0.2", features = ["zeroize"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "cookies", "rustls-tls"] }
 roxmltree = "0.20"
 rsa = "0.9"
