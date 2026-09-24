@@ -1,9 +1,9 @@
 # Interactive-auth Renderer boundary
 
-- Status: Proposed structural review candidate; not merged, installed or released
+- Status: Structural review candidate based on merged #116; not installed or released
 - Owner: Desktop / authentication UI maintainers
-- Last verified: 2026-09-11
-- Applies to: M1, stacked after localization ownership PR #116
+- Last verified locally: 2026-09-25
+- Applies to: M1 after merged localization ownership PR #116
 
 ## Public ownership
 
@@ -79,3 +79,11 @@ dependency installation. Existing caches were reused and the temporary dependenc
 Windows/Linux native acceptance, installers and real-campus/MFA tests were not rerun on this tree;
 earlier results remain historical. No real password, OTP or school response was used. No installed
 app, user data, settings, release, Organization transfer or protection change occurred.
+
+## Current-main synchronization — 2026-09-25
+
+The merged #116 tree and its local parent tree were byte-identical, so the squash-history merge
+preserved this candidate's exact source tree. On the current tree, the local Node 25 auth/boundary
+tests, full Node suite, architecture/install-script/syntax/secret gates, synthetic bilingual native
+ASAR and control-shell layout passed. No real Gateway MFA, installed application or user account
+was exercised. Fresh platform CI remains a separate gate on the final PR head.
