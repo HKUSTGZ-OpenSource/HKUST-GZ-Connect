@@ -488,6 +488,7 @@ fn authentication_error_code(error: &ProviderError) -> EngineErrorCode {
         }
         ProviderError::Failed(error) => match error.kind() {
             ErrorKind::AuthenticationRejected => EngineErrorCode::AuthRejected,
+            ErrorKind::GatewayPreloginUnavailable => EngineErrorCode::GatewayPreloginUnavailable,
             ErrorKind::AuthenticationIndeterminate
             | ErrorKind::GatewayHttp
             | ErrorKind::GatewayHttpIndeterminate => EngineErrorCode::AuthIndeterminate,
@@ -499,6 +500,14 @@ fn authentication_error_code(error: &ProviderError) -> EngineErrorCode {
             ErrorKind::UnsupportedCapability => EngineErrorCode::UnsupportedAuthentication,
             _ => EngineErrorCode::AuthIndeterminate,
         },
+        _ => EngineErrorCode::AuthIndeterminate,
+    }
+}
+
+fn gateway_connector_error_code(error: &Error) -> EngineErrorCode {
+    match error.kind() {
+        ErrorKind::Configuration => EngineErrorCode::ConfigurationInvalid,
+        ErrorKind::GatewayHttp => EngineErrorCode::GatewayPreloginUnavailable,
         _ => EngineErrorCode::AuthIndeterminate,
     }
 }
@@ -1073,12 +1082,11 @@ async fn run_engine<W: Write>(
                 }
             })
             .map_err(|error| {
-                let code = if error.kind() == ErrorKind::Configuration {
-                    EngineErrorCode::ConfigurationInvalid
-                } else {
-                    EngineErrorCode::AuthIndeterminate
-                };
-                failure(code, StopReason::StartupFailed, error)
+                failure(
+                    gateway_connector_error_code(&error),
+                    StopReason::StartupFailed,
+                    error,
+                )
             })?,
         ))
     } else {
@@ -2420,6 +2428,10 @@ mod tests {
                 EngineErrorCode::AuthIndeterminate,
             ),
             (
+                ErrorKind::GatewayPreloginUnavailable,
+                EngineErrorCode::GatewayPreloginUnavailable,
+            ),
+            (
                 ErrorKind::AuthenticationProtocolInvalid,
                 EngineErrorCode::AuthProtocolInvalid,
             ),
@@ -2480,6 +2492,24 @@ mod tests {
         assert_eq!(
             failure.secondary_code,
             Some(EngineErrorCode::AuthCleanupUnconfirmed)
+        );
+    }
+
+    #[test]
+    fn gateway_resolution_failure_is_retryable_only_before_authentication() {
+        assert_eq!(
+            gateway_connector_error_code(&Error::classified(
+                ErrorKind::GatewayHttp,
+                "synthetic DNS failure",
+            )),
+            EngineErrorCode::GatewayPreloginUnavailable,
+        );
+        assert_eq!(
+            gateway_connector_error_code(&Error::classified(
+                ErrorKind::Configuration,
+                "synthetic policy failure",
+            )),
+            EngineErrorCode::ConfigurationInvalid,
         );
     }
 }
