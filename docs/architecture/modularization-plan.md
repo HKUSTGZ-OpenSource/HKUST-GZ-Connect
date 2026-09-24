@@ -42,6 +42,34 @@ Primary concurrency hot spots:
 
 ## Wave M1 — Renderer dependency authority
 
+The proposed [feature host](renderer-feature-host.md) now covers campus-data, official-favorites and interactive-auth
+through separate lifecycle review units. Remaining owners require reviewed start/dispose contracts;
+the catalog must not silently wrap missing cleanup with a no-op.
+
+The merged [campus-data boundary](campus-data-module.md) and
+[official favorites boundary](official-favorites-module.md) establish the first two explicit
+native entrypoints. Their acceptance does not complete the registry, global-export enforcement,
+localization or release gates below.
+
+The merged #110 [static Renderer policy](renderer-boundaries.md) adds frozen-export and
+public-entrypoint checks to the architecture command. It is not the runtime lifecycle registry
+or a substitute for behavior and security review.
+
+The proposed [localization boundary](renderer-localization.md) splits the two control/chrome
+locale dictionaries into domain owners with duplicate and missing-key tests. Its temporary
+compatibility facade does not complete the removal of legacy HTML-order coupling.
+
+The proposed [interactive-auth boundary](renderer-auth-challenge.md) establishes an injected native
+controller behind a transitional startup facade. The separately proposed
+[auth lifecycle unit](renderer-auth-challenge-lifecycle.md) removes that facade, owns teardown and
+async isolation, and explicitly mounts through the host. Neither unit is merged or released yet.
+
+The proposed [Integration Center boundary](renderer-integration-center.md) separates its redacted
+display model and injected controller. Its legacy initializer and cancellation/async lifetime
+remain outside the host until a separate behavior unit establishes complete ownership.
+The proposed [Main export-intent repair](integration-export-intents.md) supplies a necessary
+effect-boundary prerequisite; it does not substitute for Renderer teardown or native Windows acceptance.
+
 1. Add an explicit Renderer bootstrap and a checked feature registry.
 2. Freeze the list of existing `window.*` feature exports; CI rejects new ones.
 3. Give each feature one public entrypoint with injected dependencies.

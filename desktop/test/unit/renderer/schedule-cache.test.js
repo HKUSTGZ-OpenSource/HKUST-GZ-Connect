@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { create } = require('../../../renderer/campus-data-modules');
+const { create } = require('../../../renderer/features/campus-data/index.mjs');
 const deferred = () => { let resolve, reject; const promise = new Promise((a,b) => { resolve=a; reject=b; }); return {promise,resolve,reject}; };
 const value = (state='ready') => ({sessionState:'authenticated',modules:{schedule:{state,source:'myportal-calendar',fetchedAt:Date.now(),items:state==='ready'?[{title:'Fixture',startsAt:Date.now(),endsAt:Date.now()+3600000}]:[]}}});
 function harness() {
@@ -130,4 +130,14 @@ test('explicit full revalidation fences older week success and denial', async ()
       assert.equal(h.button.disabled,false);
     } finally {h.feature.clearDisplay();}
   }
+});
+
+test('a full-load denial still replaces visible personal data after advancing its authorization epoch',async()=>{
+  const h=harness();try {
+    await h.feature.load();const general=h.deferLoad();const work=h.feature.load(true);
+    general.resolve(value('session-expired'));await work;
+    assert.equal(h.feature.snapshot().modules.schedule.state,'session-expired');
+    assert.match(h.body.innerHTML,/workspace.portalExpired/);
+    assert.doesNotMatch(h.body.innerHTML,/data-schedule-index/);
+  } finally {h.feature.clearDisplay();}
 });

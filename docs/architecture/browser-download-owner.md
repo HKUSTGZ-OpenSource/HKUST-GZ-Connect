@@ -1,9 +1,9 @@
 # Browser download ownership seam
 
-- Status: Proposed structural seam; checkpoint evidence, not a behavior fix or release
+- Status: Structural review candidate preserving merged #126; not a release
 - Owner: Desktop / Browser maintainers, issue #80
-- Last verified: 2026-09-11
-- Base: `main@39850415c901aeaa77ecb86cd3ce49a2e75290a8` (published 2.0.2)
+- Last verified locally: 2026-09-25
+- Base: `main@e88f351` after the Renderer/integration chain
 
 ## Scope
 
@@ -104,5 +104,9 @@ Current main contains #126, so the isolated Browser download owner carries its n
 algorithm without changing behavior. The merge conflict was resolved by delegating synchronously
 from CampusBrowser and moving the already-reviewed #126 handler into this owner. Focused Node 25
 download-controller and campus-browser tests pass (59/59), including a fast completion before
-`will-download` returns; native platform checks and the complete suite remain to be rerun on the
-final head. The earlier table remains historical evidence for its listed revision only.
+`will-download` returns. After syncing the full Renderer/integration main, the complete Node suite,
+architecture/install-script/syntax (529 tracked files)/secret gates, native Browser toolbar and
+20-tab synthetic performance/soak fixture passed locally; tab-switch p95 was 2.2 ms versus the
+250 ms offline disaster guard. The dedicated native DownloadItem lifecycle fixture belongs to
+#113; Windows/Linux platform and package checks remain separate CI gates for this PR. The earlier
+table remains historical evidence for its listed revision only.

@@ -1,4 +1,5 @@
-'use strict';
+import { createRendererFeatures } from './features/feature-host/index.mjs';
+const rendererFeatures = createRendererFeatures({ target: window });
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // Active UI language. Chinese until get-state reports the real system locale.
@@ -23,7 +24,7 @@ let loginPending = false;
 let usabilityFeature = null, serviceWorkspace = null, groupDialogFeature = null, favoriteDialogFeature = null, campusDataFeature = null;
 let proxyAuthFeature = null, browserNewTabSettings = null;
 let addWebsiteFeature = null;
-
+['auth-challenge', 'integration-center'].forEach(id => rendererFeatures.mount(id, { api: window.api, document, i18n: window.I18N, target: window }));
 function activeLoginProfileId() {
   return window.schoolProfileSelectorFeature?.credentialProfileId?.() || null;
 }
@@ -510,13 +511,12 @@ groupDialogFeature = window.categoryGroupDialog.start({
   onChanged: (groups) => { const known = new Set(resourceGroups.map(({ id }) => id)); resourceGroups = groups; renderResources(); const created = groups.find(({ id }) => !known.has(id)); if (created) requestAnimationFrame(() => window.campusCategoryStacks.focusCard('user-collection', created.id)); },
   toast: (message, tone) => usabilityFeature?.toast(message, tone),
 });
-favoriteDialogFeature = window.officialFavoriteDialog.create({
+favoriteDialogFeature = rendererFeatures.mount('official-favorites', {
   api: window.api, document, translate: (key, vars) => t(key, vars), getResources: () => campusResources, getGroups: () => resourceGroups,
   setResources: (resources) => { campusResources = resources; renderResources(); }, setGroups: (groups) => { resourceGroups = groups; renderResources(); },
   onSaved: ({ groupId }) => { serviceWorkspace?.setTab('personal', { focus: false }); requestAnimationFrame(() => window.campusCategoryStacks.focusCard(groupId ? 'user-collection' : 'system-widget', groupId || 'ungrouped-favorites')); },
   toast: (message, tone) => usabilityFeature?.toast(message, tone),
 });
-favoriteDialogFeature.start();
 serviceWorkspace = window.campusServiceWorkspace.create({
   document,
   translate: (key, vars) => t(key, vars),
@@ -532,7 +532,7 @@ serviceWorkspace = window.campusServiceWorkspace.create({
   focusPersonalCard: (groupId) => window.campusCategoryStacks.focusCard('user-collection', groupId),
 });
 serviceWorkspace.start();
-campusDataFeature = window.campusDataModules.create({
+campusDataFeature = rendererFeatures.mount('campus-data', {
   document,
   api: window.api,
   translate: (key, vars) => t(key, vars),
@@ -550,7 +550,6 @@ campusDataFeature = window.campusDataModules.create({
     serviceWorkspace?.render();
   },
 });
-campusDataFeature.start();
 window.campusCategoryStacks.start({
   document,
   onAddSite: () => addWebsiteFeature.open(),
