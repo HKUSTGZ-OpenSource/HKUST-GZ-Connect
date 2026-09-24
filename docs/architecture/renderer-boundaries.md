@@ -1,8 +1,8 @@
 # Renderer static boundary policy
 
-- Status: Proposed review candidate; not merged to main or executed in remote CI
+- Status: Review candidate based on merged PR #109; exact current-head CI is tracked in PR #110
 - Owner: Architecture and Desktop maintainers; policy changes require independent review
-- Last verified: 2026-09-11
+- Last verified locally: 2026-09-25
 - Applies to: Renderer JavaScript, the two explicitly shared browser helpers and static Renderer HTML
 
 ## Enforcement
@@ -56,6 +56,6 @@ Use injected bounded APIs rather than reintroducing globals. Update public-expor
 as an intentional reviewed contract change. Run the architecture command plus
 `node --test test/unit/renderer/renderer-boundary-gate.test.js` from `desktop/`.
 
-This contribution depends on PR #109 and remains independently reviewable from the runtime
+This contribution builds on merged PR #109 and remains independently reviewable from the runtime
 extractions. Reverting the policy commit removes enforcement and the dev-only parser dependency;
 it must not undo the parent's application fixes or saved user data.
