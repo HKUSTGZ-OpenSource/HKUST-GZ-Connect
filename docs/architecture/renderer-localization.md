@@ -1,9 +1,9 @@
 # Renderer localization ownership
 
-- Status: Proposed review candidate; not merged or installed
+- Status: Review candidate based on merged PR #115; not installed or released
 - Owner: Desktop / Renderer maintainers
-- Last verified: 2026-09-11
-- Applies to: M1 Renderer localization extraction, stacked after official-favorites lifecycle
+- Last verified locally: 2026-09-25
+- Applies to: M1 Renderer localization extraction after merged official-favorites lifecycle
 
 ## Contract
 
@@ -98,3 +98,12 @@ Windows/Linux native, installers, long soak and real-school/MFA tests were not r
 Desktop lib, Rust, workflows, manifest and lockfile match the parent. No installed app, user settings,
 repository protections or Organization ownership changed. The legacy translation facade/deferred
 loading contract still needs independent review and later retirement; full M1 completion is not claimed.
+
+## Current-main synchronization — 2026-09-25
+
+The published #115 tree and the local parent tree were byte-identical. Merging its squash history
+preserved the exact localization candidate source tree. On this tree, local Node 25 locale/source
+policy and Renderer tests passed (64/64), as did the full Node suite, architecture/syntax/secret
+gates, bilingual native ASAR startup and retirement, control-shell layout and browser toolbar.
+The toolbar's invalid-port request is synthetic. No installer, live-school account or deployed app
+was exercised. Fresh platform CI remains a separate gate on the final PR head.
