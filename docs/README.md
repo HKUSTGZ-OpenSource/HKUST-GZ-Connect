@@ -66,7 +66,8 @@ durable contract. Release receipts may use exact tags, commits, workflow runs an
 
 - Current implementation: `2.0-status.md`
 - Product definition: `product/2.0-product-definition.md`
-- Proposed machine-readable module ownership: `architecture/module-map.yml`
+- Machine-readable module ownership (path/entrypoint subset enforced): `architecture/module-map.yml`
+- Module-map coverage scope and limits: [schema 2 contract](architecture/module-map-enforcement.md)
 - Modularization plan: `architecture/modularization-plan.md`
 - Collaboration model: `governance/collaboration-model.md`
 - Main protection: `governance/main-branch-protection.md`

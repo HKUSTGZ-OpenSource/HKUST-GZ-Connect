@@ -1,8 +1,9 @@
-schemaVersion: 1
+schemaVersion: 2
 status: proposed
 owner: maintainers
-lastVerified: 2026-09-04
-enforcement: inventory-only until G2 path and dependency validation lands
+lastVerified: 2026-09-25
+enforcement: path-coverage-and-entrypoint-ownership
+dependencyEnforcement: inventory-only
 
 modules:
   - id: desktop-app
@@ -31,6 +32,24 @@ modules:
     allowedDependencies: [desktop-profiles, desktop-platform, desktop-diagnostics]
     risk: high
     requiredChecks: [desktop, desktop-electron, engine, architecture]
+
+  - id: desktop-ipc
+    paths: [desktop/lib/ipc/**]
+    publicEntrypoints:
+      - desktop/lib/ipc/control-ipc-suite.js
+      - desktop/lib/ipc/integration-center-suite.js
+      - desktop/lib/ipc/school-profile-onboarding-ipc.js
+      - desktop/lib/ipc/school-profile-switch-ipc.js
+    allowedDependencies: [desktop-connection, desktop-browser, desktop-persistence, desktop-profiles, desktop-resources, desktop-routing, desktop-integrations, desktop-platform, desktop-diagnostics]
+    risk: critical
+    requiredChecks: [desktop, architecture, secret-scan]
+
+  - id: desktop-assets
+    paths: [desktop/assets/**]
+    publicEntrypoints: [desktop/assets/profiles/manifest.json]
+    allowedDependencies: []
+    risk: high
+    requiredChecks: [desktop, package-verifier, secret-scan]
 
   - id: desktop-browser
     paths:
@@ -131,11 +150,45 @@ modules:
     requiredChecks: [engine, offline-tests, package-verifier, secret-scan]
 
   - id: engine-protocol
-    paths: [independent/spec/**, independent/src/auth.rs, independent/src/config.rs]
+    paths:
+      - independent/spec/**
+      - independent/config/**
+      - independent/src/auth.rs
+      - independent/src/config.rs
+      - independent/src/credentials.rs
+      - independent/src/lib.rs
+      - independent/src/resource_catalogue.rs
+      - independent/src/xml.rs
     publicEntrypoints: [independent/src/lib.rs]
     allowedDependencies: []
     risk: high
     requiredChecks: [engine, offline-tests]
+
+  - id: engine-helpers
+    paths:
+      - independent/src/bin/ec-proxy-command.rs
+      - independent/src/bin/ec-gateway-probe.rs
+      - independent/src/gateway_probe.rs
+    publicEntrypoints:
+      - independent/src/bin/ec-proxy-command.rs
+      - independent/src/bin/ec-gateway-probe.rs
+    allowedDependencies: [engine-protocol, engine-production]
+    risk: critical
+    requiredChecks: [engine, offline-tests, package-verifier, secret-scan]
+
+  - id: engine-test-support
+    paths: [independent/src/bin/ec-auth-fixture.rs]
+    publicEntrypoints: [independent/src/bin/ec-auth-fixture.rs]
+    allowedDependencies: [engine-protocol, engine-production]
+    risk: restricted-evidence
+    requiredChecks: [engine, offline-tests, package-verifier]
+
+  - id: desktop-cli
+    paths: [hkustgzconnect, tools/mac-cli/**]
+    publicEntrypoints: [hkustgzconnect]
+    allowedDependencies: [engine-production, engine-protocol]
+    risk: high
+    requiredChecks: [desktop, offline-tests, secret-scan]
 
   - id: compatibility-lab
     paths:
@@ -144,6 +197,7 @@ modules:
       - independent/src/adapter.rs
       - independent/src/protocol_map.rs
       - independent/src/binary_watch.rs
+      - independent/src/tunnel.rs
       - independent/src/bin/ec-watch.rs
       - independent/src/bin/ec-probe.rs
       - independent/src/bin/ec-adapter-check.rs

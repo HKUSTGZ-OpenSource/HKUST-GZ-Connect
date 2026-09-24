@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const { moduleCoverage, moduleMapErrors } = require('../../desktop/scripts/module-map-coverage');
 
 const MAX_TRACKED_FILE_BYTES = 5 * 1024 * 1024;
 const ROOT_TEST_DEBT_CAP = 0;
@@ -78,20 +79,6 @@ function actionPinErrors(source, workflow) {
   }
   if (/\bpull_request_target\s*:/u.test(source)) {
     errors.push(`${workflow} uses forbidden pull_request_target`);
-  }
-  return errors;
-}
-
-function moduleMapErrors(source) {
-  const ids = [...String(source).matchAll(/^  - id:\s*([a-z0-9-]+)\s*$/gmu)]
-    .map((match) => match[1]);
-  const errors = [];
-  if (ids.length < 10) errors.push(`module map has only ${ids.length} modules`);
-  const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
-  for (const id of [...new Set(duplicates)]) errors.push(`duplicate module id: ${id}`);
-  for (const field of ['paths:', 'publicEntrypoints:', 'allowedDependencies:', 'risk:', 'requiredChecks:']) {
-    const count = String(source).split(field).length - 1;
-    if (count < ids.length) errors.push(`module map is missing ${field} for one or more modules`);
   }
   return errors;
 }
@@ -189,7 +176,7 @@ function governanceErrors(repositoryRoot) {
   }
 
   const moduleMap = path.join(repositoryRoot, 'docs', 'architecture', 'module-map.yml');
-  if (fs.existsSync(moduleMap)) errors.push(...moduleMapErrors(fs.readFileSync(moduleMap, 'utf8')));
+  if (fs.existsSync(moduleMap)) errors.push(...moduleCoverage(fs.readFileSync(moduleMap, 'utf8'), tracked).errors);
   errors.push(...markdownLinkErrors(repositoryRoot, tracked));
 
   return errors.sort();
