@@ -2,6 +2,11 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { checkRendererBoundaries } = require('./renderer-boundaries');
+const RENDERER_SHARED_SOURCES = Object.freeze([
+  'lib/browser/auth/login-flow.js',
+  'lib/resources/presentation/resource-view.js',
+]);
 
 // These are growth caps, not target sizes. They make the current debt explicit
 // and prevent another feature from enlarging either God Module while the code
@@ -23,7 +28,7 @@ const BASELINE = Object.freeze({
   // service-desk hand-off. Further feature work must extract responsibilities
   // instead of growing Main again.
   mainLines: 1720,
-  rendererLines: 564,
+  rendererLines: 562,
   // Production-only fan-in. Test, E2E, build and maintenance imports are
   // reported separately and must not make the runtime graph look denser.
   libMaxFanIn: 33,
@@ -73,7 +78,7 @@ function collectJavaScriptFiles(root) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       if (entry.isDirectory()) {
         if (!SKIPPED_DIRECTORIES.has(entry.name)) visit(path.join(directory, entry.name));
-      } else if (entry.isFile() && entry.name.endsWith('.js')) {
+      } else if (entry.isFile() && /\.(?:js|mjs)$/u.test(entry.name)) {
         files.push(path.resolve(directory, entry.name));
       }
     }
@@ -112,7 +117,8 @@ function edgeCountForSources(graph, sources) {
 }
 
 function relativeRequires(source) {
-  return [...String(source).matchAll(/require\(\s*['"]([^'"]+)['"]\s*\)/g)]
+  return [...String(source).matchAll(/(?:require|import)\(\s*['"]([^'"]+)['"]\s*\)/g),
+    ...String(source).matchAll(/^\s*(?:import|export)\s+(?:[^'";]*?\s+from\s*)?['"]([^'"]+)['"]/gm)]
     .map((match) => match[1])
     .filter((specifier) => specifier.startsWith('.'));
 }
@@ -351,10 +357,7 @@ function domainDependencyErrors(graph, root) {
 function dependencyLayerErrors(graph, root) {
   const errors = [];
   const relative = (file) => path.relative(root, file).replaceAll(path.sep, '/');
-  const browserShared = new Set([
-    'lib/browser/auth/login-flow.js',
-    'lib/resources/presentation/resource-view.js',
-  ]);
+  const browserShared = new Set(RENDERER_SHARED_SOURCES);
   for (const [source, dependencies] of graph) {
     const sourcePath = relative(source);
     const productionSource = sourcePath === 'main.js' || sourcePath === 'preload.js' ||
@@ -408,6 +411,7 @@ function architectureSnapshot(root = path.resolve(__dirname, '..')) {
     testCycles: findCycles(testGraph),
     supportCycles: findCycles(supportGraph),
     unresolvedRequireErrors: unresolvedRelativeRequireErrors(files, root),
+    rendererBoundaryErrors: checkRendererBoundaries(root, files, RENDERER_SHARED_SOURCES),
     layerErrors: dependencyLayerErrors(graph, root),
     domainLayerErrors: domainDependencyErrors(graph, root),
     rootLibraryDebtErrors: rootLibraryDebtErrors(rootFiles, rootDebt),
@@ -444,6 +448,7 @@ function architectureErrors(snapshot) {
     errors.push(`support CommonJS cycles: ${snapshot.supportCycles.length}`);
   }
   errors.push(...(snapshot.unresolvedRequireErrors || []));
+  errors.push(...(snapshot.rendererBoundaryErrors || []));
   errors.push(...(snapshot.layerErrors || []));
   errors.push(...(snapshot.domainLayerErrors || []));
   errors.push(...(snapshot.rootLibraryDebtErrors || []));
@@ -490,6 +495,7 @@ function run() {
 if (require.main === module) run();
 
 module.exports = {
+  RENDERER_SHARED_SOURCES,
   BASELINE,
   architectureErrors,
   architectureSnapshot,

@@ -20,6 +20,7 @@ const PROPAGATED_ERROR_CODES = new Set([
   'INTEGRATION_EXPORT_FAILED',
   'INTEGRATION_ROLLBACK_INCOMPLETE',
   'INTEGRATION_TARGET_CHANGED',
+  'INTEGRATION_PROFILE_STALE',
 ]);
 
 class GenericExportError extends Error {
@@ -192,8 +193,9 @@ class GenericExportTransactionOwner {
     }
   }
 
-  cancel() {
+  cancel(confirmationHandle) {
     if (!this.#record) return false;
+    if (confirmationHandle !== undefined && confirmationHandle !== this.#record.confirmationHandle) return false;
     this.#record.payload.fill(0);
     this.#record = null;
     return true;

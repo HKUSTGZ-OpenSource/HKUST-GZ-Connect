@@ -69,7 +69,7 @@ test('copy confirms once and returns no generated payload to its caller', async 
   });
   const result = await f.coordinator.confirm({
     confirmationHandle: preview.confirmationHandle,
-    currentBinding: current,
+    assertCurrent: () => {}, currentBinding: current,
   });
   assert.deepEqual(result, { ok: true, adapterId: 'clash_mihomo_yaml', action: 'copy' });
   assert.equal(Object.hasOwn(result, 'payload'), false);
@@ -89,7 +89,7 @@ test('pre-export side effects run only after binding revalidation', async (t) =>
   });
   await assert.rejects(f.coordinator.confirm({
     confirmationHandle: preview.confirmationHandle,
-    currentBinding: binding('clash_mihomo_yaml', { activeContextEpoch: 2 }),
+    assertCurrent: () => {}, currentBinding: binding('clash_mihomo_yaml', { activeContextEpoch: 2 }),
   }), { code: 'INTEGRATION_PROFILE_STALE' });
   assert.deepEqual(effects, []);
 
@@ -98,7 +98,7 @@ test('pre-export side effects run only after binding revalidation', async (t) =>
     networkRules: rules, port: 6180, credential,
   });
   await f.coordinator.confirm({
-    confirmationHandle: preview.confirmationHandle, currentBinding: current,
+    confirmationHandle: preview.confirmationHandle, assertCurrent: () => {}, currentBinding: current,
   });
   assert.deepEqual(effects, [['clash_mihomo_yaml', 'copy']]);
 });
@@ -114,7 +114,7 @@ test('save applies the exact previewed file plan and commits owner-only validate
   assert.equal(preview.targetChange, 'create');
   const result = await f.coordinator.confirm({
     confirmationHandle: preview.confirmationHandle,
-    currentBinding: current,
+    assertCurrent: () => {}, currentBinding: current,
   });
   assert.deepEqual(result, { ok: true, adapterId: 'clash_mihomo_yaml', action: 'save' });
   assert.match(fs.readFileSync(targetFile, 'utf8'), /Clash \/ Mihomo export/u);
@@ -129,7 +129,7 @@ test('clipboard failure and binding drift surface stable codes without writing a
     networkRules: rules, port: 6180, credential,
   });
   await assert.rejects(f.coordinator.confirm({
-    confirmationHandle: preview.confirmationHandle, currentBinding: current,
+    confirmationHandle: preview.confirmationHandle, assertCurrent: () => {}, currentBinding: current,
   }), { code: 'INTEGRATION_EXPORT_FAILED' });
 
   const targetFile = path.join(f.output, 'stale.yaml');
@@ -139,7 +139,7 @@ test('clipboard failure and binding drift surface stable codes without writing a
   });
   await assert.rejects(f.coordinator.confirm({
     confirmationHandle: preview.confirmationHandle,
-    currentBinding: binding('clash_mihomo_yaml', { activeContextEpoch: 2 }),
+    assertCurrent: () => {}, currentBinding: binding('clash_mihomo_yaml', { activeContextEpoch: 2 }),
   }), { code: 'INTEGRATION_PROFILE_STALE' });
   assert.equal(fs.existsSync(targetFile), false);
 });

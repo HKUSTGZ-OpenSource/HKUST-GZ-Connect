@@ -533,7 +533,7 @@ fn private_pipe_eof_during_stalled_authentication_is_cleanup_unconfirmed() {
 }
 
 #[test]
-fn gateway_timeout_is_indeterminate_and_never_reported_as_rejected() {
+fn gateway_timeout_before_login_is_retryable_and_never_reported_as_rejected() {
     let (config, server, _accepted) = slow_gateway_config("timeout");
     let mut child = engine()
         .args([
@@ -562,11 +562,9 @@ fn gateway_timeout_is_indeterminate_and_never_reported_as_rejected() {
 
     assert!(!output.status.success());
     let machine_events = events(&output.stdout);
-    assert!(
-        machine_events.iter().any(|event| {
-            event["type"] == "fatal_error" && event["code"] == "AUTH_INDETERMINATE"
-        })
-    );
+    assert!(machine_events.iter().any(|event| {
+        event["type"] == "fatal_error" && event["code"] == "GATEWAY_PRELOGIN_UNAVAILABLE"
+    }));
     assert!(!machine_events.iter().any(|event| {
         event["type"] == "fatal_error"
             && matches!(
