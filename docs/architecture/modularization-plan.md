@@ -59,6 +59,10 @@ The proposed [localization boundary](renderer-localization.md) splits the two co
 locale dictionaries into domain owners with duplicate and missing-key tests. Its temporary
 compatibility facade does not complete the removal of legacy HTML-order coupling.
 
+The proposed [interactive-auth boundary](renderer-auth-challenge.md) establishes an injected native
+controller behind the existing startup facade. Its complete teardown/async ownership and host
+activation remain a separate behavior unit; no no-op cleanup is allowed to bypass that work.
+
 1. Add an explicit Renderer bootstrap and a checked feature registry.
 2. Freeze the list of existing `window.*` feature exports; CI rejects new ones.
 3. Give each feature one public entrypoint with injected dependencies.

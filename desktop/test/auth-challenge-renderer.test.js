@@ -112,7 +112,8 @@ test('unknown challenge is fail-closed and cancel clears any response', async ()
 
 test('markup provides one-time-code semantics without assuming numeric shape or clipboard access', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'index.html'), 'utf8');
-  const source = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'auth-challenge.js'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'auth-challenge.js'), 'utf8')
+    + fs.readFileSync(path.join(__dirname, '..', 'renderer', 'features/auth-challenge/controller.mjs'), 'utf8');
   assert.match(html, /id="authChallengeResponse"[\s\S]*autocomplete="one-time-code"/);
   assert.doesNotMatch(html, /authChallengeResponse[^>]*inputmode="numeric"/);
   assert.doesNotMatch(source, /clipboard|writeText|localStorage|sessionStorage/);

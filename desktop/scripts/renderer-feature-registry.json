@@ -176,6 +176,13 @@
   },
   "features": [
     {
+      "id": "auth-challenge",
+      "root": "renderer/features/auth-challenge",
+      "entrypoint": "renderer/features/auth-challenge/index.mjs",
+      "exports": ["createAuthChallengeFeature", "MAX_RESPONSE_BYTES", "start"],
+      "allowedDependencies": []
+    },
+    {
       "id": "localization",
       "root": "renderer/features/localization",
       "entrypoint": "renderer/features/localization/index.mjs",

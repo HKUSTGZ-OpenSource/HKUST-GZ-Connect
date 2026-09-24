@@ -51,17 +51,28 @@ async function run() {
       await new Promise(resolve => setTimeout(resolve, 20));
     }
     const auth = await window.api.testEmitAuthChallenge(null);
+    await window.api.testEmitAuthChallenge({kind:'otp',maskedDestination:'s***@example.test',
+      attemptsRemaining:3,resendAvailable:true,expiresAtUnixMs:null,resendAfterUnixMs:null});
+    const authOpen = document.getElementById('authChallengeDialog').open;
+    const response = document.getElementById('authChallengeResponse');
+    response.value = 'synthetic-response';
+    document.getElementById('authChallengeForm').dispatchEvent(new Event('submit',{cancelable:true}));
+    const inputCleared = response.value === '';
+    const submitted = await window.api.testEmitAuthChallenge(null);
+    const authClosed = !document.getElementById('authChallengeDialog').open;
     const favorite = document.querySelector('#appsList [data-favorite-entry]');
     favorite?.click();
     const chooser = document.getElementById('officialFavoriteDialog');
     return { dashboard: !document.getElementById('dash').hidden,
       days: document.querySelectorAll('#scheduleBody .week-day-head').length,
       legacyGlobal: Object.hasOwn(window, 'campusDataModules'), authListeners: auth.listeners,
+      authOpen, inputCleared, authClosed, responseCount:submitted.responseCount,
       favoriteChooser: chooser.open,
       favoriteFactoryGlobal: typeof window.officialFavoriteDialog?.create,
       archive: location.pathname.includes('app.asar') };
   })()`);
   assert.deepEqual(state, { dashboard: true, days: 7, legacyGlobal: false, authListeners: 1,
+    authOpen:true, inputCleared:true, authClosed:true, responseCount:1,
     favoriteChooser: true, favoriteFactoryGlobal: 'undefined', archive: true });
   const localization = await window.webContents.executeJavaScript(`({
     language: document.documentElement.lang,
