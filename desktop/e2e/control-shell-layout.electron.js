@@ -800,10 +800,11 @@ async function main() {
       timezoneId: 'America/Los_Angeles',
     });
     const calendar = await window.webContents.executeJavaScript(`(async () => {
-      const range = window.campusDataModules.weekRange(Date.now(), true);
+      const campusData = await import(new URL('./features/campus-data/index.mjs', document.baseURI));
+      const range = campusData.weekRange(Date.now(), true);
       const start = new Date(range.days[1] + 20 * 3600000);
       const end = new Date(range.days[2] + 10 * 3600000);
-      const feature = window.campusDataModules.create({
+      const feature = campusData.create({
         document,
         api: { getCampusData: async () => ({ sessionState: 'fixture', modules: {
           schedule: { state: 'ready', source: 'myportal-calendar', items: [{ id: 'overnight', title: 'Fixture event',

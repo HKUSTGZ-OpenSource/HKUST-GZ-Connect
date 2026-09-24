@@ -276,6 +276,45 @@ test('context switch close retains ownership until Browser confirms closed', asy
   assert.equal(f.manager.browser, null);
 });
 
+test('confirmed context closure retires downloads but a veto retains them', async () => {
+  const f = fixture();
+  const browser = f.manager.getOrCreate();
+  let retired = 0;
+  browser.downloadController = { retire: () => { retired += 1; } };
+  browser.closeForContextSwitch = async () => false;
+  assert.equal(await f.manager.closeForContextSwitch(), false);
+  assert.equal(retired, 0);
+  browser.closeForContextSwitch = async () => true;
+  assert.equal(await f.manager.closeForContextSwitch(), true);
+  assert.equal(retired, 1);
+});
+
+test('explicit manager disposal retires the download owner', () => {
+  const f = fixture();
+  const browser = f.manager.getOrCreate();
+  let retired = false;
+  browser.downloadController = { retire: () => { retired = true; } };
+  f.manager.close();
+  assert.equal(retired, true);
+});
+
+test('late old-context close preserves the replacement Browser and its portal URL', async () => {
+  const f = fixture();
+  const old = f.manager.getOrCreate();
+  let finish, retired = false;
+  old.closeForContextSwitch = () => new Promise(resolve => { finish = resolve; });
+  old.downloadController = { retire: () => { retired = true; } };
+  const pending = f.manager.closeForContextSwitch();
+  const replacement = {};
+  f.manager.browser = replacement;
+  f.manager.lastPortalSessionUrl = 'https://synthetic.example/new-context';
+  finish(true);
+  assert.equal(await pending, false);
+  assert.equal(retired, true);
+  assert.equal(f.manager.browser, replacement);
+  assert.equal(f.manager.lastPortalSessionUrl, 'https://synthetic.example/new-context');
+});
+
 test('clearing site data closes the active Browser and clears only its bound partition', async () => {
   const calls = [];
   const partition = {

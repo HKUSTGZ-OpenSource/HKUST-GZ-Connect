@@ -61,7 +61,16 @@ function registerIntegrationCenterIpc({ register, runtime } = {}) {
     try { return await runtime.confirm(confirmRequest(value)); }
     catch (error) { return { ok: false, code: publicCode(error, 'INTEGRATION_EXPORT_FAILED') }; }
   });
-  register('cancel-integration', () => ({ ok: true, cancelled: runtime.cancel() }));
+  register('cancel-integration', (_event, value) => {
+    try {
+      const cancelled = value === undefined
+        ? runtime.cancel()
+        : runtime.cancel(confirmRequest(value).confirmationHandle);
+      return { ok: true, cancelled };
+    } catch (error) {
+      return { ok: false, code: publicCode(error, 'INTEGRATION_EXPORT_FAILED') };
+    }
+  });
 }
 
 module.exports = {

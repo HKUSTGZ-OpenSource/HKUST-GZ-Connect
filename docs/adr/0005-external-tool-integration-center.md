@@ -100,3 +100,23 @@ binding.
 - Clash/Mihomo output validates as bounded UTF-8 and includes no school VPN credential;
 - VS Code output validates as one profile-bound `ProxyCommand` template;
 - third-party managed coordinators are absent from the production runtime composition.
+
+## Proposed addendum — owned cancellation (2026-09-09; review pending)
+
+This addendum describes PR #120, not a change already accepted into the released contract.
+The existing value-free `cancelIntegration()` retains global cancellation for its current callers.
+The same trusted IPC channel additionally accepts the closed request `{ confirmationHandle }` to
+revoke only that prepared or accepted export. It uses the existing bounded handle validator and
+returns only `{ ok, cancelled }` or a stable error code. Invalid request shapes must not degrade
+into a global cancellation. No paths, content, account identifiers or credentials are returned.
+
+A scoped cancellation must not advance the authority of another in-progress prepare or clear a
+newer confirmation. Once accepted, cancellation is enforced at the existing final pre-write guard;
+it cannot undo committed effects or interrupt an unresolved native dialog/preparation Promise.
+The transaction remains responsible for zeroing its payload when execution settles. Global
+cancellation remains the separate authority-wide operation, not Renderer stale-result cleanup.
+
+Before adopting this extension, review stale-handle, malformed-request, accepted-confirmation and
+new-target-selection races in addition to the verification requirements above. The Renderer owner
+must separately prove that obsolete callbacks use only their own handle and do not publish late UI
+state. The Main extension alone is not proof of completed Renderer lifecycle isolation.

@@ -59,7 +59,9 @@ contextBridge.exposeInMainWorld('api', {
   listIntegrations: () => ipcRenderer.invoke('list-integrations'),
   prepareIntegration: (request) => ipcRenderer.invoke('prepare-integration', request),
   confirmIntegration: (request) => ipcRenderer.invoke('confirm-integration', request),
-  cancelIntegration: () => ipcRenderer.invoke('cancel-integration'),
+  cancelIntegration: (request) => request === undefined
+    ? ipcRenderer.invoke('cancel-integration')
+    : ipcRenderer.invoke('cancel-integration', request),
   resize: (height) => ipcRenderer.invoke('resize', height),
   onOpenRoutingRules: (cb) => {
     if (typeof cb !== 'function') return () => {};

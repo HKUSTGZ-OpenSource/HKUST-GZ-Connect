@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { scheduleWeekModel, scheduleWeekLayout } = require('../../../renderer/campus-data-modules');
+const { scheduleWeekModel, scheduleWeekLayout } = require('../../../renderer/features/campus-data/index.mjs');
 const date = (day, hour = 0) => new Date(2027, 0, day, hour).getTime();
 
 test('compact week keeps all three concurrent records readable through one full-width group', () => {

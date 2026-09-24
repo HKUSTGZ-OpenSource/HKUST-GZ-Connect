@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { comparableUrl } = require('../renderer/official-favorite-dialog');
+const { comparableUrl } = require('../renderer/features/official-favorites/index.mjs');
 
 test('official favorites compare credential-free HTTPS URLs without page fragments', () => {
   assert.equal(
