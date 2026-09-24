@@ -2,6 +2,7 @@
 
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { parseScriptEntries, modulePaths } = require('./renderer-html-entrypoints');
 
 const MAX_FILES = 4096;
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
@@ -96,31 +97,26 @@ function checkJavaScriptSource(source, { execute = runProcess, module = false } 
 }
 
 function controlModuleEntrypoints(html) {
-  const modules = new Set();
-  const source = String(html).replace(/<!--[\s\S]*?-->/gu, '');
-  for (const [tag] of source.matchAll(/<script\b[^>]*>/giu)) {
-    if (!/\btype\s*=\s*(['"])module\1/iu.test(tag)) continue;
-    const specifier = tag.match(/\bsrc\s*=\s*(['"])([^'"]+)\1/iu)?.[2];
-    if (!specifier || !specifier.endsWith('.js') && !specifier.endsWith('.mjs') ||
-        specifier.startsWith('/') || specifier.includes(':') || specifier.includes('\\')) {
-      throw new TypeError('control module entrypoint is invalid');
-    }
-    const file = safeTrackedPath(path.posix.join('desktop/renderer', specifier));
-    if (!file.startsWith('desktop/renderer/')) throw new TypeError('control module entrypoint escapes Renderer');
-    modules.add(file);
-  }
-  return modules;
+  return new Set([...modulePaths(parseScriptEntries(String(html), 'renderer/index.html'))]
+    .map(file => safeTrackedPath(`desktop/${file}`)));
 }
 
 function checkJavaScriptTree({ repoRoot, tree, execute = runProcess }) {
   const files = listJavaScriptFiles({ repoRoot, tree, execute });
-  const markup = execute('git', ['show', `${tree}:desktop/renderer/index.html`], {
-    cwd: repoRoot, encoding: 'buffer', maxBuffer: MAX_SOURCE_BYTES + 1,
+  const listing = execute('git', ['ls-tree','-r','-z','--name-only',tree,'--','desktop/renderer'],
+    {cwd:repoRoot,encoding:'buffer'});
+  if (listing.status !== 0 || !Buffer.isBuffer(listing.stdout)) throw new Error('cannot enumerate Renderer HTML');
+  const pages = listing.stdout.toString('utf8').split('\0').filter(file=>file.endsWith('.html'));
+  if (!pages.includes('desktop/renderer/index.html') || pages.length > 64) throw new Error('invalid Renderer HTML page set');
+  const entries = pages.flatMap(page => {
+    const markup = execute('git', ['show',`${tree}:${page}`],
+      {cwd:repoRoot,encoding:'buffer',maxBuffer:MAX_SOURCE_BYTES+1});
+    if (markup.status !== 0 || !Buffer.isBuffer(markup.stdout) || markup.stdout.length > MAX_SOURCE_BYTES) {
+      throw new Error('cannot read Renderer HTML entrypoints');
+    }
+    return parseScriptEntries(markup.stdout.toString('utf8'),page.replace(/^desktop\//u,''));
   });
-  if (markup.status !== 0 || !Buffer.isBuffer(markup.stdout) || markup.stdout.length > MAX_SOURCE_BYTES) {
-    throw new Error('syntax gate could not read the control module entrypoints');
-  }
-  const modules = controlModuleEntrypoints(markup.stdout.toString('utf8'));
+  const modules = new Set([...modulePaths(entries)].map(file=>safeTrackedPath(`desktop/${file}`)));
   if ([...modules].some(file => !files.includes(file))) throw new Error('control module entrypoint is missing');
   const failures = [];
   for (const file of files) {

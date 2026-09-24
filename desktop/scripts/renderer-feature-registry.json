@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 1,
+  "bootstraps": ["renderer/app.js"],
+  "legacyGlobals": {
+    "lib/browser/auth/login-flow.js": [
+      "loginFlow"
+    ],
+    "lib/resources/presentation/resource-view.js": [
+      "resourceView"
+    ],
+    "renderer/add-website-dialog.js": [
+      "addWebsiteDialog"
+    ],
+    "renderer/auth-challenge.js": [
+      "authChallenge"
+    ],
+    "renderer/browser-data-settings.js": [
+      "browserDataSettings"
+    ],
+    "renderer/browser-new-tab-settings.js": [
+      "browserNewTabSettings"
+    ],
+    "renderer/campus-browser.js": [
+      "@binding:address",
+      "@binding:applyLang",
+      "@binding:back",
+      "@binding:bookmarkBar",
+      "@binding:bookmarkButton",
+      "@binding:bookmarkFolder",
+      "@binding:bookmarkItems",
+      "@binding:bookmarkLayoutFrame",
+      "@binding:bookmarkMore",
+      "@binding:bookmarkMoreWrap",
+      "@binding:browserSettings",
+      "@binding:browserTitle",
+      "@binding:command",
+      "@binding:credential",
+      "@binding:downloadStatus",
+      "@binding:favoritePage",
+      "@binding:findBar",
+      "@binding:findInput",
+      "@binding:forward",
+      "@binding:lastBookmarks",
+      "@binding:launchQuery",
+      "@binding:layoutBookmarkOverflow",
+      "@binding:loadingBanner",
+      "@binding:loadingBannerName",
+      "@binding:loadingBannerRoute",
+      "@binding:locale",
+      "@binding:manageBookmarks",
+      "@binding:normalizedBookmarks",
+      "@binding:profileName",
+      "@binding:profileUnverified",
+      "@binding:rawProfileName",
+      "@binding:reload",
+      "@binding:renderBookmarks",
+      "@binding:renderTabs",
+      "@binding:routeAutoOption",
+      "@binding:routeBadge",
+      "@binding:routeSelector",
+      "@binding:scheduleBookmarkLayout",
+      "@binding:state",
+      "@binding:t",
+      "@binding:tabs",
+      "campusBrowserUI"
+    ],
+    "renderer/campus-category-stacks.js": [
+      "campusCategoryStacks"
+    ],
+    "renderer/campus-search-presenter.js": [
+      "campusSearchPresenter"
+    ],
+    "renderer/campus-service-workspace.js": [
+      "campusServiceWorkspace"
+    ],
+    "renderer/campus-workspace-model.js": [
+      "campusWorkspaceModel"
+    ],
+    "renderer/campus-workspace.js": [
+      "@binding:$",
+      "@binding:I18N",
+      "@binding:ICONS",
+      "@binding:categoryLabel",
+      "@binding:clearSearch",
+      "@binding:command",
+      "@binding:editingGroupId",
+      "@binding:feedbackSequence",
+      "@binding:groupDialogRevision",
+      "@binding:lastLayoutSignature",
+      "@binding:layoutRenderFrame",
+      "@binding:model",
+      "@binding:mutate",
+      "@binding:mutationSequence",
+      "@binding:navigation",
+      "@binding:openGroupDialog",
+      "@binding:pageCapacity",
+      "@binding:paged",
+      "@binding:primaryView",
+      "@binding:render",
+      "@binding:renderGrid",
+      "@binding:renderHome",
+      "@binding:renderPager",
+      "@binding:renderSearch",
+      "@binding:resourceIcon",
+      "@binding:resourceItem",
+      "@binding:routeText",
+      "@binding:scheduleLayoutRender",
+      "@binding:searchPage",
+      "@binding:servicePage",
+      "@binding:setMutationFeedback",
+      "@binding:state",
+      "@binding:syncText",
+      "@binding:text",
+      "@binding:workspaceBoardFeature",
+      "@binding:workspaceFeedback"
+    ],
+    "renderer/certificate-manager.js": [
+      "certificateManager"
+    ],
+    "renderer/components/card-board/campus-workspace-board.js": [
+      "campusWorkspaceCardBoard"
+    ],
+    "renderer/components/card-board/card-board-adapter.js": [
+      "cardBoardAdapter"
+    ],
+    "renderer/components/card-board/card-board-controller.js": [
+      "cardBoardController"
+    ],
+    "renderer/components/card-board/card-board-drag.js": [
+      "cardBoardDrag"
+    ],
+    "renderer/components/card-board/card-board-icons.js": [
+      "cardBoardIcons"
+    ],
+    "renderer/components/card-board/card-board-model.js": [
+      "cardBoardModel"
+    ],
+    "renderer/components/card-board/card-board-motion.js": [
+      "cardBoardMotion"
+    ],
+    "renderer/components/card-board/card-board-view.js": [
+      "cardBoardView"
+    ],
+    "renderer/connection-overview.js": [
+      "connectionOverview"
+    ],
+    "renderer/group-dialog.js": [
+      "categoryGroupDialog"
+    ],
+    "renderer/i18n.js": [
+      "I18N"
+    ],
+    "renderer/integration-center.js": [
+      "integrationCenter",
+      "integrationCenterFeature"
+    ],
+    "renderer/notification-drawer.js": [
+      "notificationDrawer"
+    ],
+    "renderer/notification-view.js": [
+      "notificationView"
+    ],
+    "renderer/proxy-auth-migration.js": [
+      "proxyAuthMigration"
+    ],
+    "renderer/routing-manager.js": [
+      "routingManager"
+    ],
+    "renderer/school-profile-selector.js": [
+      "schoolProfileSelector",
+      "schoolProfileSelectorFeature"
+    ],
+    "renderer/usability-controller.js": [
+      "usabilityController"
+    ]
+  },
+  "features": [
+    {
+      "id": "campus-data",
+      "root": "renderer/features/campus-data",
+      "entrypoint": "renderer/features/campus-data/index.mjs",
+      "exports": [
+        "create",
+        "scheduleWeekLayout",
+        "scheduleWeekModel",
+        "weekRange"
+      ],
+      "allowedDependencies": []
+    },
+    {
+      "id": "official-favorites",
+      "root": "renderer/features/official-favorites",
+      "entrypoint": "renderer/features/official-favorites/index.mjs",
+      "exports": ["comparableUrl", "create"],
+      "allowedDependencies": []
+    }
+  ]
+}

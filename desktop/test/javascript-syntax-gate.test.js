@@ -5,6 +5,7 @@ const test = require('node:test');
 const {
   controlModuleEntrypoints,
   checkJavaScriptSource,
+  checkJavaScriptTree,
   listJavaScriptFiles,
   parseArguments,
   safeTrackedPath,
@@ -69,4 +70,27 @@ test('syntax gate invokes the real Node parser and rejects invalid JavaScript', 
   assert.match(invalid.diagnostic, /SyntaxError/u);
   assert.equal(checkJavaScriptSource(Buffer.from('export const answer = 42;'), { module: true }).ok, true);
   assert.equal(checkJavaScriptSource(Buffer.from('return 42;'), { module: true }).ok, false);
+});
+
+test('exact-tree syntax parsing uses module declarations from secondary HTML pages too', () => {
+  const sources={
+    'desktop/main.js':'const main = true;',
+    'desktop/renderer/secondary.js':'export const secondary = true;',
+    'desktop/renderer/index.html':'<main></main>',
+    'desktop/renderer/secondary.html':'<script type="module" src="secondary.js"></script>',
+  };
+  let secondaryParsed=false;
+  const execute=(command,args,options)=>{
+    if(command==='git' && args[0]==='ls-tree') return {status:0,stdout:Buffer.from(Object.keys(sources).join('\0')+'\0')};
+    if(command==='git' && args[0]==='show') return {status:0,stdout:Buffer.from(sources[args[1].slice('HEAD:'.length)])};
+    if(command===process.execPath) {
+      if(options.input.toString().startsWith('export')) {
+        assert.ok(args.includes('--input-type=module')); secondaryParsed=true;
+      }
+      return {status:0,stderr:''};
+    }
+    throw new Error('unexpected syntax command');
+  };
+  assert.deepEqual(checkJavaScriptTree({repoRoot:'/fixture',tree:'HEAD',execute}).failures,[]);
+  assert.equal(secondaryParsed,true);
 });

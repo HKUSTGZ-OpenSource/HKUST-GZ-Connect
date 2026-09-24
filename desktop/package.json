@@ -47,6 +47,7 @@
     "pretest:windows": "npm run build:windows-private-file"
   },
   "devDependencies": {
+    "acorn": "8.18.0",
     "@electron/asar": "^3.4.1",
     "electron": "^43.2.0",
     "electron-builder": "^26.15.3"
