@@ -1,9 +1,9 @@
 # Interactive-auth lifecycle and explicit activation
 
-- Status: Proposed behavior review candidate; not merged, installed or released
+- Status: Behavior review candidate based on merged #117; not installed or released
 - Owner: Desktop / authentication UI maintainers, issue #79
-- Last verified: 2026-09-11
-- Base: PR #117, `425ffde827aa1877894cae834c0bdff8517984f8`
+- Last verified locally: 2026-09-25
+- Base: `main@aec107f` after PR #117
 - Applies to: post-2.0.2 Renderer auth lifecycle, Issue #79
 
 ## Actual behavior change
@@ -97,3 +97,12 @@ Windows/Linux native acceptance, full installers, real-school/MFA and long-soak 
 rerun for this tree. Older receipts retain their exact-source scope. No account password, real OTP,
 installed app, user data, network setting, repository protection or Organization ownership changed.
 Renderer retirement still does not cancel an already-issued Main operation or prove provider MFA.
+
+## Current-main synchronization — 2026-09-25
+
+The published #117 tree and the local structural parent tree were byte-identical. The
+squash-history merge, including the deliberate deletion of the obsolete facade, preserved this
+candidate's exact pre-merge source tree. On that tree, local Node 25 auth/lifecycle/registry tests
+passed 39/39, as did the full Node suite, architecture/install-script/syntax/secret gates and
+native ASAR child retirement. No real password, OTP, Gateway MFA or installed application was used.
+Fresh platform CI and package verification remain separate gates on the final PR head.
