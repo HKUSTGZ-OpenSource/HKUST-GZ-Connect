@@ -13,7 +13,7 @@
     "check:syntax": "node scripts/check-javascript-syntax.js",
     "check:secrets": "node scripts/check-sensitive-patterns.js",
     "test": "node --test",
-    "test:windows": "node --test test/unit/platform/storage/windows-private-file.test.js test/unit/persistence/migration/legacy-hkust/legacy-flat-source-receipts.test.js test/unit/app/startup/multi-school-startup-runtime.test.js test/windows-platform-smoke.test.js",
+    "test:windows": "node --test test/unit/platform/storage/windows-private-file.test.js test/unit/persistence/migration/legacy-hkust/legacy-flat-source-receipts.test.js test/unit/app/startup/multi-school-startup-runtime.test.js test/integrations/platform/windows-platform-smoke.test.js",
     "test:browser-performance": "electron e2e/browser-performance.electron.js",
     "test:browser-native-download": "node e2e/browser-native-download.js",
     "test:auth-control-e2e": "node e2e/auth-control-fixture.js",

@@ -5,7 +5,9 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const MAX_TRACKED_FILE_BYTES = 5 * 1024 * 1024;
-const ROOT_TEST_DEBT_CAP = 59;
+const ROOT_TEST_DEBT_CAP = 0;
+const ROOT_TEST_DEBT_FILE = '.github/scripts/desktop-root-test-debt.json';
+const ROOT_TEST_PATH = /^desktop\/test\/[^/]+\.(?:js|mjs|cjs)$/iu;
 const REQUIRED_FILES = Object.freeze([
   '.github/AGENTS.md',
   '.github/CODEOWNERS',
@@ -15,6 +17,7 @@ const REQUIRED_FILES = Object.freeze([
   '.github/dependabot.yml',
   '.github/pull_request_template.md',
   '.github/scripts/audit-live-github-governance.js',
+  ROOT_TEST_DEBT_FILE,
   'AGENTS.md',
   'ARCHITECTURE.md',
   'CODE_OF_CONDUCT.md',
@@ -22,6 +25,7 @@ const REQUIRED_FILES = Object.freeze([
   'GOAL.md',
   'SECURITY.md',
   'desktop/AGENTS.md',
+  'desktop/test/AGENTS.md',
   'desktop/test/contracts/live-github-governance.test.js',
   'desktop/renderer/AGENTS.md',
   'docs/AGENTS.md',
@@ -92,6 +96,31 @@ function moduleMapErrors(source) {
   return errors;
 }
 
+function rootTestDebtErrors(tracked, document) {
+  if (!document || typeof document !== 'object' || Array.isArray(document) ||
+      Object.keys(document).length !== 2 || document.schemaVersion !== 1 ||
+      !Array.isArray(document.rootFiles) || document.rootFiles.length > ROOT_TEST_DEBT_CAP ||
+      document.rootFiles.some(file => typeof file !== 'string' || !ROOT_TEST_PATH.test(file) ||
+        /[\\\u0000-\u001f\u007f]/u.test(file)) ||
+      new Set(document.rootFiles).size !== document.rootFiles.length) {
+    return ['root Desktop test debt manifest is invalid'];
+  }
+  const rootTests = tracked.filter(file => ROOT_TEST_PATH.test(file));
+  const errors = [];
+  const allowed = new Set(document.rootFiles);
+  const actual = new Set(rootTests);
+  for (const file of rootTests) {
+    if (!allowed.has(file)) errors.push(`new root Desktop test is forbidden: ${file}`);
+  }
+  for (const file of allowed) {
+    if (!actual.has(file)) errors.push(`remove migrated root Desktop test exception: ${file}`);
+  }
+  if (rootTests.length > ROOT_TEST_DEBT_CAP) {
+    errors.push(`root Desktop test debt grew from ${ROOT_TEST_DEBT_CAP} to ${rootTests.length}`);
+  }
+  return errors.sort();
+}
+
 function relativeMarkdownTargets(source) {
   const targets = [];
   for (const match of String(source).matchAll(/\]\(([^)]+)\)/gu)) {
@@ -148,10 +177,11 @@ function governanceErrors(repositoryRoot) {
     }
   }
 
-  const rootTests = tracked.filter((file) => /^desktop\/test\/[^/]+\.test\.js$/u.test(file));
-  if (rootTests.length > ROOT_TEST_DEBT_CAP) {
-    errors.push(`root Desktop test debt grew from ${ROOT_TEST_DEBT_CAP} to ${rootTests.length}`);
-  }
+  try {
+    const debtSource = fs.readFileSync(path.join(repositoryRoot, ROOT_TEST_DEBT_FILE), 'utf8');
+    if (Buffer.byteLength(debtSource) > 32 * 1024) throw new Error('oversized test debt manifest');
+    errors.push(...rootTestDebtErrors(tracked, JSON.parse(debtSource)));
+  } catch { errors.push('root Desktop test debt manifest is missing or unreadable'); }
 
   const workflows = tracked.filter((file) => /^\.github\/workflows\/[^/]+\.ya?ml$/u.test(file));
   for (const workflow of workflows) {
@@ -179,6 +209,7 @@ function run() {
 if (require.main === module) run();
 
 module.exports = {
+  rootTestDebtErrors,
   FORBIDDEN_TRACKED_PATTERNS,
   MAX_TRACKED_FILE_BYTES,
   REQUIRED_FILES,
