@@ -5,7 +5,7 @@ const test = require('node:test');
 const {
   normalizeOpenRequest,
   requiresCampusTunnel,
-} = require('../../../../lib/browser/resources/campus-open-policy');
+} = require('../../../../lib/browser/session/campus-browser-manager');
 
 test('open requests fail safe to Campus unless Profile authority supplies an explicit route', () => {
   assert.deepEqual(normalizeOpenRequest('outlook.office.com/owa/'), {

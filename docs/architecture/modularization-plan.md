@@ -86,6 +86,10 @@ Exit:
 
 ## Wave M2 — Campus Browser ownership
 
+The [download ownership seam](browser-download-owner.md) is an isolated main-based structural
+candidate. Its native save timing and context-retirement behavior are separate follow-up work;
+Windows MFA harness cleanup is not yet a clean acceptance result.
+
 Extract tested owners for:
 
 ```text
