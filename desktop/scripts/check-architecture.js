@@ -28,7 +28,7 @@ const BASELINE = Object.freeze({
   // service-desk hand-off. Further feature work must extract responsibilities
   // instead of growing Main again.
   mainLines: 1720,
-  rendererLines: 564,
+  rendererLines: 562,
   // Production-only fan-in. Test, E2E, build and maintenance imports are
   // reported separately and must not make the runtime graph look denser.
   libMaxFanIn: 33,

@@ -148,7 +148,8 @@ test('Campus Workspace data modules use isolated state projections without porta
   assert.doesNotMatch(campusDataModulesJs, /style="/u);
   assert.doesNotMatch(campusDataModulesJs, /cookie|password|localStorage/iu);
   assert.match(appJs, /campusDataFeature\?\.ensureLoaded/u);
-  assert.match(appJs, /import \{ create as createOfficialFavorites \} from '\.\/features\/official-favorites\/index\.mjs'/u);
+  assert.ok(appJs.includes("rendererFeatures.mount('official-favorites', {"));
+  assert.ok(!appJs.includes('favoriteDialogFeature.start()'));
   assert.match(appJs, /serviceWorkspace\?\.setTab\('personal'/u);
   assert.match(categoryStacksJs, /personalCategoryPager/u);
   assert.match(categoryStacksJs, /autoStack:\s*true/u);

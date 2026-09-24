@@ -42,8 +42,8 @@ Primary concurrency hot spots:
 
 ## Wave M1 — Renderer dependency authority
 
-The proposed [feature host](renderer-feature-host.md) starts with one lifecycle-ready owner,
-campus-data. Remaining native/legacy owners require their own reviewed start/dispose contracts;
+The proposed [feature host](renderer-feature-host.md) now covers campus-data and official-favorites
+through separate lifecycle review units. Remaining owners require reviewed start/dispose contracts;
 the catalog must not silently wrap missing cleanup with a no-op.
 
 The merged [campus-data boundary](campus-data-module.md) and

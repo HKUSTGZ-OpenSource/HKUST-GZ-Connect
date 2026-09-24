@@ -180,7 +180,7 @@
       "root": "renderer/features/feature-host",
       "entrypoint": "renderer/features/feature-host/index.mjs",
       "exports": ["FEATURE_DEFINITIONS", "createRendererFeatures"],
-      "allowedDependencies": ["campus-data"]
+      "allowedDependencies": ["campus-data", "official-favorites"]
     },
     {
       "id": "campus-data",

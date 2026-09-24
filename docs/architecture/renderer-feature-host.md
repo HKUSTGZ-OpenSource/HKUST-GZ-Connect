@@ -1,6 +1,6 @@
-# Renderer feature host: first lifecycle-owned module
+# Renderer feature host: lifecycle-owned native modules
 
-- Status: Proposed behavior/lifecycle contribution, not merged or installed
+- Status: Campus-data host merged in #114; favorite registration remains the #115 candidate
 - Owner: Desktop Renderer maintainers, issue #79
 - Base: PR #110 at `82da86388d0d135cda27bebde5aae5e1d3434d6e`
 - Last verified: 2026-09-11
@@ -14,14 +14,15 @@ ID once, preserves injected options and reverses mounted-owner disposal. Startup
 the partial owner and earlier owners. Cleanup failures are collected rather than hiding failure
 or skipping subsequent owners. Definitions cannot be swapped after registry creation.
 
-The catalog deliberately contains only `campus-data`. `app.js` mounts that module through the
-host at its existing startup position, removing its separate manual start call. Official favorites
-and the legacy features stay on their existing paths until they have reviewed lifecycle contracts.
-This reduces direct native feature factory/start pairs in app.js from two to one, not to zero.
+The initial checkpoint below registered only `campus-data`. The separate proposed
+[favorite lifecycle contribution](official-favorites-lifecycle.md) also registers official-favorites
+at its existing startup position. Both native owners now use the host; legacy features remain on
+their existing paths until their lifecycle contracts are reviewed. Direct native factory/start
+pairs in app.js reduce from two to zero across these two review units.
 It is a real running entrypoint, but not completion of the full Renderer registry/migration goal.
 
-The machine inventory adds one owned `feature-host` root with exactly one allowed dependency:
-the existing campus-data public entrypoint. It does not expand the legacy global allowlist,
+The machine inventory adds one owned `feature-host` root whose allowed dependencies name the
+existing campus-data and official-favorites public entrypoints. It does not expand the legacy global allowlist,
 permit private cross-feature imports or add an HTML bootstrap exception. This inventory change
 requires independent review along with the implementation.
 

@@ -65,8 +65,8 @@ async function run() {
     return { calendarEmpty: document.getElementById('scheduleBody').innerHTML === '',
       favoriteOpen: document.getElementById('officialFavoriteDialog').open };
   })()`);
-  assert.deepEqual(retired, { calendarEmpty:true, favoriteOpen:true },
-    'the registered owner retires its DOM without disposing an unregistered feature');
+  assert.deepEqual(retired, { calendarEmpty:true, favoriteOpen:false },
+    'the registered owners retire their DOM and dialog on pagehide');
   console.log('renderer native modules in ASAR: PASS');
 }
 

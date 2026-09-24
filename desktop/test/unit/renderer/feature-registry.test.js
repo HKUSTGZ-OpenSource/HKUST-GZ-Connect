@@ -101,7 +101,7 @@ test('a reentrant mount cannot construct another feature behind the bootstrap or
 test('native feature catalog is immutable and contains only the migrated public factories', () => {
   const { FEATURE_DEFINITIONS } = require('../../../renderer/features/feature-host/index.mjs');
   assert.equal(Object.isFrozen(FEATURE_DEFINITIONS), true);
-  assert.deepEqual(FEATURE_DEFINITIONS.map(({id})=>id), ['campus-data']);
+  assert.deepEqual(FEATURE_DEFINITIONS.map(({id})=>id), ['official-favorites','campus-data']);
   for (const definition of FEATURE_DEFINITIONS) {
     assert.equal(Object.isFrozen(definition), true);
     assert.equal(definition.create, require(`../../../renderer/features/${definition.id}/index.mjs`).create);

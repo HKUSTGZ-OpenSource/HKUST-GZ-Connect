@@ -13,7 +13,8 @@ test('official favorites are imported through one native entrypoint without a gl
   assert.equal(fs.existsSync(path.join(renderer, 'official-favorite-dialog.js')), false);
   const app = fs.readFileSync(path.join(renderer, 'app.js'), 'utf8');
   const html = fs.readFileSync(path.join(renderer, 'index.html'), 'utf8');
-  assert.match(app, /import \{ create as createOfficialFavorites \} from '\.\/features\/official-favorites\/index\.mjs'/u);
+  assert.ok(app.includes("rendererFeatures.mount('official-favorites', {"));
+  assert.ok(!app.includes('favoriteDialogFeature.start()'));
   assert.doesNotMatch(app, /window\.officialFavoriteDialog/u);
   assert.doesNotMatch(html, /src="official-favorite-dialog\.js"/u);
   const source = fs.readFileSync(entry, 'utf8');

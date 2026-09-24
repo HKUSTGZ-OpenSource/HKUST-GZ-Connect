@@ -35,8 +35,11 @@ export function create({
   let busy = false;
   let revision = 0;
   let started = false;
+  let disposed = false;
+  const unlisten = [];
 
   function resourceFor(target = entry) {
+    if (disposed) return null;
     const key = comparableUrl(target?.url);
     return key ? getResources().find((resource) => (
       resource.favorite === true && comparableUrl(resource.url) === key
@@ -69,6 +72,7 @@ export function create({
   }
 
   function setBusy(value) {
+    if (disposed) return;
     busy = value === true;
     for (const id of [
       'officialFavoriteGroup', 'officialFavoriteNewGroup', 'saveOfficialFavorite',
@@ -79,7 +83,7 @@ export function create({
   }
 
   function open(nextEntry) {
-    if (!nextEntry?.id || !comparableUrl(nextEntry.url)) return false;
+    if (disposed || !nextEntry?.id || !comparableUrl(nextEntry.url)) return false;
     entry = nextEntry;
     revision += 1;
     $('officialFavoriteName').textContent = localized(entry, 'Name');
@@ -95,11 +99,17 @@ export function create({
 
   async function submit(event) {
     event.preventDefault();
-    if (busy || !entry) return;
+    if (disposed || busy || !entry) return;
     const currentRevision = revision;
+    const current = () => !disposed && currentRevision === revision && dialog.open;
     $('officialFavoriteError').textContent = '';
     setBusy(true);
     try {
+      const payload = {
+        name: [...localized(entry, 'Name')].slice(0, 40).join(''), url: entry.url,
+        description: [...localized(entry, 'UseCase')].slice(0, 80).join(''),
+        routePreference: 'auto', groupId: null,
+      };
       let groupId = $('officialFavoriteGroup').value || null;
       if (groupId === NEW_GROUP_VALUE) {
         const name = $('officialFavoriteNewGroup').value.trim();
@@ -110,65 +120,98 @@ export function create({
         }
         const previousIds = new Set(getGroups().map(({ id }) => id));
         const created = await api.createFavoriteGroup(name);
+        if (!current()) return;
         if (!created?.ok) throw new Error(created?.error || translate('favoriteDialog.failed'));
         const groups = created.groups || getGroups();
+        const added = groups.filter(({ id }) => !previousIds.has(id));
+        if (added.length !== 1) throw new Error(translate('favoriteDialog.failed'));
+        groupId = added[0].id;
         setGroups(groups);
-        groupId = groups.find(({ id }) => !previousIds.has(id))?.id || null;
-        if (!groupId) throw new Error(translate('favoriteDialog.failed'));
+        if (!current()) return;
       }
-      const saved = await api.createFavoriteResource({
-        name: [...localized(entry, 'Name')].slice(0, 40).join(''),
-        url: entry.url,
-        description: [...localized(entry, 'UseCase')].slice(0, 80).join(''),
-        routePreference: 'auto',
-        groupId: null,
-      });
+      if (!current()) return;
+      const saved = await api.createFavoriteResource(payload);
+      if (!current()) return;
       if (!saved?.ok || !saved.resource) {
         throw new Error(saved?.error || translate('favoriteDialog.failed'));
       }
+      const savedResource = Object.freeze({ ...saved.resource });
       setResources(saved.resources || getResources());
+      if (!current()) return;
       const moved = await api.moveFavoriteResource({
-        resourceId: saved.resource.id,
+        resourceId: savedResource.id,
         groupId,
         index: 0,
       });
+      if (!current()) return;
       if (!moved?.ok) throw new Error(moved?.error || translate('favoriteDialog.failed'));
       setGroups(moved.groups || getGroups());
-      if (currentRevision !== revision || !dialog.open) return;
+      if (!current()) return;
+      setBusy(false);
+      entry = null; revision++;
+      const completedRevision = revision;
       dialog.close();
-      onSaved({ groupId, resource: saved.resource });
-      toast(translate('favoriteDialog.saved'));
+      if (disposed || revision !== completedRevision) return;
+      onSaved({ groupId, resource: savedResource });
+      if (!disposed && revision === completedRevision) toast(translate('favoriteDialog.saved'));
     } catch (error) {
-      if (currentRevision === revision && dialog.open) {
+      if (current()) {
         $('officialFavoriteError').textContent = error?.message || translate('favoriteDialog.failed');
       }
     } finally {
-      setBusy(false);
+      if (current()) setBusy(false);
     }
   }
 
-  function start() {
-    if (started) return false;
-    started = true;
-    $('officialFavoriteGroup').addEventListener('change', () => {
-      const creating = $('officialFavoriteGroup').value === NEW_GROUP_VALUE;
-      $('officialFavoriteNewGroupField').hidden = !creating;
-      $('officialFavoriteNewGroup').required = creating;
-      if (creating) $('officialFavoriteNewGroup').focus();
-    });
-    $('officialFavoriteForm').addEventListener('submit', submit);
-    $('closeOfficialFavorite').addEventListener('click', () => { if (!busy) dialog.close(); });
-    $('cancelOfficialFavorite').addEventListener('click', () => { if (!busy) dialog.close(); });
-    dialog.addEventListener('close', () => { entry = null; revision += 1; });
-    doc.addEventListener('app-locale-changed', () => {
-      if (dialog.open) renderGroupOptions($('officialFavoriteGroup').value);
-    });
+  function listen(target, type, handler) {
+    if (!target?.addEventListener || !target?.removeEventListener) throw new TypeError('favorite listener target is invalid');
+    const guarded = event => { if (!disposed) return handler(event); };
+    target.addEventListener(type, guarded);
+    unlisten.push(() => target.removeEventListener(type, guarded));
+  }
+
+  function dispose() {
+    if (disposed) return false;
+    disposed = true; revision++; entry = null; busy = false;
+    const errors = [], attempt = fn => { try { fn(); } catch (error) { errors.push(error); } };
+    for (const remove of unlisten.splice(0).reverse()) attempt(remove);
+    attempt(() => { if (dialog?.open) dialog.close(); });
+    for (const id of ['officialFavoriteName','officialFavoriteDescription','officialFavoriteError']) attempt(() => { const node=$(id); if(node)node.textContent=''; });
+    attempt(() => $('officialFavoriteGroup')?.replaceChildren());
+    attempt(() => { const node=$('officialFavoriteNewGroup'); if(node)node.value=''; });
+    if (errors.length) throw new AggregateError(errors, 'favorite cleanup failed');
     return true;
+  }
+
+  function start() {
+    if (started || disposed) return false;
+    started = true;
+    try {
+      listen($('officialFavoriteGroup'), 'change', () => {
+        const creating = $('officialFavoriteGroup').value === NEW_GROUP_VALUE;
+        $('officialFavoriteNewGroupField').hidden = !creating;
+        $('officialFavoriteNewGroup').required = creating;
+        if (creating) $('officialFavoriteNewGroup').focus();
+      });
+      listen($('officialFavoriteForm'), 'submit', submit);
+      listen($('closeOfficialFavorite'), 'click', () => { if (!busy) dialog.close(); });
+      listen($('cancelOfficialFavorite'), 'click', () => { if (!busy) dialog.close(); });
+      listen(dialog, 'close', () => { if (!dialog.open && entry) { entry = null; revision += 1; } });
+      listen(doc, 'app-locale-changed', () => {
+        if (dialog.open) renderGroupOptions($('officialFavoriteGroup').value);
+      });
+      return true;
+    } catch (primary) {
+      try { dispose(); }
+      catch (cleanup) { throw new AggregateError([primary, cleanup], 'favorite startup and cleanup failed'); }
+      throw primary;
+    }
   }
 
   return Object.freeze({
     isFavorite: (target) => resourceFor(target) !== null,
     open,
     start,
+    dispose,
   });
 }

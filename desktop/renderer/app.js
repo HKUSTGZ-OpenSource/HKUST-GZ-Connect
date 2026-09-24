@@ -1,5 +1,4 @@
 import { createRendererFeatures } from './features/feature-host/index.mjs';
-import { create as createOfficialFavorites } from './features/official-favorites/index.mjs';
 const rendererFeatures = createRendererFeatures({ target: window });
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -512,13 +511,12 @@ groupDialogFeature = window.categoryGroupDialog.start({
   onChanged: (groups) => { const known = new Set(resourceGroups.map(({ id }) => id)); resourceGroups = groups; renderResources(); const created = groups.find(({ id }) => !known.has(id)); if (created) requestAnimationFrame(() => window.campusCategoryStacks.focusCard('user-collection', created.id)); },
   toast: (message, tone) => usabilityFeature?.toast(message, tone),
 });
-favoriteDialogFeature = createOfficialFavorites({
+favoriteDialogFeature = rendererFeatures.mount('official-favorites', {
   api: window.api, document, translate: (key, vars) => t(key, vars), getResources: () => campusResources, getGroups: () => resourceGroups,
   setResources: (resources) => { campusResources = resources; renderResources(); }, setGroups: (groups) => { resourceGroups = groups; renderResources(); },
   onSaved: ({ groupId }) => { serviceWorkspace?.setTab('personal', { focus: false }); requestAnimationFrame(() => window.campusCategoryStacks.focusCard(groupId ? 'user-collection' : 'system-widget', groupId || 'ungrouped-favorites')); },
   toast: (message, tone) => usabilityFeature?.toast(message, tone),
 });
-favoriteDialogFeature.start();
 serviceWorkspace = window.campusServiceWorkspace.create({
   document,
   translate: (key, vars) => t(key, vars),
