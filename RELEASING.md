@@ -1,11 +1,17 @@
 # 发布流程 / Release Process
 
-本文档记录 HKUST(GZ) Connect 当前的实际发布流程。发布构建完全由
-GitHub Actions 云端完成；本地脚本通常用于开发自测。2.0.1 的维护者授权例外见下文。
+本文档记录 HKUST(GZ) Connect 的发布流程。仓库保留 GitHub Actions 发布工作流；
+已发布的 2.0.1 与 2.0.2 使用维护者授权的指定主机构建和验收。不要把工作流配置
+视为某次发布实际运行过云端构建的证据；以该版本的构建收据为准。
 
 [中文](#中文) · [English](#english)
 
 ## 2.0.1 指定主机构建 / designated-host build
+
+2.0.2 同样采用指定主机构建，四个平台安装包已发布。该事实不构成后续版本的自动
+发布授权或管理员合并豁免；详见 [2.0 状态](docs/2.0-status.md)。
+Stable 2.0.2 also used authorized designated-host builds. Consult its build receipt for the exact
+source and signing evidence; this is not a standing release or administrator-merge exception.
 
 维护者于 2026-09-07 指定：Windows/Linux 验收和打包只在 5070 运行，macOS 只在 Mac 构建并校验安装包。此版本使用同一源码提交的手动构建收据和 SHA-256 清单，不把本地结果冒充 GitHub Actions 检查，也不改变 main 分支保护。
 
@@ -46,6 +52,11 @@ bash desktop/scripts/rebuild-mac.sh    # macOS：打包、校验并安装到 /Ap
 没有可用身份时才回退为 ad-hoc；只有 ad-hoc 构建通常需要首次右键 →“打开”。
 
 ## 测试
+
+维护者主导的 AI 开发采用“本地先验、集中发布”：先在 Mac 完成相关单元测试、Electron
+回归和精确提交检查，再集中推送已验证的改动。不要靠反复推送、手动触发或重跑 Actions
+来调试。发布仍需单独授权；保留必要的平台构建和包验证，不为节省分钟数绕过必需检查、
+停用工作流或修改保护规则。Mac 通过不代表 Windows/Linux 已验证，遗漏项必须明确记录。
 
 ```bash
 cd desktop
@@ -124,7 +135,7 @@ workflow_dispatch 手动触发）：
   “安装”一节右键 → “打开”。
 - **Windows**：配置了 `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` 时签名；
   否则安装程序未签名，可能触发 SmartScreen。
-- 本地 `rebuild-mac.sh` 始终是 ad-hoc 签名。
+- 本地 `rebuild-mac.sh` 使用上述仓库签名身份选择，并记录实际签名类别。
 
 ## 发布说明
 
@@ -167,6 +178,13 @@ and falls back to ad-hoc only when no suitable local identity exists. Only the a
 normally requires the first right-click → **Open** flow.
 
 ## Tests
+
+Maintainer-directed AI iterations are local-first: run relevant unit tests, Electron regressions
+and exact-commit gates on macOS before batching validated remote changes. Do not debug through
+repeated pushes, workflow dispatches or reruns. Release requires separate authorization; retain
+necessary platform builds and package verification. Saving minutes never authorizes bypassing
+required checks, disabling workflows or changing protections. Record Windows/Linux validation
+gaps explicitly; passing on macOS does not qualify other platforms.
 
 ```bash
 cd desktop

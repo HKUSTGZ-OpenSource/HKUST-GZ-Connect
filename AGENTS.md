@@ -77,6 +77,13 @@
 
 ## Git and release
 
+- Maintainer-directed agent iterations are local/native-first: complete relevant macOS software
+  checks and exact-source gates before batching remote pushes. Heavy Windows/Linux validation may
+  use the established native build host; its results must remain distinct from macOS evidence.
+- Respect the maintainer's Actions budget. Do not use repeated pushes, workflow dispatches or
+  reruns as an exploratory debugging loop. Budget constraints do not authorize bypassing required
+  checks, fabricating statuses, disabling workflows or changing branch protections.
+- Release still requires separately assigned authorization and exact-source package acceptance.
 - Never force-push `main`, rewrite public history or move/delete an existing release tag.
 - Agents do not merge, tag, publish, transfer the repository or change protections unless the
   maintainer explicitly assigns that exact operation.

@@ -1,8 +1,8 @@
 # Open-source collaboration model
 
-- Status: Proposed for activation
+- Status: Maintainer-approved review model; CODEOWNERS routes the two independent maintainers
 - Owner: project maintainers
-- Last verified: 2026-09-04
+- Last verified: 2026-09-13
 - Applies to: contributors, coding agents, reviewers and maintainers
 
 ## Principles
@@ -37,6 +37,22 @@ labels, required evidence and an owner. Claiming records the branch/worktree. A 
 start a competing implementation without the maintainer reassigning the issue.
 
 ## Branch and merge policy
+
+The maintainer approved a two-maintainer review pool: `heeh02` and `HernanJiang`.
+One independent approval is sufficient, not approval from both maintainers:
+
+- For a PR authored or materially implemented by `heeh02`, `HernanJiang` reviews.
+- For a PR authored or materially implemented by `HernanJiang`, `heeh02` reviews.
+- For other contributors' PRs, either maintainer may provide the required approval, provided
+  they did not materially implement that change. Jointly implemented work needs another independent
+  reviewer; do not impersonate an approval through the author's authenticated agent.
+- AI review assists but does not replace accountable human approval. Approval does not replace
+  required checks, resolved conversations, or separately authorized release/security operations.
+
+CODEOWNERS lists both reviewers on each owned path. Keep the required approval count at one.
+The live branch already requires one approval; code-owner enforcement is still off and will need
+separate activation after the reviewed CODEOWNERS reaches main. Until then, reviewer routing is
+documented rather than an exclusive two-person approval restriction enforced by GitHub.
 
 - `main` is the only permanent development branch.
 - A `release/X.Y` maintenance branch is created only when main has advanced and an older supported

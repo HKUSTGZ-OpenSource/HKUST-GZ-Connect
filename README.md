@@ -9,7 +9,7 @@ Cross-platform EasyConnect-compatible client for HKUST(GZ)
 
 [中文](#中文) · [English](#english)
 
-![Release](https://img.shields.io/github/v/release/heeh02/hkustgzconnect)
+![Release](https://img.shields.io/github/v/release/HKUSTGZ-OpenSource/HKUST-GZ-Connect)
 ![macOS](https://img.shields.io/badge/macOS-Apple_Silicon_%7C_Intel-000?logo=apple&logoColor=white)
 ![Windows](https://img.shields.io/badge/Windows-x64-0078D6?logo=windows&logoColor=white)
 ![Linux](https://img.shields.io/badge/Linux-x86__64_AppImage-FCC624?logo=linux&logoColor=111)
@@ -41,7 +41,7 @@ HKUST(GZ) Connect 用于在校外访问香港科技大学（广州）的校内�
 
 ## 下载
 
-请从 [GitHub Releases](https://github.com/heeh02/hkustgzconnect/releases/latest)
+请从 [GitHub Releases](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/latest)
 下载最新版本。
 
 | 系统 | 下载文件 | 适用设备 |
@@ -260,7 +260,7 @@ proxy, the default route, or the network behavior of other browsers.
 ## Download
 
 Download the latest build from
-[GitHub Releases](https://github.com/heeh02/hkustgzconnect/releases/latest).
+[GitHub Releases](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/latest).
 
 | Platform | Asset | Devices |
 | --- | --- | --- |

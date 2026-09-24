@@ -4,6 +4,8 @@
 - Authority: project maintainer
 - Baseline: `main@15738338ff2a280300b66e98a1823659f24630a4`
 - Started: 2026-09-04
+- Last verified: 2026-09-25 (before this documentation PR)
+- Development main at verification: `6f960af57466e6551a5e347ecc26ae9b902f69d9`
 - Scope: repository governance, documentation truth, agent instructions, module boundaries,
   contributor workflow, GitHub protections and organization migration
 
@@ -38,12 +40,22 @@ high-risk rules. No instruction file is treated as a substitute for review or te
    and `independent/src/bin/ec-engine.rs` are concurrency hot spots.
 3. Renderer feature files still depend on global `window.*` names and HTML script order that the
    CommonJS architecture graph cannot see.
-4. The immutable `v2.0.0` tag exists, but no stable GitHub Release is published for it and
-   `/releases/latest` still resolves to `v1.2.3`; Issue #76 owns the 2.0.1 repair release.
+4. Stable `v2.0.2` is published from `main@39850415c901aeaa77ecb86cd3ce49a2e75290a8`.
+   PRs #88, #95, #106 and #107 are merged. Four platform installers, a build receipt and SHA-256
+   manifest are uploaded. The repository-ID updater is shipped; the historical 2.0.1 bridge
+   requirement is satisfied. Published packages and the currently installed Mac candidate are
+   distinct evidence, not interchangeable versions.
 5. Repository Rulesets, CODEOWNERS, templates, Dependabot, release Environment and immutable Action
-   policies are active, but one administrator and no independent reviewer prevent full enforcement.
-6. The `heeh02` account currently has no GitHub Organization membership. Repository transfer is
-   blocked until the maintainer chooses or creates the destination organization.
+   policies are active. Two Organization owners are present. Protected `main` still requires one
+   approval and seven strict checks; the maintainer authorized one-time administrator squash merges
+   for the current convergence queue after its exact-head checks, without changing that protection.
+   Team ownership and post-transfer security settings remain incomplete.
+6. The original repository transferred to `HKUSTGZ-OpenSource` on 2026-09-12 with explicit maintainer
+   authorization. Organization default permission is now `read`. Repository ID, main, tags,
+   releases/assets and PR heads/bases are preserved. Existing Organization Owner `HernanJiang`
+   inherits admin alongside `heeh02`; no membership was created. Ownership transfer is complete,
+   while team/reviewer and post-transfer governance convergence remain open. See the
+   [migration receipt](docs/governance/2026-09-12-organization-transfer-receipt.md).
 
 ## Completion outcomes
 
@@ -100,12 +112,25 @@ high-risk rules. No instruction file is treated as a substitute for review or te
 
 ## Delivery sequence
 
-1. Documentation truth and obsolete-document removal.
-2. Agent/contributor/security/ownership contracts.
-3. Machine-enforced repository and module rules.
-4. GitHub settings and Organization migration.
-5. Renderer, Browser, Desktop Main and Rust modularization waves.
-6. Final cross-platform, upgrade, security and release-governance audit.
+1. Reconcile published release truth and capture the minimal transfer preflight.
+2. Confirm the destination permission decision and bounded transfer authorization, then transfer
+   the existing repository without renaming, recreating or republishing it.
+3. Verify repository identity, redirects, releases, update discovery and effective protections.
+4. In the Organization, converge governance through the existing PR and review existing module
+   stacks in dependency order, rather than opening more speculative branches.
+5. Complete Renderer, Browser, Desktop Main and Rust modularization in bounded waves.
+6. Finish cross-platform, upgrade, security and governance acceptance; clean only proven redundant
+   generated artifacts/worktrees after preserving unmerged work and shared dependencies.
+
+This transfer-first sequence does not require M1–M5 completion, an empty PR queue, replacement of
+the maintainer's running Mac app, or creation of every future team. Those are separate outcomes.
+Missing independent reviewers still block ordinary protected merges, not repository transfer.
+Execution correction: freeze new decomposition branches/PRs until the existing queue is reviewed;
+allow at most two active code lanes, with one merge-ready PR per lane. Pending migration decisions
+must not become a reason to accumulate speculative refactors or repeat unchanged full-suite runs.
+The transfer procedure records this bounded convergence cycle; no additional parallel goal is needed.
+See the [proposed transfer-first convergence plan](docs/governance/2026-09-10-transfer-first-plan.md)
+for the current PR dependency lanes, minimum migration checks and bounded worktree cleanup rules.
 
 ## Pull-request boundaries
 
@@ -127,7 +152,10 @@ The goal is complete only when:
 6. no secrets, generated packages, raw captures or vendor binaries entered the Git tree;
 7. unresolved risks and organization-level settings are recorded in a final governance receipt.
 
-## Progress receipt — 2026-09-04
+## Historical progress receipt — 2026-09-04
+
+This receipt describes the earlier plan. Current findings above supersede its destination and
+release assumptions.
 
 - G0 merged through PR #59: current release truth is aligned; obsolete tool-specific documents and
   completed product proposals are removed; original 2.0 vision documents are classified under
@@ -150,9 +178,46 @@ The goal is complete only when:
 - PR #78 provides the repository-ID-based 2.0.1 transition patch so update discovery remains bound
   to the same public, enabled repository across owner transfer without trusting arbitrary redirects.
 
-## Current external blocker
+## Current decision boundary
 
-The repository cannot be transferred safely until the destination Organization login is supplied.
-The maintainer must either create an Organization or name an existing one and confirm that
-`heeh02` is an owner there. No Organization name, team slug, billing plan or public identity will be
-invented by an agent.
+The [2026-09-08 integration snapshot](docs/governance/2026-09-08-integration-readiness.md) is
+historical. The 2.0.2 release lane #88/#95/#106/#107 is merged and published. Since that tag,
+the Windows helper, external-download and pre-login classification repairs (#131/#126/#129),
+Renderer/Browser ownership and fixture slices (#108–#120), and compatible Rust updates
+(#123/#124/#122) entered `main` in separately checked squash merges. Some lacked an independent
+approval and used the maintainer-authorized one-time administrator path; CI was not bypassed.
+These source changes have not been packaged or released. They are progress toward M1/M2, not proof
+that M1–M5 or G0–G4 are complete. #128 was closed without merging to preserve older-platform
+support. Neither local pass counts nor candidate source-size reductions make a post-tag change
+part of stable 2.0.2.
+The [2026-09-12 combination receipt](docs/governance/2026-09-12-combination-preflight.md) records
+the exact four-lane tree and three-platform full-suite/native-fixture results. This closes source
+combination testing for that tree, not independent review, distribution packaging or G0–G4.
+
+The maintainer authorized the original-repository transfer and Organization default `read` on
+2026-09-12; both are executed and read back. Continue ordinary PR review and M1–M5 inside the
+Organization. That transfer authorization did not waive review or checks or authorize another
+release. The later convergence authorization permits bounded administrator merges of the present
+PR queue after exact-head checks; it does not change branch/tag protections or release authority.
+Stable remains 2.0.2; installed-app replacement and real-school validation remain separate
+operations. The migration receipt distinguishes completed identity checks from remaining
+role-specific workflow, team and release governance work.
+
+On 2026-09-24/25 the maintainer directed convergence of the reviewed PR queue and authorized
+one-time administrator merges. #131, #126 and #129 are merged; #125 is closed by the download
+repair. #127 stays open because its Windows reporter supplied no sanitized log or stable reproduction;
+source/CI evidence cannot establish a successful real Gateway login. This documentation change is
+tracked by #89; #84 still needs actual Security/Release team decisions and post-transfer settings
+readback. The repository's live Secret Scanning and Push Protection read back as disabled on
+2026-09-25; the historical transfer snapshot must not be used to claim they are enabled now.
+
+## Historical progress receipt — 2026-09-07
+
+- PR #104 merged and stable 2.0.1 published; Issue #97 closed. Required cloud checks were not
+  spoofed and protections were unchanged; release provenance records the designated-host exception.
+- The open PR queue is #88 (ProxyCommand), #89 (governance records), #95 (compatibility default).
+  Former drafts #90–94/#96 were closed as deferred, not merged; their exact revisions remain in
+  Issue #60. Dependency updates #98–103 are deferred in #105 with archived source refs.
+- M1–M5 remain incomplete. Local combination evidence does not make those candidates part of
+  main or stable 2.0.1. Keep structure and behavior changes independently reviewable.
+- Repository ownership is still `heeh02`; G4 is not complete. The goal remains Active.
