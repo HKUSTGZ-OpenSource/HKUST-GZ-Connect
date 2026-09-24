@@ -1,9 +1,9 @@
 # Official favorites operation and lifecycle ownership
 
-- Status: Proposed behavior/lifecycle contribution, not installed or released
+- Status: Review candidate based on merged PR #114; not installed or released
 - Owner: Desktop Renderer maintainers, issue #79
-- Base: PR #114 at `0ba176ca7ad5584052c6186436d265f31fa4c61c`
-- Last verified: 2026-09-12
+- Base: `main@ea3c3cf` after PR #114
+- Last verified locally: 2026-09-25
 - Applies to: Issue #79, post-2.0.2 favorites lifecycle candidate
 
 ## Behavior contract
@@ -102,3 +102,11 @@ This checkpoint reuses the existing dependency runtimes. No Windows/Linux whole-
 distribution package, live-school action, new branch/PR, public merge or protection change occurred.
 Revert the local synchronization commit to recover the prior candidate; persisted user data has
 not changed. Prior cross-platform evidence is not promoted to this new tree.
+
+## Current-main synchronization — 2026-09-25
+
+The published #114 tree and the local parent tree were byte-identical before the squash-history
+merge. The child merge preserved the exact pre-merge source tree. On that tree, the full local Node
+suite, architecture/install-script/syntax/secret gates, native ASAR child retirement and control
+shell layout passed. The #115 review diff remains only the favorite save-continuation/lifecycle
+change; live school and installed-app behavior were not exercised.
