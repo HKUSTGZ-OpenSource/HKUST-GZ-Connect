@@ -51,7 +51,7 @@ The merged [campus-data boundary](campus-data-module.md) and
 native entrypoints. Their acceptance does not complete the registry, global-export enforcement,
 localization or release gates below.
 
-The separate #110 [static Renderer policy](renderer-boundaries.md) adds frozen-export and
+The merged #110 [static Renderer policy](renderer-boundaries.md) adds frozen-export and
 public-entrypoint checks to the architecture command. It is not the runtime lifecycle registry
 or a substitute for behavior and security review.
 
