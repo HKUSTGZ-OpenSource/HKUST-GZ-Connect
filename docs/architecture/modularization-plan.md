@@ -60,8 +60,9 @@ locale dictionaries into domain owners with duplicate and missing-key tests. Its
 compatibility facade does not complete the removal of legacy HTML-order coupling.
 
 The proposed [interactive-auth boundary](renderer-auth-challenge.md) establishes an injected native
-controller behind the existing startup facade. Its complete teardown/async ownership and host
-activation remain a separate behavior unit; no no-op cleanup is allowed to bypass that work.
+controller behind a transitional startup facade. The separately proposed
+[auth lifecycle unit](renderer-auth-challenge-lifecycle.md) removes that facade, owns teardown and
+async isolation, and explicitly mounts through the host. Neither unit is merged or released yet.
 
 1. Add an explicit Renderer bootstrap and a checked feature registry.
 2. Freeze the list of existing `window.*` feature exports; CI rejects new ones.

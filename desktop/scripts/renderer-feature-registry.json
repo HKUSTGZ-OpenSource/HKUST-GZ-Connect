@@ -11,9 +11,6 @@
     "renderer/add-website-dialog.js": [
       "addWebsiteDialog"
     ],
-    "renderer/auth-challenge.js": [
-      "authChallenge"
-    ],
     "renderer/browser-data-settings.js": [
       "browserDataSettings"
     ],
@@ -179,7 +176,7 @@
       "id": "auth-challenge",
       "root": "renderer/features/auth-challenge",
       "entrypoint": "renderer/features/auth-challenge/index.mjs",
-      "exports": ["createAuthChallengeFeature", "MAX_RESPONSE_BYTES", "start"],
+      "exports": ["create", "createAuthChallengeFeature", "MAX_RESPONSE_BYTES", "start"],
       "allowedDependencies": []
     },
     {
@@ -194,7 +191,7 @@
       "root": "renderer/features/feature-host",
       "entrypoint": "renderer/features/feature-host/index.mjs",
       "exports": ["FEATURE_DEFINITIONS", "createRendererFeatures"],
-      "allowedDependencies": ["campus-data", "official-favorites"]
+      "allowedDependencies": ["campus-data", "official-favorites", "auth-challenge"]
     },
     {
       "id": "campus-data",

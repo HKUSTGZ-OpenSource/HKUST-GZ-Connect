@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
-const { createAuthChallengeFeature } = require('../renderer/auth-challenge');
+const { createAuthChallengeFeature } = require('../renderer/features/auth-challenge/index.mjs');
 const I18N = require('../renderer/i18n');
 
 const IDS = [
@@ -31,6 +31,7 @@ class FakeElement {
     this.listeners = new Map();
   }
   addEventListener(type, listener) { this.listeners.set(type, listener); }
+  removeEventListener(type, listener) { if (this.listeners.get(type) === listener) this.listeners.delete(type); }
   dispatch(type) {
     this.listeners.get(type)?.({ preventDefault() {} });
   }
@@ -42,6 +43,7 @@ class FakeElement {
 function fixture(api = {}) {
   const elements = new Map(IDS.map((id) => [id, new FakeElement()]));
   const document = {
+    addEventListener() {}, removeEventListener() {},
     documentElement: { lang: 'en' },
     getElementById: (id) => elements.get(id),
   };
@@ -50,6 +52,7 @@ function fixture(api = {}) {
       respondAuthChallenge: async () => ({ ok: true }),
       resendAuthChallenge: async () => ({ ok: true }),
       cancelAuthChallenge: async () => ({ ok: true }),
+      onAuthChallenge: () => () => {}, getState: async () => ({}),
       ...api,
     },
     document,
@@ -57,6 +60,7 @@ function fixture(api = {}) {
     setTimeoutFn: () => ({ unref() {} }),
     clearTimeoutFn: () => {},
   });
+  feature.start();
   return { elements, feature };
 }
 
@@ -112,8 +116,8 @@ test('unknown challenge is fail-closed and cancel clears any response', async ()
 
 test('markup provides one-time-code semantics without assuming numeric shape or clipboard access', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'index.html'), 'utf8');
-  const source = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'auth-challenge.js'), 'utf8')
-    + fs.readFileSync(path.join(__dirname, '..', 'renderer', 'features/auth-challenge/controller.mjs'), 'utf8');
+  const source = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'features/auth-challenge/controller.mjs'), 'utf8')
+    + fs.readFileSync(path.join(__dirname, '..', 'renderer', 'features/auth-challenge/lifecycle.mjs'), 'utf8');
   assert.match(html, /id="authChallengeResponse"[\s\S]*autocomplete="one-time-code"/);
   assert.doesNotMatch(html, /authChallengeResponse[^>]*inputmode="numeric"/);
   assert.doesNotMatch(source, /clipboard|writeText|localStorage|sessionStorage/);

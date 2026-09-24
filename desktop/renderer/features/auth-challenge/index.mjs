@@ -1,1 +1,2 @@
-export { createAuthChallengeFeature, MAX_RESPONSE_BYTES, start } from './controller.mjs';
+export { MAX_RESPONSE_BYTES } from './controller.mjs';
+export { create, create as createAuthChallengeFeature, start } from './lifecycle.mjs';

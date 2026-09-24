@@ -14,11 +14,14 @@ function fixture() {
     if (!elements.has(id)) elements.set(id, {
       value:'', textContent:'', hidden:false, disabled:false, open:false,
       addEventListener(type, callback) { handlers.set(id+':'+type,callback); },
+      removeEventListener(type, callback) { if (handlers.get(id+':'+type) === callback) handlers.delete(id+':'+type); },
       showModal() { this.open=true; }, close() { this.open=false; }, focus() {},
     });
     return elements.get(id);
   };
-  const document = {documentElement:{lang:'en'},getElementById:get};
+  const document = {documentElement:{lang:'en'},getElementById:get,
+    addEventListener:(name,callback)=>handlers.set('document:'+name,callback),
+    removeEventListener:(name,callback)=>{if(handlers.get('document:'+name)===callback)handlers.delete('document:'+name);}};
   const api = {
     onAuthChallenge(callback) { listener=callback; calls.push('subscribe'); return ()=>{}; },
     getState() { calls.push('snapshot'); return new Promise(resolve=>{resolveState=resolve;}); },
@@ -26,7 +29,8 @@ function fixture() {
     resendAuthChallenge: async () => { calls.push('resend'); return {ok:true}; },
     cancelAuthChallenge: async () => { calls.push('cancel'); return {ok:true}; },
   };
-  const options = {api,document,i18n,target:{addEventListener:(name,callback)=>handlers.set(name,callback)},
+  const options = {api,document,i18n,target:{addEventListener:(name,callback)=>handlers.set(name,callback),
+    removeEventListener:(name,callback)=>{if(handlers.get(name)===callback)handlers.delete(name);}},
     now:()=>clock,setTimeoutFn:(callback,delay)=>{timers.set(++sequence,{callback,delay});return sequence;},
     clearTimeoutFn:id=>timers.delete(id)};
   return {get,calls,options,timers,clock:value=>{clock=value;},
@@ -38,7 +42,7 @@ const challenge = {kind:'otp',maskedDestination:'s***@example.test',attemptsRema
 const settle = () => new Promise(resolve=>setImmediate(resolve));
 
 test('native entrypoint has no auto-start or global export and exposes only its declared API', () => {
-  assert.deepEqual(Object.keys(owner).sort(),['MAX_RESPONSE_BYTES','createAuthChallengeFeature','start']);
+  assert.deepEqual(Object.keys(owner).sort(),['MAX_RESPONSE_BYTES','create','createAuthChallengeFeature','start']);
   assert.equal(Object.hasOwn(globalThis,'authChallenge'),false);
   assert.equal(owner.MAX_RESPONSE_BYTES,4096);
   assert.equal(owner.start(),null);
@@ -64,6 +68,7 @@ test('startup restores an initial display challenge when no newer event exists',
 
 test('injected clock retains resend cooldown and expiry behavior', () => {
   const f=fixture(); const feature=owner.createAuthChallengeFeature(f.options);
+  feature.start();
   feature.render({...challenge,resendAfterUnixMs:2000,expiresAtUnixMs:3000});
   assert.equal(f.get('authChallengeResend').disabled,true);
   let timer=[...f.timers.values()][0]; assert.equal(timer.delay,1001);
@@ -78,6 +83,7 @@ test('injected clock retains resend cooldown and expiry behavior', () => {
 
 test('native submission retains byte limits, immediate input clearing and Escape cancellation', async () => {
   const f=fixture(); const feature=owner.createAuthChallengeFeature(f.options);
+  feature.start(); f.calls.length=0;
   feature.render(challenge);
   for (const value of ['', '界'.repeat(1400)]) {
     f.get('authChallengeResponse').value=value; f.dispatch('authChallengeForm','submit');
@@ -90,8 +96,11 @@ test('native submission retains byte limits, immediate input clearing and Escape
   feature.render(null);
 });
 
-test('legacy facade stays bounded instead of regaining authentication behavior', () => {
-  const source=fs.readFileSync(path.resolve(__dirname,'../../../renderer/auth-challenge.js'),'utf8');
-  assert.ok(source.trimEnd().split('\n').length<=12);
-  assert.doesNotMatch(source,/function render|function updateActions|function run/);
+test('legacy facade and automatic startup are retired without weakening package requirements', () => {
+  const renderer=path.resolve(__dirname,'../../../renderer');
+  assert.equal(fs.existsSync(path.join(renderer,'auth-challenge.js')),false);
+  assert.doesNotMatch(fs.readFileSync(path.join(renderer,'index.html'),'utf8'),/src="auth-challenge.js"/);
+  assert.match(fs.readFileSync(path.join(renderer,'app.js'),'utf8'),/rendererFeatures\.mount\('auth-challenge'/);
+  const verifier=fs.readFileSync(path.resolve(renderer,'../build/verify-package.js'),'utf8');
+  for (const name of ['index','controller','lifecycle']) assert.ok(verifier.includes(`/renderer/features/auth-challenge/${name}.mjs`));
 });

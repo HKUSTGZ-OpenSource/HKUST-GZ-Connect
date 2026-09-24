@@ -16,6 +16,7 @@ if (!root || !path.isAbsolute(root) || !path.basename(root).startsWith('campus r
   throw new Error('Run this fixture through node e2e/renderer-module-asar.js');
 }
 process.env.HKUSTGZ_E2E_EMPTY_SCHEDULE = '1';
+process.env.HKUSTGZ_E2E_INITIAL_AUTH = '1';
 app.setPath('userData', path.join(root, 'user-data'));
 // Both locale windows belong to this one fixture; only run() completion exits Electron.
 app.on('window-all-closed', () => {});
@@ -50,6 +51,8 @@ async function run() {
     while (!document.querySelector('#scheduleBody .week-table') && Date.now() < deadline) {
       await new Promise(resolve => setTimeout(resolve, 20));
     }
+    const initialAuthOpen = document.getElementById('authChallengeDialog').open;
+    const initialAuthDescription = document.getElementById('authChallengeDescription').textContent;
     const auth = await window.api.testEmitAuthChallenge(null);
     await window.api.testEmitAuthChallenge({kind:'otp',maskedDestination:'s***@example.test',
       attemptsRemaining:3,resendAvailable:true,expiresAtUnixMs:null,resendAfterUnixMs:null});
@@ -67,12 +70,16 @@ async function run() {
       days: document.querySelectorAll('#scheduleBody .week-day-head').length,
       legacyGlobal: Object.hasOwn(window, 'campusDataModules'), authListeners: auth.listeners,
       authOpen, inputCleared, authClosed, responseCount:submitted.responseCount,
+      initialAuthOpen, initialAuthDescription,
       favoriteChooser: chooser.open,
       favoriteFactoryGlobal: typeof window.officialFavoriteDialog?.create,
       archive: location.pathname.includes('app.asar') };
   })()`);
   assert.deepEqual(state, { dashboard: true, days: 7, legacyGlobal: false, authListeners: 1,
     authOpen:true, inputCleared:true, authClosed:true, responseCount:1,
+    initialAuthOpen:true, initialAuthDescription:locale === 'zh'
+      ? '网关要求一次性验证码。请输入当前验证响应。'
+      : 'The gateway requires a one-time code. Enter the current verification response.',
     favoriteChooser: true, favoriteFactoryGlobal: 'undefined', archive: true });
   const localization = await window.webContents.executeJavaScript(`({
     language: document.documentElement.lang,
@@ -86,13 +93,23 @@ async function run() {
   assert.equal(localization.integrationStarted,true,'deferred integration initialization must not be skipped');
   assert.equal(localization.label,locale === 'zh' ? '校园工作台' : 'Workspace');
   assert.equal(localization.weeklyLabel,locale === 'zh' ? '本周' : 'This week');
-  const retired = await window.webContents.executeJavaScript(`(() => {
+  const retired = await window.webContents.executeJavaScript(`(async () => {
+    await window.api.testEmitAuthChallenge({kind:'otp',maskedDestination:'s***@example.test',
+      expiresAtUnixMs:Date.now()+30000,resendAfterUnixMs:null,resendAvailable:true});
+    document.getElementById('authChallengeResponse').value = 'synthetic-response';
+    document.getElementById('authChallengeForm').dispatchEvent(new Event('submit',{cancelable:true}));
     window.dispatchEvent(new Event('pagehide'));
     window.dispatchEvent(new Event('pagehide'));
+    const auth = await window.api.testEmitAuthChallenge({kind:'otp',expiresAtUnixMs:null});
     return { calendarEmpty: document.getElementById('scheduleBody').innerHTML === '',
-      favoriteOpen: document.getElementById('officialFavoriteDialog').open };
+      favoriteOpen: document.getElementById('officialFavoriteDialog').open,
+      authOpen:document.getElementById('authChallengeDialog').open,
+      authEmpty:document.getElementById('authChallengeResponse').value === '',
+      authDisabled:document.getElementById('authChallengeSubmit').disabled,
+      authListeners:auth.listeners, legacyAuth:Object.hasOwn(window,'authChallenge') };
   })()`);
-  assert.deepEqual(retired, { calendarEmpty:true, favoriteOpen:false },
+  assert.deepEqual(retired, { calendarEmpty:true, favoriteOpen:false, authOpen:false,
+    authEmpty:true, authDisabled:true, authListeners:0, legacyAuth:false },
     'the registered owners retire their DOM and dialog on pagehide');
   await window.loadFile(path.join(archive, 'renderer/campus-browser.html'), {query:{lang:locale}});
   const chrome = await window.webContents.executeJavaScript(`({

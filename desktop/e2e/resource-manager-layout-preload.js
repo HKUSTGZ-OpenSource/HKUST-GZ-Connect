@@ -116,6 +116,10 @@ function normalizeFixtureUrl(value) {
 
 const state = {
   locale: fixtureLocale,
+  authChallenge: process.env.HKUSTGZ_E2E_INITIAL_AUTH === '1' ? {
+    kind:'otp', maskedDestination:'s***@example.test', attemptsRemaining:3,
+    expiresAtUnixMs:null, resendAvailable:true, resendAfterUnixMs:null,
+  } : null,
   loggedIn: true,
   settings: {
     port: 1080,
