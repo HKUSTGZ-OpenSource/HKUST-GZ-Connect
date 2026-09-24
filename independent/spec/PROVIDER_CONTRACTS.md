@@ -78,8 +78,9 @@ unsupported authentication method to the stable
 `UNSUPPORTED_AUTHENTICATION` code without serializing the method, challenge, or
 server response. A verified structured password rejection maps to
 `AUTH_REJECTED`; request/response outcomes that cannot be confirmed map to
-`AUTH_INDETERMINATE`; invalid structured responses map to
-`AUTH_PROTOCOL_INVALID`. `AUTH_FAILED` is retained only for compatibility with
+`AUTH_INDETERMINATE` after password submission. Gateway availability failures
+before the password POST map to retryable `GATEWAY_PRELOGIN_UNAVAILABLE`; invalid
+structured responses map to `AUTH_PROTOCOL_INVALID`. `AUTH_FAILED` is retained only for compatibility with
 older Engine builds. Secondary-authentication responses are logged out under a
 bounded deadline before the primary error is returned. If that cleanup cannot
 be confirmed, the primary code remains intact and the event adds the secondary
