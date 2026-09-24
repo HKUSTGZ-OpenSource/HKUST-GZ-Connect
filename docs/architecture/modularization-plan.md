@@ -42,6 +42,11 @@ Primary concurrency hot spots:
 
 ## Wave M1 — Renderer dependency authority
 
+The proposed [campus-data boundary](campus-data-module.md) and
+[official favorites boundary](official-favorites-module.md) establish the first two explicit
+native entrypoints in separate stacked review candidates. Their local/native evidence does not
+complete the registry, global-export enforcement, localization or release gates below.
+
 1. Add an explicit Renderer bootstrap and a checked feature registry.
 2. Freeze the list of existing `window.*` feature exports; CI rejects new ones.
 3. Give each feature one public entrypoint with injected dependencies.

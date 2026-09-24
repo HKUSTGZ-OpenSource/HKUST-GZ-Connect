@@ -91,6 +91,7 @@ modules:
     publicEntrypoints:
       - desktop/renderer/app.js
       - desktop/renderer/features/campus-data/index.mjs
+      - desktop/renderer/features/official-favorites/index.mjs
       - desktop/preload.js
     allowedDependencies: [desktop-renderer]
     risk: high

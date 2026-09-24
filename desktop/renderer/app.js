@@ -1,4 +1,5 @@
 import { create as createCampusData } from './features/campus-data/index.mjs';
+import { create as createOfficialFavorites } from './features/official-favorites/index.mjs';
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // Active UI language. Chinese until get-state reports the real system locale.
@@ -510,7 +511,7 @@ groupDialogFeature = window.categoryGroupDialog.start({
   onChanged: (groups) => { const known = new Set(resourceGroups.map(({ id }) => id)); resourceGroups = groups; renderResources(); const created = groups.find(({ id }) => !known.has(id)); if (created) requestAnimationFrame(() => window.campusCategoryStacks.focusCard('user-collection', created.id)); },
   toast: (message, tone) => usabilityFeature?.toast(message, tone),
 });
-favoriteDialogFeature = window.officialFavoriteDialog.create({
+favoriteDialogFeature = createOfficialFavorites({
   api: window.api, document, translate: (key, vars) => t(key, vars), getResources: () => campusResources, getGroups: () => resourceGroups,
   setResources: (resources) => { campusResources = resources; renderResources(); }, setGroups: (groups) => { resourceGroups = groups; renderResources(); },
   onSaved: ({ groupId }) => { serviceWorkspace?.setTab('personal', { focus: false }); requestAnimationFrame(() => window.campusCategoryStacks.focusCard(groupId ? 'user-collection' : 'system-widget', groupId || 'ungrouped-favorites')); },

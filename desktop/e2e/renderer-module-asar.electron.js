@@ -9,7 +9,12 @@ const asar = require('@electron/asar');
 const { app, BrowserWindow } = require('electron');
 
 const desktop = path.resolve(__dirname, '..');
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'campus-renderer-module-asar-'));
+const root = process.argv[2];
+if (!root || !path.isAbsolute(root) || !path.basename(root).startsWith('campus renderer asar ') ||
+    fs.realpathSync(path.dirname(root)) !== fs.realpathSync(os.tmpdir()) ||
+    fs.lstatSync(root).isSymbolicLink() || !fs.lstatSync(root).isDirectory()) {
+  throw new Error('Run this fixture through node e2e/renderer-module-asar.js');
+}
 process.env.HKUSTGZ_E2E_EMPTY_SCHEDULE = '1';
 app.setPath('userData', path.join(root, 'user-data'));
 let window;
@@ -42,17 +47,23 @@ async function run() {
       await new Promise(resolve => setTimeout(resolve, 20));
     }
     const auth = await window.api.testEmitAuthChallenge(null);
+    const favorite = document.querySelector('#appsList [data-favorite-entry]');
+    favorite?.click();
+    const chooser = document.getElementById('officialFavoriteDialog');
     return { dashboard: !document.getElementById('dash').hidden,
       days: document.querySelectorAll('#scheduleBody .week-day-head').length,
       legacyGlobal: Object.hasOwn(window, 'campusDataModules'), authListeners: auth.listeners,
+      favoriteChooser: chooser.open,
+      favoriteFactoryGlobal: typeof window.officialFavoriteDialog?.create,
       archive: location.pathname.includes('app.asar') };
   })()`);
-  assert.deepEqual(state, { dashboard: true, days: 7, legacyGlobal: false, authListeners: 1, archive: true });
+  assert.deepEqual(state, { dashboard: true, days: 7, legacyGlobal: false, authListeners: 1,
+    favoriteChooser: true, favoriteFactoryGlobal: 'undefined', archive: true });
   console.log('renderer native modules in ASAR: PASS');
 }
 
+process.on('unhandledRejection', error => { console.error(error); app.exit(1); });
 run().then(() => 0).catch(error => { console.error(error); return 1; }).then(code => {
   if (window && !window.isDestroyed()) window.destroy();
-  fs.rmSync(root, { recursive: true, force: true });
   app.exit(code);
 });

@@ -112,7 +112,7 @@ test('Campus Workspace data modules use isolated state projections without porta
   assert.match(html, /class="official-main-deck"[^>]*id="officialMainDeck"/u);
   assert.match(html, /id="officialCatalogDialog"/u);
   assert.match(html, /id="officialFavoriteDialog"/u);
-  assert.match(html, /<script src="official-favorite-dialog\.js"><\/script>/u);
+  assert.doesNotMatch(html, /<script src="official-favorite-dialog\.js"><\/script>/u);
   assert.match(serviceWorkspaceJs, /const APPS_PAGE_SIZE = 12/u);
   assert.match(serviceWorkspaceJs, /const DESK_PAGE_SIZE = 6/u);
   assert.match(serviceWorkspaceJs, /renderPager/u);
@@ -146,7 +146,7 @@ test('Campus Workspace data modules use isolated state projections without porta
   assert.doesNotMatch(campusDataModulesJs, /style="/u);
   assert.doesNotMatch(campusDataModulesJs, /cookie|password|localStorage/iu);
   assert.match(appJs, /campusDataFeature\?\.ensureLoaded/u);
-  assert.match(appJs, /window\.officialFavoriteDialog\.create/u);
+  assert.match(appJs, /import \{ create as createOfficialFavorites \} from '\.\/features\/official-favorites\/index\.mjs'/u);
   assert.match(appJs, /serviceWorkspace\?\.setTab\('personal'/u);
   assert.match(categoryStacksJs, /personalCategoryPager/u);
   assert.match(categoryStacksJs, /autoStack:\s*true/u);
