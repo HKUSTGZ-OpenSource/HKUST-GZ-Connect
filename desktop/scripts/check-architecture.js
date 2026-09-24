@@ -73,7 +73,7 @@ function collectJavaScriptFiles(root) {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       if (entry.isDirectory()) {
         if (!SKIPPED_DIRECTORIES.has(entry.name)) visit(path.join(directory, entry.name));
-      } else if (entry.isFile() && entry.name.endsWith('.js')) {
+      } else if (entry.isFile() && /\.(?:js|mjs)$/u.test(entry.name)) {
         files.push(path.resolve(directory, entry.name));
       }
     }
@@ -112,7 +112,8 @@ function edgeCountForSources(graph, sources) {
 }
 
 function relativeRequires(source) {
-  return [...String(source).matchAll(/require\(\s*['"]([^'"]+)['"]\s*\)/g)]
+  return [...String(source).matchAll(/(?:require|import)\(\s*['"]([^'"]+)['"]\s*\)/g),
+    ...String(source).matchAll(/^\s*(?:import|export)\s+(?:[^'";]*?\s+from\s*)?['"]([^'"]+)['"]/gm)]
     .map((match) => match[1])
     .filter((specifier) => specifier.startsWith('.'));
 }

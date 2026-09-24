@@ -43,7 +43,7 @@ function safeTrackedPath(value) {
   if (typeof value !== 'string' || !value || /[\u0000-\u001f\u007f:]/u.test(value) ||
       value.includes('\\') ||
       value.startsWith('/') || value.startsWith('../') || value.includes('/../') ||
-      path.posix.normalize(value) !== value || !value.endsWith('.js')) {
+      path.posix.normalize(value) !== value || !/\.(?:js|mjs)$/u.test(value)) {
     throw new TypeError('syntax gate received an invalid tracked path');
   }
   return value;
@@ -57,7 +57,7 @@ function listJavaScriptFiles({ repoRoot, tree, execute = runProcess }) {
     throw new Error('syntax gate could not enumerate the requested Git tree');
   }
   const files = result.stdout.toString('utf8').split('\0').filter(Boolean)
-    .filter((file) => file.endsWith('.js'))
+    .filter((file) => /\.(?:js|mjs)$/u.test(file))
     .map(safeTrackedPath)
     .filter((file) => !EXCLUDED_PREFIXES.some((prefix) => file.startsWith(prefix)));
   if (!files.length) throw new Error('syntax gate enumerated zero JavaScript files');
@@ -80,11 +80,11 @@ function readTreeBlob({ repoRoot, tree, file, execute = runProcess }) {
   return result.stdout;
 }
 
-function checkJavaScriptSource(source, { execute = runProcess } = {}) {
+function checkJavaScriptSource(source, { execute = runProcess, module = false } = {}) {
   if (!Buffer.isBuffer(source) || source.length > MAX_SOURCE_BYTES) {
     throw new TypeError('syntax source must be a bounded Buffer');
   }
-  const result = execute(process.execPath, ['--check'], {
+  const result = execute(process.execPath, module ? ['--check', '--input-type=module'] : ['--check'], {
     input: source,
     encoding: 'utf8',
     maxBuffer: 64 * 1024,
@@ -95,12 +95,37 @@ function checkJavaScriptSource(source, { execute = runProcess } = {}) {
   });
 }
 
+function controlModuleEntrypoints(html) {
+  const modules = new Set();
+  const source = String(html).replace(/<!--[\s\S]*?-->/gu, '');
+  for (const [tag] of source.matchAll(/<script\b[^>]*>/giu)) {
+    if (!/\btype\s*=\s*(['"])module\1/iu.test(tag)) continue;
+    const specifier = tag.match(/\bsrc\s*=\s*(['"])([^'"]+)\1/iu)?.[2];
+    if (!specifier || !specifier.endsWith('.js') && !specifier.endsWith('.mjs') ||
+        specifier.startsWith('/') || specifier.includes(':') || specifier.includes('\\')) {
+      throw new TypeError('control module entrypoint is invalid');
+    }
+    const file = safeTrackedPath(path.posix.join('desktop/renderer', specifier));
+    if (!file.startsWith('desktop/renderer/')) throw new TypeError('control module entrypoint escapes Renderer');
+    modules.add(file);
+  }
+  return modules;
+}
+
 function checkJavaScriptTree({ repoRoot, tree, execute = runProcess }) {
   const files = listJavaScriptFiles({ repoRoot, tree, execute });
+  const markup = execute('git', ['show', `${tree}:desktop/renderer/index.html`], {
+    cwd: repoRoot, encoding: 'buffer', maxBuffer: MAX_SOURCE_BYTES + 1,
+  });
+  if (markup.status !== 0 || !Buffer.isBuffer(markup.stdout) || markup.stdout.length > MAX_SOURCE_BYTES) {
+    throw new Error('syntax gate could not read the control module entrypoints');
+  }
+  const modules = controlModuleEntrypoints(markup.stdout.toString('utf8'));
+  if ([...modules].some(file => !files.includes(file))) throw new Error('control module entrypoint is missing');
   const failures = [];
   for (const file of files) {
     const source = readTreeBlob({ repoRoot, tree, file, execute });
-    const result = checkJavaScriptSource(source, { execute });
+    const result = checkJavaScriptSource(source, { execute, module: file.endsWith('.mjs') || modules.has(file) });
     if (!result.ok) failures.push(Object.freeze({ file, diagnostic: result.diagnostic }));
   }
   return Object.freeze({ files, failures: Object.freeze(failures) });
@@ -131,6 +156,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  controlModuleEntrypoints,
   checkJavaScriptSource,
   checkJavaScriptTree,
   listJavaScriptFiles,

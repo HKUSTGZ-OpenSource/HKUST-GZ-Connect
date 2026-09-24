@@ -7,12 +7,14 @@ const test = require('node:test');
 
 const rendererDir = path.join(__dirname, '..', 'renderer');
 const html = fs.readFileSync(path.join(rendererDir, 'index.html'), 'utf8');
-const css = fs.readFileSync(path.join(rendererDir, 'styles.css'), 'utf8');
+const css = fs.readFileSync(path.join(rendererDir, 'styles.css'), 'utf8')
+  + fs.readFileSync(path.join(rendererDir, 'features/campus-data/view.css'), 'utf8');
 const appJs = fs.readFileSync(path.join(rendererDir, 'app.js'), 'utf8');
 const categoryStacksJs = fs.readFileSync(path.join(rendererDir, 'campus-category-stacks.js'), 'utf8');
 const serviceWorkspaceJs = fs.readFileSync(path.join(rendererDir, 'campus-service-workspace.js'), 'utf8');
-const campusDataModulesJs = fs.readFileSync(path.join(rendererDir, 'campus-data-modules.js'), 'utf8');
-const campusDataModules = require(path.join(rendererDir, 'campus-data-modules.js'));
+const campusDataModulesJs = fs.readFileSync(path.join(rendererDir, 'features/campus-data/controller.mjs'), 'utf8')
+  + fs.readFileSync(path.join(rendererDir, 'features/campus-data/calendar-view.mjs'), 'utf8');
+const campusDataModules = require(path.join(rendererDir, 'features/campus-data/index.mjs'));
 const usabilityControllerJs = fs.readFileSync(path.join(rendererDir, 'usability-controller.js'), 'utf8');
 
 test('login fields keep native keyboard and password-manager semantics', () => {
@@ -42,7 +44,7 @@ test('login owns a modular bilingual School selector with an explicit unreviewed
   assert.match(html, /id="confirmCustomGateway"/u);
   assert.match(html, /class="gateway-warning"/u);
   const selectorScript = html.indexOf('<script src="school-profile-selector.js"></script>');
-  const appScript = html.indexOf('<script src="app.js"></script>');
+  const appScript = html.indexOf('<script type="module" src="app.js"></script>');
   assert.ok(selectorScript > 0 && selectorScript < appScript);
   assert.match(css, /@media\s*\(max-width:\s*459px\)/u);
   assert.match(appJs, /expectedProfileId: expectedProfileId|expectedProfileId \}/u);
@@ -56,7 +58,7 @@ test('Control Tower owns a modular Integration Center instead of scattered secre
   assert.match(html, /id="confirmIntegration"/u);
   assert.doesNotMatch(html, /data-copy="(?:pac|clash|ssh)"/u);
   const integrationScript = html.indexOf('<script src="integration-center.js"></script>');
-  const appScript = html.indexOf('<script src="app.js"></script>');
+  const appScript = html.indexOf('<script type="module" src="app.js"></script>');
   assert.ok(integrationScript > 0 && integrationScript < appScript);
   assert.doesNotMatch(appJs, /prepareIntegration|confirmIntegration|listIntegrations/u);
 });
@@ -100,9 +102,10 @@ test('Campus Workspace data modules use isolated state projections without porta
   for (const id of ['moduleSchedule', 'moduleLoans', 'moduleNews', 'scheduleBody', 'loansBody', 'newsBody']) {
     assert.match(html, new RegExp(`id="${id}"`, 'u'));
   }
-  const dataScript = html.indexOf('<script src="campus-data-modules.js"></script>');
-  const appScript = html.indexOf('<script src="app.js"></script>');
-  assert.ok(dataScript > 0 && dataScript < appScript);
+  assert.match(html, /<script type="module" src="app\.js"><\/script>/u);
+  assert.match(appJs, /import \{ create as createCampusData \} from '\.\/features\/campus-data\/index\.mjs'/u);
+  assert.doesNotMatch(html, /src="campus-data-modules\.js"/u);
+  assert.doesNotMatch(appJs, /window\.campusDataModules/u);
   assert.match(campusDataModulesJs, /not-authenticated/u);
   assert.match(campusDataModulesJs, /source-unavailable/u);
   assert.match(campusDataModulesJs, /session-expired/u);
@@ -205,7 +208,7 @@ test('personal categories drive the card board with ID-only resource actions', (
   'taxonomy and shared Card Board must load before category composition');
   const groupDialogScript = html.indexOf('<script src="group-dialog.js"></script>');
   const serviceWorkspaceScript = html.indexOf('<script src="campus-service-workspace.js"></script>');
-  const appScript = html.indexOf('<script src="app.js"></script>');
+  const appScript = html.indexOf('<script type="module" src="app.js"></script>');
   assert.ok(groupDialogScript > 0 && groupDialogScript < appScript &&
     serviceWorkspaceScript > 0 && serviceWorkspaceScript < appScript,
     'the service workspace modules must load before the shell composition');

@@ -90,6 +90,7 @@ modules:
     paths: [desktop/renderer/**, desktop/preload.js]
     publicEntrypoints:
       - desktop/renderer/app.js
+      - desktop/renderer/features/campus-data/index.mjs
       - desktop/preload.js
     allowedDependencies: [desktop-renderer]
     risk: high

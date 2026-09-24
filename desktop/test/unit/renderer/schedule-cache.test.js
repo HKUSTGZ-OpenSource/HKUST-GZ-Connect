@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { create } = require('../../../renderer/campus-data-modules');
+const { create } = require('../../../renderer/features/campus-data/index.mjs');
 const deferred = () => { let resolve, reject; const promise = new Promise((a,b) => { resolve=a; reject=b; }); return {promise,resolve,reject}; };
 const value = (state='ready') => ({sessionState:'authenticated',modules:{schedule:{state,source:'myportal-calendar',fetchedAt:Date.now(),items:state==='ready'?[{title:'Fixture',startsAt:Date.now(),endsAt:Date.now()+3600000}]:[]}}});
 function harness() {

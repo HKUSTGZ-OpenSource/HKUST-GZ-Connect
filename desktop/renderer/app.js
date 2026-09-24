@@ -1,4 +1,4 @@
-'use strict';
+import { create as createCampusData } from './features/campus-data/index.mjs';
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // Active UI language. Chinese until get-state reports the real system locale.
@@ -532,7 +532,7 @@ serviceWorkspace = window.campusServiceWorkspace.create({
   focusPersonalCard: (groupId) => window.campusCategoryStacks.focusCard('user-collection', groupId),
 });
 serviceWorkspace.start();
-campusDataFeature = window.campusDataModules.create({
+campusDataFeature = createCampusData({
   document,
   api: window.api,
   translate: (key, vars) => t(key, vars),

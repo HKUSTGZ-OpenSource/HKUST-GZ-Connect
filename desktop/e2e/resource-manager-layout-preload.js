@@ -2,6 +2,8 @@
 
 const { contextBridge } = require('electron');
 const fixtureLocale = process.env.HKUSTGZ_E2E_LOCALE === 'en' ? 'en' : 'zh';
+const authChallengeListeners = new Set();
+let authResponseCount = 0;
 
 function reviewedPreviewResources() {
   const payload = process.env.HKUSTGZ_CONTROL_PREVIEW_RESOURCES_JSON || '';
@@ -166,6 +168,7 @@ const state = {
 
 function campusDataSnapshot() {
   const checkedAt = Date.now();
+  const emptySchedule = process.env.HKUSTGZ_E2E_EMPTY_SCHEDULE === '1';
   const module = (source) => ({
     state: 'not-authenticated', source, fetchedAt: checkedAt, stale: false, items: [],
   });
@@ -173,9 +176,9 @@ function campusDataSnapshot() {
     schemaVersion: 1,
     checkedAt,
     portalUrl: 'https://myportal.hkust-gz.edu.cn/',
-    sessionState: 'unauthenticated',
+    sessionState: emptySchedule ? 'authenticated' : 'unauthenticated',
     modules: {
-      schedule: module('myportal-session'),
+      schedule: emptySchedule ? { ...module('synthetic-calendar'), state: 'empty' } : module('myportal-session'),
       loans: module('myportal-session'),
       news: { ...module('official-api-not-configured'), state: 'source-unavailable' },
     },
@@ -454,7 +457,7 @@ contextBridge.exposeInMainWorld('api', {
     return { ok: true, cancelled: true };
   },
   resize: async () => ({ ok: true }),
-  respondAuthChallenge: async () => ({ ok: true }),
+  respondAuthChallenge: async () => { authResponseCount += 1; return { ok: true }; },
   resendAuthChallenge: async () => ({ ok: true }),
   cancelAuthChallenge: async () => ({ ok: true }),
   listSchoolProfiles: async () => ({ ok: true, activeProfileId: 'hkustgz', profiles: [] }),
@@ -466,7 +469,14 @@ contextBridge.exposeInMainWorld('api', {
   onStatus: () => {},
   onTelemetry: () => {},
   onNetworkEnvironment: () => {},
-  onAuthChallenge: () => () => {},
+  onAuthChallenge: (listener) => {
+    authChallengeListeners.add(listener);
+    return () => authChallengeListeners.delete(listener);
+  },
+  testEmitAuthChallenge: (challenge) => {
+    for (const listener of authChallengeListeners) listener(challenge);
+    return { listeners: authChallengeListeners.size, responseCount: authResponseCount };
+  },
   testState: () => ({ lastOpenRequest, workspaceOpenCount, bookmarkManagerOpenCount,
     resources, resourceGroups: state.resourceGroups, cardBoardRequests,
     cardBoardDocument: cloneCardBoardDocument(cardBoardDocument) }),
