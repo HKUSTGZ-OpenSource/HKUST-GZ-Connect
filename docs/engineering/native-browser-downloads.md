@@ -1,6 +1,6 @@
 # Native Browser downloads and context retirement
 
-- Status: Lifecycle review candidate based on merged #112; not a released capability claim
+- Status: Historical lifecycle review receipt; source merged in #113, not a release claim
 - Owner: Desktop / Browser maintainers, related to issue #80
 - Last verified locally: 2026-09-25
 - Structural base: `main@8024fa8` after PR #112

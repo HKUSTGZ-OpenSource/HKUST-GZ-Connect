@@ -1,9 +1,9 @@
 # Renderer feature host: lifecycle-owned native modules
 
-- Status: Campus-data host merged in #114; favorite registration remains the #115 candidate
+- Status: Historical host review receipt; campus-data #114 and favorites #115 merged, not released
 - Owner: Desktop Renderer maintainers, issue #79
 - Base: PR #110 at `82da86388d0d135cda27bebde5aae5e1d3434d6e`
-- Last verified: 2026-09-11
+- Last verified: 2026-09-25
 - Applies to: Issue #79, post-2.0.2 campus-data lifecycle candidate
 
 ## Boundary

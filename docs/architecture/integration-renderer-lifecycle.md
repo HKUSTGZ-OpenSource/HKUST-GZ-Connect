@@ -1,6 +1,6 @@
 # Integration Center Renderer lifetime
 
-- Status: PR #120 behavior candidate based on merged #119; not installed or released
+- Status: Historical lifecycle review receipt; source merged in #120, not installed or released
 - Owner: Desktop maintainers, #79 / #81
 - Last verified locally: 2026-09-25
 - Runtime: `612a9dfb` (full SHA in Git); acceptance: `ea1620c4e9e7510bbe55abba18a251b28c27b424`

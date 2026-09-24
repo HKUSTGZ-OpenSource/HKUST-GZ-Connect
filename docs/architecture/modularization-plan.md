@@ -1,9 +1,9 @@
 # Modularization plan
 
-- Status: Proposed execution plan
+- Status: Active execution plan; M1/M2 partially merged, M3–M5 open
 - Owner: architecture maintainers
-- Last verified: 2026-09-04
-- Applies to: post-2.0.0 `main`
+- Last verified: 2026-09-25 (`main@dc9113df96da92830091edb0c6a0860219d1dfbe`)
+- Applies to: development `main` after published 2.0.2; merged source is not a new release
 - Supersedes: ad-hoc file-by-file extraction without an ownership receipt
 
 ## Purpose
@@ -14,9 +14,14 @@ independent ownership, lifecycle and public contracts are.
 
 ## Baseline
 
-The Desktop architecture gate passes with no detected CommonJS cycle, but its ratchets are nearly
+The following is the 2026-09-04 baseline, not a claim about current file sizes. The Desktop
+architecture gate passed with no detected CommonJS cycle, but its ratchets were nearly
 exhausted: Main has 36 direct dependencies, 170 transitive dependencies and 1,719 lines; the control
-Renderer has 563 lines. The gate cannot see the main Renderer page's ordered global-script graph.
+Renderer has 563 lines. At that baseline, the gate could not see the main Renderer page's ordered
+global-script graph; #110 later added a static boundary policy for new changes.
+
+At the verification commit, the remaining hot spots measure 562 lines in Renderer `app.js`, 1,804
+in Campus Browser, 1,719 in Desktop Main and 2,515 in `ec-engine.rs`. M1–M5 remain open.
 
 Primary concurrency hot spots:
 
@@ -42,33 +47,15 @@ Primary concurrency hot spots:
 
 ## Wave M1 — Renderer dependency authority
 
-The proposed [feature host](renderer-feature-host.md) now covers campus-data, official-favorites and interactive-auth
-through separate lifecycle review units. Remaining owners require reviewed start/dispose contracts;
-the catalog must not silently wrap missing cleanup with a no-op.
-
-The merged [campus-data boundary](campus-data-module.md) and
-[official favorites boundary](official-favorites-module.md) establish the first two explicit
-native entrypoints. Their acceptance does not complete the registry, global-export enforcement,
-localization or release gates below.
-
-The merged #110 [static Renderer policy](renderer-boundaries.md) adds frozen-export and
-public-entrypoint checks to the architecture command. It is not the runtime lifecycle registry
-or a substitute for behavior and security review.
-
-The proposed [localization boundary](renderer-localization.md) splits the two control/chrome
-locale dictionaries into domain owners with duplicate and missing-key tests. Its temporary
-compatibility facade does not complete the removal of legacy HTML-order coupling.
-
-The proposed [interactive-auth boundary](renderer-auth-challenge.md) establishes an injected native
-controller behind a transitional startup facade. The separately proposed
-[auth lifecycle unit](renderer-auth-challenge-lifecycle.md) removes that facade, owns teardown and
-async isolation, and explicitly mounts through the host. Neither unit is merged or released yet.
-
-The proposed [Integration Center boundary](renderer-integration-center.md) separates its redacted
-display model and injected controller. Its legacy initializer and cancellation/async lifetime
-remain outside the host until a separate behavior unit establishes complete ownership.
-The proposed [Main export-intent repair](integration-export-intents.md) supplies a necessary
-effect-boundary prerequisite; it does not substitute for Renderer teardown or native Windows acceptance.
+The [feature host](renderer-feature-host.md) and separate lifecycle slices now mount campus-data,
+official-favorites, interactive-auth and Integration Center from explicit entrypoints (#108–#120).
+The [static Renderer policy](renderer-boundaries.md) in #110 rejects new legacy exports and invalid
+HTML/module edges; [localization ownership](renderer-localization.md) entered in #116. The
+[auth lifecycle](renderer-auth-challenge-lifecycle.md), [Integration Center lifecycle](integration-renderer-lifecycle.md)
+and [Main export-intent repair](integration-export-intents.md) also entered `main`. Their original
+candidate SHAs in linked review records are historical; none is part of published 2.0.2. The
+remaining `app.js` composition and legacy global/HTML-order debt prevent closing M1 merely because
+these slices passed CI. The host must not mask missing owner cleanup with a no-op.
 
 1. Add an explicit Renderer bootstrap and a checked feature registry.
 2. Freeze the list of existing `window.*` feature exports; CI rejects new ones.
@@ -86,9 +73,11 @@ Exit:
 
 ## Wave M2 — Campus Browser ownership
 
-The [download ownership seam](browser-download-owner.md) is an isolated main-based structural
-candidate. Its native save timing and context-retirement behavior are separate follow-up work;
-Windows MFA harness cleanup is not yet a clean acceptance result.
+The [download owner](browser-download-owner.md) from #112 and its
+[native timing/context retirement](../engineering/native-browser-downloads.md) from #113 are
+merged source; #111 hardened the popup MFA fixture. This is not a released or live-school Browser
+acceptance result. The remaining Browser runtime is still 1,804 lines and does not yet compose all
+owners listed below, so M2 remains open.
 
 Extract tested owners for:
 

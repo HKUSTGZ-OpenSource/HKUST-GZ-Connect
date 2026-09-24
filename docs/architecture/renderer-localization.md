@@ -1,6 +1,6 @@
 # Renderer localization ownership
 
-- Status: Review candidate based on merged PR #115; not installed or released
+- Status: Historical localization review receipt; source merged in #116, not installed or released
 - Owner: Desktop / Renderer maintainers
 - Last verified locally: 2026-09-25
 - Applies to: M1 Renderer localization extraction after merged official-favorites lifecycle

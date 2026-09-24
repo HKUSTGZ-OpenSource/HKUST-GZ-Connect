@@ -1,8 +1,8 @@
 # Campus-data module review boundary
 
-- Status: Proposed; not merged, installed or released
+- Status: Historical review receipt; source merged in #108, not installed or released
 - Owner: Desktop Renderer maintainers
-- Last verified: 2026-09-10
+- Last verified: 2026-09-25
 - Applies to: Issue #79; structural follow-up to published 2.0.2 at `39850415c901aeaa77ecb86cd3ce49a2e75290a8`
 
 ## Public contract

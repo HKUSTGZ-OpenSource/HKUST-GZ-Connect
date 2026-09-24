@@ -1,6 +1,6 @@
 # Official favorites operation and lifecycle ownership
 
-- Status: Review candidate based on merged PR #114; not installed or released
+- Status: Historical lifecycle review receipt; source merged in #115, not installed or released
 - Owner: Desktop Renderer maintainers, issue #79
 - Base: `main@ea3c3cf` after PR #114
 - Last verified locally: 2026-09-25

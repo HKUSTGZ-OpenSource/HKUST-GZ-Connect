@@ -1,8 +1,8 @@
 # Popup MFA fixture lifecycle
 
-- Status: Proposed test-gate repair; not a product MFA change
+- Status: Historical test-gate receipt; fixture repair merged in #111, not a product MFA change
 - Owner: Desktop / Browser maintainers, related to issue #80
-- Last verified: 2026-09-12
+- Last verified: 2026-09-25
 - Applies to: `desktop/e2e/campus-popup-mfa-safety*` and its Node test support
 - Base: `main@39850415c901aeaa77ecb86cd3ce49a2e75290a8` (published 2.0.2)
 - Tested source: `03e81dd3af8703c788be0effd91d8ec989b964ff`
