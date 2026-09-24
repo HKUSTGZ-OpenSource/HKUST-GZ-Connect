@@ -15,6 +15,10 @@ test('public recovery categories map stable lifecycle evidence to one action', (
     { connected: false, connecting: false },
   ), { schemaVersion: 1, category: 'authentication', action: 'reconnect' });
   assert.deepEqual(connectionRecoveryPresentation(
+    { failureCode: 'GATEWAY_PRELOGIN_UNAVAILABLE', lastError: 'redacted' },
+    { connected: false, connecting: false },
+  ), { schemaVersion: 1, category: 'network', action: 'reconnect' });
+  assert.deepEqual(connectionRecoveryPresentation(
     { failureCode: 'LOCAL_LISTENER_FAILED', lastError: 'redacted' },
     { connected: false, connecting: false },
   ), { schemaVersion: 1, category: 'local-listener', action: 'open-tower' });

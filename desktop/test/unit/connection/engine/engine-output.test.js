@@ -71,6 +71,12 @@ test('structured engine error codes are stable, readable and classify retry safe
   assert.equal(engineFailureKindFromCode('AUTH_FAILED'), 'terminal');
   assert.equal(engineFailureKindFromCode('AUTH_REJECTED'), 'terminal');
   assert.equal(engineFailureKindFromCode('AUTH_INDETERMINATE'), 'terminal');
+  assert.match(classifyEngineCode('GATEWAY_PRELOGIN_UNAVAILABLE', 1080), /登录前.*网关/u);
+  assert.equal(engineFailureKindFromCode('GATEWAY_PRELOGIN_UNAVAILABLE'), 'gateway-transient');
+  assert.equal(resolveEngineFailureKind({
+    code: 'GATEWAY_PRELOGIN_UNAVAILABLE',
+    stopReason: 'startup_failed',
+  }), 'gateway-transient');
   assert.equal(engineFailureKindFromCode('AUTH_PROTOCOL_INVALID'), 'terminal');
   assert.equal(engineFailureKindFromCode('AUTH_LIMIT_EXCEEDED'), 'terminal');
   assert.equal(engineFailureKindFromCode('DATA_PLANE_SETUP_TRANSIENT'), 'gateway-transient');
