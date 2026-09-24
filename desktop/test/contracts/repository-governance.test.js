@@ -32,10 +32,14 @@ test('workflow actions require immutable full commit SHAs', () => {
 });
 
 test('module map requires unique, complete module records', () => {
-  const record = (id) => `  - id: ${id}\n    paths: []\n    publicEntrypoints: []\n    allowedDependencies: []\n    risk: low\n    requiredChecks: []\n`;
-  const complete = `modules:\n${Array.from({ length: 10 }, (_, index) => record(`m-${index}`)).join('')}`;
-  assert.deepEqual(moduleMapErrors(complete), []);
-  assert.ok(moduleMapErrors(`modules:\n${record('same')}${record('same')}`).includes(
+  const record = id => ({ id, paths: [`desktop/lib/${id}/**`], publicEntrypoints: [],
+    allowedDependencies: [], risk: 'low', requiredChecks: ['desktop'] });
+  const complete = { schemaVersion: 2, status: 'proposed', owner: 'maintainers',
+    lastVerified: '2026-09-07', enforcement: 'path-coverage-and-entrypoint-ownership',
+    dependencyEnforcement: 'inventory-only', modules: [record('first'), record('second')] };
+  assert.deepEqual(moduleMapErrors(JSON.stringify(complete)), []);
+  complete.modules = [record('same'), record('same')];
+  assert.ok(moduleMapErrors(JSON.stringify(complete)).includes(
     'duplicate module id: same',
   ));
 });

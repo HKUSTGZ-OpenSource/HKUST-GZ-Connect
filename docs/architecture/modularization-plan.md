@@ -142,6 +142,10 @@ all existing wire, fixture, performance and package gates remain green.
 
 ## Wave M5 — Tests and repository contracts
 
+The schema-2 path/entrypoint subset is defined in
+[module map coverage](module-map-enforcement.md). Dependency enforcement and Rust visibility are
+explicitly not promoted to complete by this coverage check.
+
 - Move remaining root Desktop tests into `test/unit/<domain>`, `test/contracts` or
   `test/integrations`; reject new root-test debt.
 - Validate `module-map.yml` path coverage and public entrypoints.
