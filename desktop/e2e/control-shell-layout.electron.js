@@ -496,6 +496,27 @@ async function main() {
           `${label}: connection page unexpectedly requires scrolling`);
       }
       await capture(window, output, `${label}-connect`);
+      if (width === 440) {
+        const metrics = await window.webContents.executeJavaScript(`(() => {
+          const ip = document.getElementById('stIp');
+          const previous = ip.textContent;
+          ip.textContent = '255.255.255.255';
+          const cards = [...document.querySelectorAll('#statGrid .connection-metric')];
+          const rectangles = cards.map(el => {
+            const rect = el.getBoundingClientRect();
+            return { top: rect.top, bottom: rect.bottom, left: rect.left, right: rect.right };
+          });
+          const overflow = document.documentElement.scrollWidth - innerWidth;
+          const ipContained = ip.getBoundingClientRect().right <= rectangles[0].right;
+          ip.textContent = previous;
+          return { rectangles, overflow, ipContained };
+        })()`);
+        const [ip, latency, exit] = metrics.rectangles;
+        assert.equal(ip.top, latency.top, 'compact IP and latency must share one row');
+        assert.ok(exit.top >= Math.max(ip.bottom, latency.bottom));
+        assert.ok(Math.abs(exit.left - ip.left) <= 1 && Math.abs(exit.right - latency.right) <= 1);
+        assert.ok(metrics.overflow <= 0 && metrics.ipContained, 'long IP must stay contained');
+      }
 
       const browser = await shellSnapshot(window, 'browser');
       assert.equal(browser.workspaceTitle, '校园工作台', `${label}: the workspace title changed`);

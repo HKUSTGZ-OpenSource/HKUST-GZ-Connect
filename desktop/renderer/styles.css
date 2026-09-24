@@ -1875,7 +1875,11 @@ button.data-row:hover strong { color: var(--navy-2); }
   .network-tree-root-wrap::after { top: auto; right: auto; bottom: 0; left: 24px; width: 0; height: 16px; border-top: 0; border-left: 2px solid var(--tree-line); }
   .network-tree-compact > .network-underlay-branch::before { top: -16px; left: 24px; width: 0; height: 16px; border-top: 0; border-left: 2px solid var(--tree-line); }
   .connection-detail-grid { grid-template-columns: 1fr; }
-  .connection-metrics { grid-template-columns: 1fr; }
+  .page[data-page="connect"] .connection-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .page[data-page="connect"] .connection-metric { min-width: 0; }
+  .page[data-page="connect"] .exit-metric { grid-column: 1 / -1; }
+  .page[data-page="connect"] .metric-label,
+  .page[data-page="connect"] .metric-hint { overflow-wrap: anywhere; }
   .category-stack-grid[data-stack-columns="1"] .category-site-list { column-gap: 10px; }
   .notification-backdrop { left: 64px; }
   .notification-drawer { width: calc(100vw - 64px); }
