@@ -87,7 +87,7 @@ x509-parser = "0.18"
 # path in a packaged macOS Engine and make it fail before main() on another Mac.
 xz2 = { version = "0.1", features = ["static"] }
 zeroize = "1"
-zstd = "0.13"
+zstd = "0.14"
 
 [profile.release]
 lto = "thin"
