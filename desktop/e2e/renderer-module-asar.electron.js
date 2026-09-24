@@ -101,17 +101,30 @@ async function run() {
   assert.equal(localization.weeklyLabel,locale === 'zh' ? '本周' : 'This week');
   const integration = await window.webContents.executeJavaScript(`(async () => {
     document.getElementById('officialFavoriteDialog').close();
+    document.querySelector('.nav[data-page="tower"]').click();
     const until = async predicate => {
       const deadline=Date.now()+5000;
       while(!predicate() && Date.now()<deadline) await new Promise(resolve=>setTimeout(resolve,20));
       if(!predicate()) throw new Error('integration UI did not settle');
     };
-    document.querySelector('[data-integration-adapter="clash_mihomo_yaml"] [data-integration-action="copy"]').click();
+    const copy = document.querySelector('[data-integration-adapter="clash_mihomo_yaml"] [data-integration-action="copy"]');
+    copy.focus(); copy.click();
     await until(()=>document.getElementById('integrationDialog').open);
     const previewOpen = document.getElementById('integrationDialog').open;
     const summary = document.getElementById('integrationPreviewSummary').textContent;
     document.getElementById('confirmIntegration').click();
     await until(()=>!document.getElementById('integrationDialog').open && /已复制|copied/i.test(document.getElementById('integrationStatus').textContent));
+    const feedback = document.getElementById('integrationStatus').textContent;
+    const copyBeforeRefresh = document.querySelector('[data-integration-adapter="clash_mihomo_yaml"] [data-integration-action="copy"]');
+    const focusBeforeRefresh = document.activeElement?.dataset.integrationAction || document.activeElement?.id || document.activeElement?.tagName;
+    document.dispatchEvent(new CustomEvent('app-state-refreshed',
+      {detail:{loggedIn:true,schoolProfile:{profileId:'hkustgz'}}}));
+    await until(()=>document.querySelector('[data-integration-adapter="clash_mihomo_yaml"] [data-integration-action="copy"]') !== copyBeforeRefresh);
+    if(document.getElementById('integrationStatus').textContent !== feedback)
+      throw new Error('background refresh erased export feedback');
+    if(document.activeElement?.dataset.integrationAction !== 'copy')
+      throw new Error('background refresh did not preserve export action focus: '
+        + focusBeforeRefresh + ' -> ' + (document.activeElement?.id || document.activeElement?.tagName));
     document.querySelector('#appsList [data-favorite-entry]').click();
     return {previewOpen,summary,closed:!document.getElementById('integrationDialog').open,
       favoriteReopened:document.getElementById('officialFavoriteDialog').open,

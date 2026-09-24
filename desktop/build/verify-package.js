@@ -421,6 +421,7 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     '/renderer/features/auth-challenge/lifecycle.mjs',
     '/renderer/features/integration-center/index.mjs',
     '/renderer/features/integration-center/controller.mjs',
+    '/renderer/features/integration-center/feedback.mjs',
     '/renderer/features/integration-center/model.mjs',
     '/renderer/features/integration-center/lifecycle.mjs',
     '/renderer/features/integration-center/lifetime.mjs',

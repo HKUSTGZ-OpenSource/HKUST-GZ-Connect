@@ -1,5 +1,6 @@
 import { ADAPTERS, adapterView, previewView, validHandle } from './model.mjs';
 import { createLifetime } from './lifetime.mjs';
+import { createFeedback } from './feedback.mjs';
 
 export function createIntegrationCenter({
   api,
@@ -35,23 +36,21 @@ export function createIntegrationCenter({
   let bound = false;
   let retired = false;
   let lastTrigger = null;
-
-  function errorMessage(code) {
-    const specific = new Set([
-      'INTEGRATION_ADAPTER_UNAVAILABLE', 'INTEGRATION_PROFILE_STALE',
-      'INTEGRATION_AUTH_INCOMPATIBLE', 'INTEGRATION_EXPORT_CANCELLED',
-      'INTEGRATION_EXPORT_TARGET_INVALID', 'INTEGRATION_EXPORT_CONFLICT',
-      'INTEGRATION_TARGET_CHANGED', 'INTEGRATION_ROLLBACK_INCOMPLETE',
-      'INTEGRATION_LISTENER_UNAVAILABLE',
-    ]);
-    return t(`integration.error.${specific.has(code) ? code : 'generic'}`);
-  }
+  const feedback = createFeedback({
+    status: elements.integrationStatus, error: elements.integrationError,
+    translate: (key) => t(key),
+  });
   async function discard(value) {
     if (!validHandle(value?.confirmationHandle)) return;
     try { await api.cancelIntegration({ confirmationHandle: value.confirmationHandle }); } catch {}
   }
+  function renderFeedback() {
+    feedback.render(views.length);
+  }
   function expire() {
-    void cancel(); elements.integrationError.textContent = errorMessage('INTEGRATION_TARGET_CHANGED');
+    void cancel();
+    feedback.operation('INTEGRATION_TARGET_CHANGED');
+    renderFeedback();
   }
   function closeDialog() {
     life.clearTimer();
@@ -64,10 +63,13 @@ export function createIntegrationCenter({
     restoreTriggerFocus();
   }
   function restoreTriggerFocus() {
-    if (!lastTrigger || !life.alive()) return;
+    focusAction(lastTrigger);
+  }
+  function focusAction(action) {
+    if (!action || !life.alive()) return;
     const target = [...elements.integrationList.querySelectorAll?.('[data-integration-action]') || []]
-      .find((candidate) => candidate.dataset.integrationActionAdapter === lastTrigger.adapterId &&
-        candidate.dataset.integrationAction === lastTrigger.action);
+      .find((candidate) => candidate.dataset.integrationActionAdapter === action.adapterId &&
+        candidate.dataset.integrationAction === action.action);
     target?.focus?.({ preventScroll: true });
   }
   function button(label, action, adapterId, danger = false) {
@@ -81,6 +83,10 @@ export function createIntegrationCenter({
     return value;
   }
   function render() {
+    const active = document.activeElement;
+    const focusedAction = elements.integrationList.contains?.(active) && active?.dataset?.integrationAction
+      ? { adapterId: active.dataset.integrationActionAdapter, action: active.dataset.integrationAction }
+      : null;
     const rows = [];
     for (const view of views) {
       const row = document.createElement('div'); row.className = 'integration-row';
@@ -107,7 +113,8 @@ export function createIntegrationCenter({
       row.append(main, actions); rows.push(row);
     }
     elements.integrationList.replaceChildren(...rows);
-    elements.integrationStatus.textContent = rows.length ? '' : t('integration.empty');
+    renderFeedback();
+    focusAction(focusedAction);
   }
   function renderPreview() {
     if (!preview) return;
@@ -134,12 +141,12 @@ export function createIntegrationCenter({
     if (!life.current(ticket)) return false;
     if (!result?.ok || !Array.isArray(result.integrations)) {
       views = [];
-      elements.integrationError.textContent = errorMessage(result?.code);
+      feedback.list(result?.code || 'generic');
       render(); return false;
     }
     const normalized = result.integrations.map(adapterView).filter(Boolean);
     views = normalized.filter((view) => ADAPTERS.has(view.adapterId));
-    elements.integrationError.textContent = '';
+    feedback.list(null);
     render(); return true;
   }
   async function prepare(adapterId, action) {
@@ -147,7 +154,8 @@ export function createIntegrationCenter({
         (adapterId === 'vscode_remote_ssh' && action !== 'copy')) return;
     const previous = preview, ticket = life.begin(); busy = true; void discard(previous);
     if (!life.current(ticket)) return;
-    closeDialog(); render(); elements.integrationError.textContent = '';
+    feedback.resetAction();
+    closeDialog(); render();
     let result;
     try { result = await api.prepareIntegration({ adapterId, action }); }
     catch { result = { ok: false, code: 'generic' }; }
@@ -155,7 +163,8 @@ export function createIntegrationCenter({
     busy = false; render();
     if (!result?.ok) {
       if (result?.code !== 'INTEGRATION_EXPORT_CANCELLED') {
-        elements.integrationError.textContent = errorMessage(result?.code);
+        feedback.operation(result?.code);
+        renderFeedback();
       }
       restoreTriggerFocus();
       return;
@@ -163,12 +172,12 @@ export function createIntegrationCenter({
     preview = previewView(result.preview, now());
     if (!preview || preview.adapterId !== adapterId || preview.action !== action) {
       preview = null; void discard(result.preview);
-      elements.integrationError.textContent = errorMessage('generic');
+      feedback.operation('generic'); renderFeedback();
       return;
     }
     renderPreview();
     try { elements.integrationDialog.showModal(); }
-    catch { void cancel(); elements.integrationError.textContent = errorMessage('generic'); return; }
+    catch { void cancel(); feedback.operation('generic'); renderFeedback(); return; }
     life.schedule(expire, Math.max(0, preview.expiresAt - now()));
   }
   async function confirm() {
@@ -184,15 +193,13 @@ export function createIntegrationCenter({
     if (!life.current(ticket)) return;
     busy = false; elements.confirmIntegration.disabled = false;
     if (!result?.ok) {
-      const message = errorMessage(result?.code);
       closeDialog();
-      elements.integrationError.textContent = message;
+      feedback.operation(result?.code); renderFeedback();
       return;
     }
     closeDialog();
-    if (await refresh() && life.current(ticket)) {
-      elements.integrationStatus.textContent = t(`integration.success.${action}`);
-    }
+    await refresh();
+    if (life.current(ticket)) { feedback.success(action); renderFeedback(); }
   }
   async function cancel() {
     if (!life.alive()) return;
@@ -229,7 +236,8 @@ export function createIntegrationCenter({
     const previous = preview;
     try { life.dispose(); } finally {
       void discard(previous);
-      busy = false; lastTrigger = null; closeDialog(); views = [];
+      busy = false; lastTrigger = null; feedback.dispose();
+      closeDialog(); views = [];
       elements.integrationList.replaceChildren(); elements.confirmIntegration.disabled = false;
     }
     return true;

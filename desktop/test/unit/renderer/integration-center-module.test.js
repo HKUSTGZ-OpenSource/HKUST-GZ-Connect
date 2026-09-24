@@ -52,13 +52,13 @@ test('controller construction requires injected APIs but does not query or expor
 
 test('compatibility entry and native owners remain bounded and HTML loading is explicit',()=>{
   for(const [file,limit] of [['features/integration-center/lifecycle.mjs',80],['features/integration-center/model.mjs',80],
-    ['features/integration-center/lifetime.mjs',80],
+    ['features/integration-center/lifetime.mjs',80],['features/integration-center/feedback.mjs',80],
     ['features/integration-center/controller.mjs',250]]) {
     assert.ok(fs.readFileSync(path.join(renderer,file),'utf8').trimEnd().split('\n').length<=limit,file);
   }
   assert.doesNotMatch(fs.readFileSync(path.join(renderer,'index.html'),'utf8'),/src="integration-center.js"/);
   const verifier=fs.readFileSync(path.resolve(renderer,'../build/verify-package.js'),'utf8');
-  for(const name of ['index','model','controller','lifecycle','lifetime']) {
+  for(const name of ['index','model','controller','lifecycle','lifetime','feedback']) {
     assert.ok(verifier.includes(`/renderer/features/integration-center/${name}.mjs`));
   }
 });

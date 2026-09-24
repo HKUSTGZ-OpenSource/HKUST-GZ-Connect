@@ -20,6 +20,13 @@ function element() {
     open: false, dataset: {},
     append(...children) { this.children.push(...children); },
     replaceChildren(...children) { this.children = children; },
+    contains(target) { return this === target || this.children.some((child) => child.contains(target)); },
+    querySelectorAll(selector) {
+      if (selector !== '[data-integration-action]') return [];
+      return this.children.flatMap((child) => [
+        ...(child.dataset.integrationAction ? [child] : []), ...child.querySelectorAll(selector),
+      ]);
+    },
     addEventListener(name, callback) { this.listeners.set(name, callback); },
     removeEventListener(name) { this.listeners.delete(name); },
     showModal() { this.open = true; },
@@ -78,8 +85,13 @@ function fixture(overrides = {}) {
     cancelIntegration: async () => { calls.push(['cancel']); return { ok: true }; },
   };
   const document = {
+    activeElement: null,
     getElementById: (id) => elements.get(id),
-    createElement: () => element(),
+    createElement: () => {
+      const value = element();
+      value.focus = () => { document.activeElement = value; };
+      return value;
+    },
   };
   const feature = createIntegrationCenter({
     api, document,
@@ -88,7 +100,7 @@ function fixture(overrides = {}) {
     setTimeoutFn: (callback) => { expiry = callback; return { unref() {} }; },
     clearTimeoutFn: () => { expiry = null; },
   });
-  return { api, calls, elements, feature, expire: () => expiry?.() };
+  return { api, calls, document, elements, feature, expire: () => expiry?.() };
 }
 
 test('Renderer projections drop paths payloads keys and unknown adapters', () => {
@@ -165,4 +177,34 @@ test('expiry and failed confirmation close stale material and surface stable mes
   assert.equal(f.elements.get('integrationDialog').open, false);
   assert.equal(f.elements.get('integrationError').textContent,
     'integration.error.INTEGRATION_TARGET_CHANGED:');
+});
+
+test('background refresh retains completion feedback and the focused export action', async () => {
+  const f = fixture();
+  f.feature.start();
+  await f.feature.refresh();
+  await f.feature.prepare('clash_mihomo_yaml', 'save');
+  await f.feature.confirm();
+  const status = f.elements.get('integrationStatus').textContent;
+  assert.equal(status, 'integration.success.save:');
+  const list = f.elements.get('integrationList');
+  const save = list.querySelectorAll('[data-integration-action]')
+    .find((button) => button.dataset.integrationAction === 'save');
+  save.focus();
+  await f.feature.refresh();
+  assert.equal(f.elements.get('integrationStatus').textContent, status);
+  assert.equal(f.document.activeElement.dataset.integrationAction, 'save');
+  assert.notEqual(f.document.activeElement, save, 'focus follows the replacement button');
+});
+
+test('background refresh does not erase a failed export explanation', async () => {
+  const f = fixture({ confirmResult: { ok: false, code: 'INTEGRATION_TARGET_CHANGED' } });
+  f.feature.start();
+  await f.feature.refresh();
+  await f.feature.prepare('clash_mihomo_yaml', 'save');
+  await f.feature.confirm();
+  const error = f.elements.get('integrationError').textContent;
+  assert.equal(error, 'integration.error.INTEGRATION_TARGET_CHANGED:');
+  await f.feature.refresh();
+  assert.equal(f.elements.get('integrationError').textContent, error);
 });
