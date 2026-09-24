@@ -830,6 +830,23 @@ mod tests {
     }
 
     #[test]
+    fn legacy_rc4_128_matches_published_keystream_vector() {
+        // RFC 6229, section 2, 128-bit key at offsets 0 and 16. This protects
+        // the vendor-compatibility adapter from a silent cipher migration.
+        let key = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let mut cipher = Rc4::new_from_slice(&key).expect("a 16-byte RC4 key is supported");
+        let mut output = [0_u8; 32];
+        cipher.apply_keystream(&mut output);
+        assert_eq!(
+            hex::encode(output),
+            concat!(
+                "9ac7cc9a609d1ef7b2932899cde41b97",
+                "5248c4959014126a6e8a84f11d1a9e1c"
+            )
+        );
+    }
+
+    #[test]
     fn record_cipher_round_trips_with_independent_states() {
         let mut sender = RecordCipher::new([3; 20], [7; 16]);
         let mut receiver = RecordCipher::new([3; 20], [7; 16]);
