@@ -1,17 +1,17 @@
 # Native Browser downloads and context retirement
 
-- Status: Proposed behavior repair; not a released capability claim
+- Status: Lifecycle review candidate based on merged #112; not a released capability claim
 - Owner: Desktop / Browser maintainers, related to issue #80
-- Last verified: 2026-09-12
-- Structural base: PR #112 at `96248191857cffa25887d9f9fde83f7cb5b7b06f`
+- Last verified locally: 2026-09-25
+- Structural base: `main@8024fa8` after PR #112
 - Applies to: Browser download owner, manager disposal and synthetic download acceptance
 
 ## Reproduction and behavior
 
-The old algorithm waited for a custom save dialog before attaching native completion callbacks.
-The Mac native regression reproduced a completed file with the owner still reporting `downloading`.
-This is stronger evidence than the previously passing EventEmitter fixture. The test failed with
-`owner missed the real native completion` before the behavior repair.
+Historically, the algorithm waited for a custom save dialog before attaching native completion
+callbacks. A Mac native regression reproduced a completed file with the owner still reporting
+`downloading`; #126 fixed that timing, and merged #112 preserved the fix in the extracted owner.
+This #113 unit retains the native timing behavior and adds context/Session retirement guarantees.
 
 The owner now synchronously configures Electron's native picker with `setSaveDialogOptions` and
 registers item events inside `will-download`, without awaiting a second save dialog. This follows
@@ -74,9 +74,9 @@ reviewable and its shared helper has no production dependency. Do not import the
 candidate chain or overwrite the current Renderer improvements. No release, installed application
 replacement, repository transfer or branch-protection change is included.
 
-Rollback reverts this behavior change to the structural base, restoring its old download algorithm
-and removing manager retirement wiring; no user data migration is needed. That rollback also restores
-the reproduced timing/stale-callback defects, which must remain recorded as unresolved.
+Rollback reverts this lifecycle change to merged #112, removing manager retirement wiring while
+retaining #126's synchronous native-save algorithm; no user data migration is needed. The
+stale-callback and active-transfer retirement defects would return and must be recorded as unresolved.
 
 ## Current synchronization — 2026-09-12
 
@@ -96,3 +96,13 @@ Windows/Linux native downloads, full installers, popup-MFA cleanup and live-scho
 not rerun for this synchronized tree. Older receipts retain their original source scope. No installed
 app, saved credentials, user browser data, network settings, release, protection or Organization
 ownership changed. The Renderer candidate chain is not imported into this main-based Browser lane.
+
+## Current-main synchronization — 2026-09-25
+
+The published #112 tree and the local Browser owner parent tree were byte-identical, so merging
+its squash history preserved this lifecycle candidate's exact source tree. On that tree, the full
+local Node 25 suite, architecture/install-script/syntax (531 tracked files)/secret gates, the
+native loopback DownloadItem bytes/cancellation/retirement fixture, Campus Browser toolbar and
+20-tab synthetic performance/soak fixture passed. Tab-switch p95 was 1.2 ms against the unchanged
+250 ms offline disaster guard. No real OS save choice, user's Downloads directory, school account
+or installed app was touched. Fresh Windows/Linux/macOS CI remains a separate gate on the PR head.
