@@ -1,9 +1,9 @@
 # Integration Center Renderer ownership
 
-- Status: Proposed structural review candidate; not merged, installed or released
+- Status: Structural review candidate based on merged #118; not installed or released
 - Owner: Desktop / integration maintainers, issue #79
-- Last verified: 2026-09-11
-- Base: PR #118, `e2f0bd5ba6d1932f3b6a140ced111fa5b5192888`
+- Last verified locally: 2026-09-25
+- Base: `main@f506031` after PR #118
 - Applies to: Issue #79, post-2.0.2 Integration Center structural extraction
 
 ## Public boundary
@@ -89,3 +89,12 @@ dependency increase. Existing dependency caches were reused, not reinstalled.
 Windows/Linux native, full installers, live-school/MFA and actual clipboard/configuration exports
 were not rerun for this tree. Earlier receipts retain their original scope. No installed app,
 user settings, file export, repository protection, release or Organization transfer occurred.
+
+## Current-main synchronization — 2026-09-25
+
+The published #118 tree and local parent tree were byte-identical; merging squash history left
+this candidate's source tree unchanged. On that tree, local Node 25 integration/proxy/Renderer
+boundary tests passed 36/36, as did the full Node suite, architecture/syntax/secret gates, native
+ASAR synthetic preview/confirmation with child retirement, and control-shell layout. No actual
+clipboard/file export, user configuration, real account or installed app was touched. #120 remains
+the separate export-intent and async lifecycle repair; fresh platform CI is required for this head.
