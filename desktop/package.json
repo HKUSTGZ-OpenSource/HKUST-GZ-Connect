@@ -17,7 +17,7 @@
     "test:browser-performance": "electron e2e/browser-performance.electron.js",
     "test:auth-control-e2e": "node e2e/auth-control-fixture.js",
     "test:campus-mfa-safety": "electron e2e/campus-mfa-safety.electron.js",
-    "test:campus-popup-mfa-safety": "electron e2e/campus-popup-mfa-safety.electron.js",
+    "test:campus-popup-mfa-safety": "node e2e/campus-popup-mfa-safety.js",
     "test:control-renderer-recovery": "electron e2e/control-renderer-recovery.electron.js",
     "test:idle-performance": "electron scripts/idle-performance-baseline.js",
     "test:routing-restart": "node e2e/routing-restart.electron.js",

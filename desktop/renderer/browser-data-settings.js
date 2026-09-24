@@ -30,10 +30,10 @@
         return;
       }
       busy = true;
-      onClearState(true);
       button.disabled = true;
       status.textContent = translate('settings.clearingBrowserData');
       try {
+        onClearState(true);
         const result = await api.clearBrowserData();
         status.textContent = result?.ok
           ? translate('settings.browserDataCleared')
@@ -41,7 +41,8 @@
       } catch {
         status.textContent = translate('settings.browserDataClearFailed');
       } finally {
-        onClearState(false);
+        try { onClearState(false); }
+        catch { status.textContent = translate('settings.browserDataClearFailed'); }
         busy = false;
         reset({ clearStatus: false });
       }

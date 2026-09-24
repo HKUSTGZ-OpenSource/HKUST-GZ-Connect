@@ -46,14 +46,14 @@ The proposed [feature host](renderer-feature-host.md) now covers campus-data and
 through separate lifecycle review units. Remaining owners require reviewed start/dispose contracts;
 the catalog must not silently wrap missing cleanup with a no-op.
 
-The proposed [campus-data boundary](campus-data-module.md) and
+The merged [campus-data boundary](campus-data-module.md) and
 [official favorites boundary](official-favorites-module.md) establish the first two explicit
-native entrypoints in separate stacked review candidates. Their local/native evidence does not
-complete the registry, global-export enforcement, localization or release gates below.
+native entrypoints. Their acceptance does not complete the registry, global-export enforcement,
+localization or release gates below.
 
-The proposed [static Renderer policy](renderer-boundaries.md) separately adds frozen-export and
+The separate #110 [static Renderer policy](renderer-boundaries.md) adds frozen-export and
 public-entrypoint checks to the architecture command. It is not the runtime lifecycle registry
-and does not replace independent review or claim remote CI has executed.
+or a substitute for behavior and security review.
 
 The proposed [localization boundary](renderer-localization.md) splits the two control/chrome
 locale dictionaries into domain owners with duplicate and missing-key tests. Its temporary
