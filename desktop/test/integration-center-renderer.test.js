@@ -6,7 +6,7 @@ const {
   adapterView,
   createIntegrationCenter,
   previewView,
-} = require('../renderer/integration-center');
+} = require('../renderer/features/integration-center/index.mjs');
 
 const IDS = [
   'integrationList', 'integrationStatus', 'integrationError', 'integrationDialog',
@@ -21,6 +21,7 @@ function element() {
     append(...children) { this.children.push(...children); },
     replaceChildren(...children) { this.children = children; },
     addEventListener(name, callback) { this.listeners.set(name, callback); },
+    removeEventListener(name) { this.listeners.delete(name); },
     showModal() { this.open = true; },
     close() { this.open = false; },
   };
