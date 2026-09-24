@@ -113,3 +113,27 @@ test('catalog publication can retire the owner without retaining or returning it
   assert.equal(result,null);assert.equal(readsAfterRetirement,0);
   assert.equal(h.feature.snapshot(),null);assert.equal(h.listenerCount(),0);
 });
+
+test('account display clearing retires every surface and pending result even when dialog close fails',async()=>{
+  const h=harness();h.feature.start();h.load.resolve(value());await h.feature.load();
+  const pending=h.feature.refreshSchedule();await Promise.resolve();
+  const dialog=h.nodes.get('scheduleDetail');
+  for(const id of ['scheduleBody','loansBody','newsBody','scheduleDetail']) {
+    h.nodes.get(id).innerHTML='Synthetic prior account content';
+  }
+  dialog.close=()=>{throw new Error('synthetic clear dialog failure');};
+  try {
+    assert.throws(()=>h.feature.clearDisplay(true),error=>error instanceof AggregateError &&
+      error.errors.some(cause=>cause.message==='synthetic clear dialog failure'));
+    assert.equal(h.feature.snapshot(),null);
+    assert.equal(dialog.innerHTML,'');
+    for(const id of ['scheduleBody','loansBody','newsBody']) {
+      assert.doesNotMatch(h.nodes.get(id).innerHTML,/Synthetic prior account content/);
+    }
+    assert.equal(h.published.at(-1),null);
+    assert.equal(h.nodes.get('scheduleRefresh').disabled,true);
+    h.week.resolve(value());await pending;
+    assert.equal(h.feature.snapshot(),null);
+    assert.equal(await h.feature.ensureLoaded(),null);
+  } finally {dialog.close=()=>{dialog.open=false;};h.feature.dispose();}
+});

@@ -62,8 +62,15 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
     displayEpoch++; scheduleRequest++; clearing = pending;
     clearTimeout(scheduleRefreshTimer); scheduleRefreshTimer = null;
     weekCache.clear(); inflight = null; snapshot = null; loaded = false; visibleEvents = [];
-    scheduleNotice = ''; scheduleViewKey = null; lastScheduleLayout = null; $('scheduleDetail')?.close?.();
-    render(); setScheduleRefreshBusy(pending); publishCatalog(null);
+    scheduleNotice = ''; scheduleViewKey = null; lastScheduleLayout = null;
+    const errors = [];
+    const attempt = effect => { try { effect(); } catch (error) { errors.push(error); } };
+    attempt(() => $('scheduleDetail')?.close?.());
+    for (const id of ['scheduleDetail', ...Object.values(MODULES).map(module => module.body)]) {
+      attempt(() => { const node = $(id); if (node) node.innerHTML = ''; });
+    }
+    attempt(render); attempt(() => setScheduleRefreshBusy(pending)); attempt(() => publishCatalog(null));
+    if (errors.length) throw new AggregateError(errors, 'campus-data display clearing failed');
   }
 
   const locale = () => String(doc.documentElement.lang || '').toLowerCase().startsWith('en')
