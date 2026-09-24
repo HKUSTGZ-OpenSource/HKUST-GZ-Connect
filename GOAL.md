@@ -206,8 +206,8 @@ role-specific workflow, team and release governance work.
 On 2026-09-24/25 the maintainer directed convergence of the reviewed PR queue and authorized
 one-time administrator merges. #131, #126 and #129 are merged; #125 is closed by the download
 repair. #127 stays open because its Windows reporter supplied no sanitized log or stable reproduction;
-source/CI evidence cannot establish a successful real Gateway login. #89 remains the documentation
-PR until merged. #84 still needs actual Security/Release team decisions and post-transfer settings
+source/CI evidence cannot establish a successful real Gateway login. This documentation change is
+tracked by #89; #84 still needs actual Security/Release team decisions and post-transfer settings
 readback. The repository's live Secret Scanning and Push Protection read back as disabled on
 2026-09-25; the historical transfer snapshot must not be used to claim they are enabled now.
 

@@ -1,6 +1,6 @@
 # Open-source collaboration model
 
-- Status: Maintainer-approved review model; CODEOWNERS update pending merge
+- Status: Maintainer-approved review model; CODEOWNERS routes the two independent maintainers
 - Owner: project maintainers
 - Last verified: 2026-09-13
 - Applies to: contributors, coding agents, reviewers and maintainers
