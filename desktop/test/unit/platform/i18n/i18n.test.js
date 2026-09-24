@@ -96,6 +96,11 @@ test('both pages load i18n.js before their app script', () => {
     assert.ok(html.indexOf('src="i18n.js"') !== -1, `${file} must load i18n.js`);
     assert.ok(html.indexOf('src="i18n.js"') < html.indexOf(`src="${appScript}"`),
       `${file} must load i18n.js before ${appScript}`);
+    assert.match(html, /<script type="module" src="i18n.js"><\/script>/u);
+    for (const [tag] of html.slice(html.indexOf('src="i18n.js"')).matchAll(/<script\b[^>]*>/gu)) {
+      assert.ok(tag.includes('type="module"') || tag.includes('defer="defer"'),
+        `${file}: consumers must not run before the localization module: ${tag}`);
+    }
   }
 });
 

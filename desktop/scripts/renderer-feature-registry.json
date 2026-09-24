@@ -176,6 +176,13 @@
   },
   "features": [
     {
+      "id": "localization",
+      "root": "renderer/features/localization",
+      "entrypoint": "renderer/features/localization/index.mjs",
+      "exports": ["applyStatic", "createT", "dictionaries", "resolveLocale"],
+      "allowedDependencies": []
+    },
+    {
       "id": "feature-host",
       "root": "renderer/features/feature-host",
       "entrypoint": "renderer/features/feature-host/index.mjs",

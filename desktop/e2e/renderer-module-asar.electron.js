@@ -17,6 +17,8 @@ if (!root || !path.isAbsolute(root) || !path.basename(root).startsWith('campus r
 }
 process.env.HKUSTGZ_E2E_EMPTY_SCHEDULE = '1';
 app.setPath('userData', path.join(root, 'user-data'));
+// Both locale windows belong to this one fixture; only run() completion exits Electron.
+app.on('window-all-closed', () => {});
 let window;
 
 async function run() {
@@ -31,6 +33,8 @@ async function run() {
   const archive = path.join(root, 'app.asar');
   await asar.createPackage(staging, archive);
   await app.whenReady();
+  for (const locale of ['zh','en']) {
+  process.env.HKUSTGZ_E2E_LOCALE = locale;
   window = new BrowserWindow({ show: false, width: 900, height: 800,
     webPreferences: { contextIsolation: true, nodeIntegration: false,
       preload: path.join(__dirname, 'resource-manager-layout-preload.js') } });
@@ -59,6 +63,18 @@ async function run() {
   })()`);
   assert.deepEqual(state, { dashboard: true, days: 7, legacyGlobal: false, authListeners: 1,
     favoriteChooser: true, favoriteFactoryGlobal: 'undefined', archive: true });
+  const localization = await window.webContents.executeJavaScript(`({
+    language: document.documentElement.lang,
+    schoolStarted: typeof window.schoolProfileSelectorFeature?.refresh === 'function',
+    integrationStarted: typeof window.integrationCenterFeature?.refresh === 'function',
+    label: document.querySelector('[data-i18n="nav.browser"]')?.textContent,
+    weeklyLabel: window.I18N.createT(document.documentElement.lang === 'en' ? 'en' : 'zh')('workspace.scheduleToday')
+  })`);
+  assert.equal(localization.language, locale === 'zh' ? 'zh-CN' : 'en');
+  assert.equal(localization.schoolStarted,true,'deferred school initialization must not be skipped');
+  assert.equal(localization.integrationStarted,true,'deferred integration initialization must not be skipped');
+  assert.equal(localization.label,locale === 'zh' ? '校园工作台' : 'Workspace');
+  assert.equal(localization.weeklyLabel,locale === 'zh' ? '本周' : 'This week');
   const retired = await window.webContents.executeJavaScript(`(() => {
     window.dispatchEvent(new Event('pagehide'));
     window.dispatchEvent(new Event('pagehide'));
@@ -67,6 +83,22 @@ async function run() {
   })()`);
   assert.deepEqual(retired, { calendarEmpty:true, favoriteOpen:false },
     'the registered owners retire their DOM and dialog on pagehide');
+  await window.loadFile(path.join(archive, 'renderer/campus-browser.html'), {query:{lang:locale}});
+  const chrome = await window.webContents.executeJavaScript(`({
+    language:document.documentElement.lang,
+    ready:typeof window.campusBrowserUI?.setLocale === 'function',
+    profile:document.getElementById('browserProfileName').textContent
+  })`);
+  assert.equal(chrome.language,locale === 'zh' ? 'zh-CN' : 'en');
+  assert.equal(chrome.ready,true,'classic toolbar must start after its module translator');
+  assert.equal(chrome.profile,locale === 'zh' ? '校园工作台' : 'Campus Workspace');
+  const switched = await window.webContents.executeJavaScript(`(() => {
+    window.campusBrowserUI.setLocale(${JSON.stringify(locale === 'zh' ? 'en' : 'zh')});
+    return document.getElementById('browserProfileName').textContent;
+  })()`);
+  assert.equal(switched,locale === 'zh' ? 'Campus Workspace' : '校园工作台');
+  window.destroy(); window = null;
+  }
   console.log('renderer native modules in ASAR: PASS');
 }
 
