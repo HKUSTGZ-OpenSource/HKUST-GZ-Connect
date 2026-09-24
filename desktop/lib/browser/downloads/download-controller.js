@@ -28,23 +28,17 @@ class BrowserDownloadController {
     routeSession.on('will-download', (_event, item) => this.handleDownload(item));
   }
 
-  async handleDownload(item) {
-    if (!this.dialog?.showSaveDialog) {
-      item.cancel();
+  handleDownload(item) {
+    if (typeof item?.setSaveDialogOptions !== 'function') {
+      try { item.cancel(); } catch {}
       return;
     }
     try {
-      const parent = this.window && !this.window.isDestroyed?.() ? this.window : undefined;
-      const result = await this.dialog.showSaveDialog(parent, {
-        defaultPath: item.getFilename(),
-      });
-      if (result.canceled || !result.filePath) {
-        item.cancel();
-        return;
-      }
-      item.setSavePath(result.filePath);
+      item.setSaveDialogOptions({ defaultPath: item.getFilename() });
       const filename = String(item.getFilename() || '').slice(0, 160);
+      let finished = false;
       const updateProgress = () => {
+        if (finished) return;
         const total = Number(item.getTotalBytes?.());
         const received = Number(item.getReceivedBytes?.());
         const percent = Number.isFinite(total) && total > 0 && Number.isFinite(received)
@@ -55,6 +49,14 @@ class BrowserDownloadController {
       item.on?.('updated', updateProgress);
       updateProgress();
       item.once('done', async (_event, state) => {
+        if (finished) return;
+        finished = true;
+        item.removeListener?.('updated', updateProgress);
+        if (state === 'cancelled') {
+          this.downloadState = null;
+          this.scheduleToolbarUpdate();
+          return;
+        }
         this.downloadState = Object.freeze({
           filename,
           status: state === 'completed' ? 'completed' : 'interrupted',
@@ -62,10 +64,11 @@ class BrowserDownloadController {
         });
         this.scheduleToolbarUpdate();
         if (state === 'interrupted' && this.onError) {
-          this.onError(this.t('download.interrupted', { filename: item.getFilename() }));
+          this.onError(this.t('download.interrupted', { filename }));
         }
-        if (state === 'completed' && typeof this.dialog.showMessageBox === 'function') {
+        if (state === 'completed' && typeof this.dialog?.showMessageBox === 'function') {
           try {
+            const filePath = item.getSavePath?.();
             const prompt = await this.dialog.showMessageBox(this.window, {
               type: 'info',
               message: this.t('download.completed', { filename }),
@@ -74,12 +77,13 @@ class BrowserDownloadController {
               cancelId: 1,
               noLink: true,
             });
-            if (prompt.response === 0) this.showItemInFolder(result.filePath);
+            if (prompt.response === 0 && typeof filePath === 'string' && filePath) {
+              this.showItemInFolder(filePath);
+            }
           } catch {}
         }
       });
     } catch {
-      // The item may already have finished while the dialog was open.
       try { item.cancel(); } catch {}
       if (this.onError) this.onError(this.t('download.noLocation'));
     }

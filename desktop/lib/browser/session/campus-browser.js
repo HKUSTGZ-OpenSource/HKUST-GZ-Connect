@@ -636,7 +636,7 @@ class CampusBrowser {
     return this.downloadController.applyDownloadHandler(routeSession);
   }
 
-  async handleDownload(item) {
+  handleDownload(item) {
     return this.downloadController.handleDownload(item);
   }
 
