@@ -4,7 +4,8 @@
 - Authority: project maintainer
 - Baseline: `main@15738338ff2a280300b66e98a1823659f24630a4`
 - Started: 2026-09-04
-- Last verified: 2026-09-24 (`main@39850415c901aeaa77ecb86cd3ce49a2e75290a8`)
+- Last verified: 2026-09-25 (before this documentation PR)
+- Development main at verification: `6f960af57466e6551a5e347ecc26ae9b902f69d9`
 - Scope: repository governance, documentation truth, agent instructions, module boundaries,
   contributor workflow, GitHub protections and organization migration
 
@@ -45,8 +46,10 @@ high-risk rules. No instruction file is treated as a substitute for review or te
    requirement is satisfied. Published packages and the currently installed Mac candidate are
    distinct evidence, not interchangeable versions.
 5. Repository Rulesets, CODEOWNERS, templates, Dependabot, release Environment and immutable Action
-   policies are active. Two Organization owners are present, but the pending PRs still lack the
-   independent approvals required by protected `main`.
+   policies are active. Two Organization owners are present. Protected `main` still requires one
+   approval and seven strict checks; the maintainer authorized one-time administrator squash merges
+   for the current convergence queue after its exact-head checks, without changing that protection.
+   Team ownership and post-transfer security settings remain incomplete.
 6. The original repository transferred to `HKUSTGZ-OpenSource` on 2026-09-12 with explicit maintainer
    authorization. Organization default permission is now `read`. Repository ID, main, tags,
    releases/assets and PR heads/bases are preserved. Existing Organization Owner `HernanJiang`
@@ -178,28 +181,35 @@ release assumptions.
 ## Current decision boundary
 
 The [2026-09-08 integration snapshot](docs/governance/2026-09-08-integration-readiness.md) is
-historical. The 2.0.2 release lane #88/#95/#106/#107 is merged and published; #89 is governance,
-and #108–#120 remain separate modularization/acceptance work. Preserve their explicit base-branch
-dependencies. Neither local
-pass counts nor candidate source-size reductions close G0–G4 or make a draft part of stable.
+historical. The 2.0.2 release lane #88/#95/#106/#107 is merged and published. Since that tag,
+the Windows helper, external-download and pre-login classification repairs (#131/#126/#129),
+Renderer/Browser ownership and fixture slices (#108–#120), and compatible Rust updates
+(#123/#124/#122) entered `main` in separately checked squash merges. Some lacked an independent
+approval and used the maintainer-authorized one-time administrator path; CI was not bypassed.
+These source changes have not been packaged or released. They are progress toward M1/M2, not proof
+that M1–M5 or G0–G4 are complete. #128 was closed without merging to preserve older-platform
+support. Neither local pass counts nor candidate source-size reductions make a post-tag change
+part of stable 2.0.2.
 The [2026-09-12 combination receipt](docs/governance/2026-09-12-combination-preflight.md) records
 the exact four-lane tree and three-platform full-suite/native-fixture results. This closes source
 combination testing for that tree, not independent review, distribution packaging or G0–G4.
 
 The maintainer authorized the original-repository transfer and Organization default `read` on
 2026-09-12; both are executed and read back. Continue ordinary PR review and M1–M5 inside the
-Organization. This authorization does not waive independent review or required checks, authorize
-another release, or change branch/tag protections. Previous #104/2.0.2 administrator exceptions
-remain consumed. Stable remains 2.0.2; installed-app replacement and real-school validation remain
-separate operations. The migration receipt distinguishes completed identity checks from remaining
+Organization. That transfer authorization did not waive review or checks or authorize another
+release. The later convergence authorization permits bounded administrator merges of the present
+PR queue after exact-head checks; it does not change branch/tag protections or release authority.
+Stable remains 2.0.2; installed-app replacement and real-school validation remain separate
+operations. The migration receipt distinguishes completed identity checks from remaining
 role-specific workflow, team and release governance work.
 
-On 2026-09-24 the maintainer authorized merging reviewed PRs into `main` and converging the open
-queue. `main` still requires one independent approving review and seven strict status checks.
-The Windows helper prerequisite #131 and the dependent pre-login repair #129 passed their exact
-CI checks; neither is merged or released. The external download repair #126 remains separately
-reviewable and needs current-base CI after the prerequisite lands. Other draft modules and
-dependency upgrades remain unmerged until their own dependency, compatibility and review gates pass.
+On 2026-09-24/25 the maintainer directed convergence of the reviewed PR queue and authorized
+one-time administrator merges. #131, #126 and #129 are merged; #125 is closed by the download
+repair. #127 stays open because its Windows reporter supplied no sanitized log or stable reproduction;
+source/CI evidence cannot establish a successful real Gateway login. #89 remains the documentation
+PR until merged. #84 still needs actual Security/Release team decisions and post-transfer settings
+readback. The repository's live Secret Scanning and Push Protection read back as disabled on
+2026-09-25; the historical transfer snapshot must not be used to claim they are enabled now.
 
 ## Historical progress receipt — 2026-09-07
 
