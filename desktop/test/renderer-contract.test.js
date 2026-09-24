@@ -103,7 +103,9 @@ test('Campus Workspace data modules use isolated state projections without porta
     assert.match(html, new RegExp(`id="${id}"`, 'u'));
   }
   assert.match(html, /<script type="module" src="app\.js"><\/script>/u);
-  assert.match(appJs, /import \{ create as createCampusData \} from '\.\/features\/campus-data\/index\.mjs'/u);
+  assert.ok(appJs.includes("import { createRendererFeatures } from './features/feature-host/index.mjs'"));
+  assert.ok(appJs.includes("rendererFeatures.mount('campus-data', {"));
+  assert.ok(!appJs.includes('campusDataFeature.start()'));
   assert.doesNotMatch(html, /src="campus-data-modules\.js"/u);
   assert.doesNotMatch(appJs, /window\.campusDataModules/u);
   assert.match(campusDataModulesJs, /not-authenticated/u);

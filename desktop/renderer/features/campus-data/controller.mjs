@@ -31,6 +31,8 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
   let visibleEvents = [];
   let miniature = false;
   let sizeObserver = null;
+  let started = false, disposed = false;
+  const unlisten = [];
   const weekCache = new Map();
   let displayEpoch = 0;
   let clearing = false;
@@ -56,11 +58,19 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
     if (weekCache.size > 12) weekCache.delete(weekCache.keys().next().value);
   }
   function clearDisplay(pending = false) {
+    if (disposed) return false;
     displayEpoch++; scheduleRequest++; clearing = pending;
     clearTimeout(scheduleRefreshTimer); scheduleRefreshTimer = null;
     weekCache.clear(); inflight = null; snapshot = null; loaded = false; visibleEvents = [];
-    scheduleNotice = ''; scheduleViewKey = null; lastScheduleLayout = null; $('scheduleDetail')?.close?.();
-    render(); setScheduleRefreshBusy(pending); publishCatalog(null);
+    scheduleNotice = ''; scheduleViewKey = null; lastScheduleLayout = null;
+    const errors = [];
+    const attempt = effect => { try { effect(); } catch (error) { errors.push(error); } };
+    attempt(() => $('scheduleDetail')?.close?.());
+    for (const id of ['scheduleDetail', ...Object.values(MODULES).map(module => module.body)]) {
+      attempt(() => { const node = $(id); if (node) node.innerHTML = ''; });
+    }
+    attempt(render); attempt(() => setScheduleRefreshBusy(pending)); attempt(() => publishCatalog(null));
+    if (errors.length) throw new AggregateError(errors, 'campus-data display clearing failed');
   }
 
   const locale = () => String(doc.documentElement.lang || '').toLowerCase().startsWith('en')
@@ -146,6 +156,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
   }
 
   function renderModule(moduleId, module) {
+    if (disposed) return;
     const config = MODULES[moduleId];
     const body = $(config.body);
     const shell = body?.closest('.module');
@@ -182,6 +193,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
   }
 
   function render() {
+    if (disposed) return;
     for (const moduleId of Object.keys(MODULES)) {
       const module = snapshot?.modules?.[moduleId] || {
         state: loaded ? 'source-unavailable' : 'loading', items: [],
@@ -191,6 +203,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
   }
 
   function setScheduleRefreshBusy(busy) {
+    if (disposed) return;
     const button = $('scheduleRefresh');
     if (!button) return;
     button.disabled = busy;
@@ -199,6 +212,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
   }
 
   function scheduleNextRefresh() {
+    if (disposed) return;
     if (scheduleRefreshTimer !== null) clearTimeout(scheduleRefreshTimer);
     scheduleRefreshTimer = null;
     if (!loaded || snapshot?.sessionState !== 'authenticated' || revoked(snapshot)) return;
@@ -212,7 +226,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
   }
 
   async function load(force = false) {
-    if (clearing) return null;
+    if (disposed || clearing) return null;
     if (inflight) return inflight;
     if (force) { displayEpoch++; scheduleRequest++; }
     const epoch = displayEpoch;
@@ -235,7 +249,9 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
       if (denied) revokeSchedule();
       loaded = true;
       lastLoadedAt = Date.now();
+      const publicationEpoch = displayEpoch;
       publishCatalog(value?.catalog || null);
+      if (publicationEpoch !== displayEpoch) return null;
       if (!denied) remember(campusDate(value?.checkedAt || Date.now()), value?.modules?.schedule);
       if (!denied && weekRange(Date.parse(`${selectedDate}T12:00:00+08:00`), true).start !== weekRange(Date.now(), true).start &&
           typeof api.getCampusScheduleWeek === 'function') {
@@ -263,7 +279,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
   }
 
   async function refreshSchedule(force = true) {
-    if (clearing) return null;
+    if (disposed || clearing) return null;
     const epoch = displayEpoch;
     if (followCurrentWeek) selectedDate = campusDate(Date.now());
     const date = selectedDate;
@@ -330,6 +346,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
   }
 
   function activate(target) {
+    if (disposed) return;
     const weekMove = target.closest('[data-week-move]');
     const today = target.closest('[data-week-today]');
     if (weekMove || today) {
@@ -375,31 +392,65 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
     if (config) openDeepLink(config.sourceId, config.sourceUrl);
   }
 
-  function start() {
-    for (const { body } of Object.values(MODULES)) {
-      $(body)?.closest('.module')?.addEventListener('click', (event) => activate(event.target));
-    }
-    $('scheduleRefresh')?.addEventListener('click', () => { void refreshSchedule(); });
-    $('scheduleBody')?.addEventListener('change', (event) => {
-      if (event.target.id !== 'scheduleDate' || !event.target.value || !event.target.validity.valid) return;
-      followCurrentWeek = false; selectedDate = event.target.value; void refreshSchedule(false);
-    });
-    doc.addEventListener('app-locale-changed', render);
-    const Observer = doc.defaultView?.ResizeObserver;
-    if (Observer && !sizeObserver && $('scheduleBody')) {
-      sizeObserver = new Observer(entries => {
-        const width = entries[0]?.contentRect?.width;
-        if (width > 0 && (width < 620) !== miniature) renderModule('schedule', snapshot?.modules?.schedule);
-      });
-      sizeObserver.observe($('scheduleBody'));
-      doc.defaultView.addEventListener('pagehide', () => sizeObserver?.disconnect(), { once: true });
-    }
-    render();
+  function listen(target, type, handler, options) {
+    if (!target?.addEventListener) return;
+    const guarded = event => { if (!disposed) handler(event); };
+    target.addEventListener(type, guarded, options);
+    unlisten.push(() => target.removeEventListener?.(type, guarded, options));
+  }
+
+  function dispose() {
+    if (disposed) return false;
+    disposed = true; displayEpoch++; scheduleRequest++;
+    clearTimeout(scheduleRefreshTimer); scheduleRefreshTimer = null;
+    snapshot = null; visibleEvents = []; inflight = null; loaded = false;
+    weekCache.clear(); scheduleViewKey = null; lastScheduleLayout = null; scheduleNotice = '';
+    const errors = [];
+    const attempt = effect => { try { effect(); } catch (error) { errors.push(error); } };
+    const dialog = $('scheduleDetail');
+    attempt(() => { if (dialog?.open) dialog.close(); });
+    attempt(() => { if (dialog) dialog.innerHTML = ''; });
+    attempt(() => sizeObserver?.disconnect()); sizeObserver = null;
+    for (const remove of unlisten.splice(0).reverse()) attempt(remove);
+    for (const { body } of Object.values(MODULES)) attempt(() => { const node = $(body); if (node) node.innerHTML = ''; });
+    if (errors.length) throw new AggregateError(errors, 'campus-data cleanup failed');
     return true;
   }
 
+  function start() {
+    if (started || disposed) return false;
+    started = true;
+    try {
+      for (const { body } of Object.values(MODULES)) {
+        listen($(body)?.closest('.module'), 'click', (event) => activate(event.target));
+      }
+      listen($('scheduleRefresh'), 'click', () => { void refreshSchedule(); });
+      listen($('scheduleBody'), 'change', (event) => {
+        if (event.target.id !== 'scheduleDate' || !event.target.value || !event.target.validity.valid) return;
+        followCurrentWeek = false; selectedDate = event.target.value; void refreshSchedule(false);
+      });
+      listen(doc, 'app-locale-changed', render);
+      listen(doc.defaultView, 'pagehide', dispose, { once: true });
+      const Observer = doc.defaultView?.ResizeObserver;
+      if (Observer && !sizeObserver && $('scheduleBody')) {
+        sizeObserver = new Observer(entries => {
+          if (disposed) return;
+          const width = entries[0]?.contentRect?.width;
+          if (width > 0 && (width < 620) !== miniature) renderModule('schedule', snapshot?.modules?.schedule);
+        });
+        sizeObserver.observe($('scheduleBody'));
+      }
+      render();
+      return true;
+    } catch (primary) {
+      try { dispose(); }
+      catch (cleanup) { throw new AggregateError([primary, cleanup], 'campus-data startup and cleanup failed'); }
+      throw primary;
+    }
+  }
+
   function ensureLoaded() {
-    if (clearing) return Promise.resolve(null);
+    if (disposed || clearing) return Promise.resolve(null);
     if (!loaded) return load(false);
     if (followCurrentWeek && weekRange(Date.parse(`${selectedDate}T12:00:00+08:00`), true).start !==
         weekRange(Date.now(), true).start) return refreshSchedule(false);
@@ -421,5 +472,6 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
     render,
     snapshot: () => snapshot,
     start,
+    dispose,
   });
 }

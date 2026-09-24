@@ -1,0 +1,11 @@
+import { createFeatureRegistry } from './registry.mjs';
+import { create as createCampusData } from '../campus-data/index.mjs';
+
+// Only owners with an explicit start/dispose contract belong in this catalog.
+export const FEATURE_DEFINITIONS = Object.freeze([
+  Object.freeze({ id: 'campus-data', create: createCampusData }),
+]);
+
+export function createRendererFeatures({ target } = {}) {
+  return createFeatureRegistry({ definitions: FEATURE_DEFINITIONS, target });
+}

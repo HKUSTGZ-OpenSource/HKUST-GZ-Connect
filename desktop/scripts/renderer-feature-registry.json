@@ -176,6 +176,13 @@
   },
   "features": [
     {
+      "id": "feature-host",
+      "root": "renderer/features/feature-host",
+      "entrypoint": "renderer/features/feature-host/index.mjs",
+      "exports": ["FEATURE_DEFINITIONS", "createRendererFeatures"],
+      "allowedDependencies": ["campus-data"]
+    },
+    {
       "id": "campus-data",
       "root": "renderer/features/campus-data",
       "entrypoint": "renderer/features/campus-data/index.mjs",

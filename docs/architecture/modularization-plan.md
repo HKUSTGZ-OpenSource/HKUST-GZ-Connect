@@ -42,12 +42,16 @@ Primary concurrency hot spots:
 
 ## Wave M1 — Renderer dependency authority
 
+The proposed [feature host](renderer-feature-host.md) starts with one lifecycle-ready owner,
+campus-data. Remaining native/legacy owners require their own reviewed start/dispose contracts;
+the catalog must not silently wrap missing cleanup with a no-op.
+
 The merged [campus-data boundary](campus-data-module.md) and
 [official favorites boundary](official-favorites-module.md) establish the first two explicit
 native entrypoints. Their acceptance does not complete the registry, global-export enforcement,
 localization or release gates below.
 
-The separate #110 [static Renderer policy](renderer-boundaries.md) adds frozen-export and
+The merged #110 [static Renderer policy](renderer-boundaries.md) adds frozen-export and
 public-entrypoint checks to the architecture command. It is not the runtime lifecycle registry
 or a substitute for behavior and security review.
 

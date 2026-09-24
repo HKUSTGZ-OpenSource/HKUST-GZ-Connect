@@ -1,5 +1,6 @@
-import { create as createCampusData } from './features/campus-data/index.mjs';
+import { createRendererFeatures } from './features/feature-host/index.mjs';
 import { create as createOfficialFavorites } from './features/official-favorites/index.mjs';
+const rendererFeatures = createRendererFeatures({ target: window });
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // Active UI language. Chinese until get-state reports the real system locale.
@@ -533,7 +534,7 @@ serviceWorkspace = window.campusServiceWorkspace.create({
   focusPersonalCard: (groupId) => window.campusCategoryStacks.focusCard('user-collection', groupId),
 });
 serviceWorkspace.start();
-campusDataFeature = createCampusData({
+campusDataFeature = rendererFeatures.mount('campus-data', {
   document,
   api: window.api,
   translate: (key, vars) => t(key, vars),
@@ -551,7 +552,6 @@ campusDataFeature = createCampusData({
     serviceWorkspace?.render();
   },
 });
-campusDataFeature.start();
 window.campusCategoryStacks.start({
   document,
   onAddSite: () => addWebsiteFeature.open(),

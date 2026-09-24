@@ -10,7 +10,9 @@ test('campus data exposes one native public entrypoint without reintroducing its
   assert.deepEqual(Object.keys(feature).sort(), ['create','scheduleWeekLayout','scheduleWeekModel','weekRange']);
   assert.equal(fs.existsSync(path.join(renderer,'campus-data-modules.js')),false);
   const app=fs.readFileSync(path.join(renderer,'app.js'),'utf8');
-  assert.match(app,/import \{ create as createCampusData \} from '\.\/features\/campus-data\/index\.mjs'/u);
+  assert.ok(app.includes("import { createRendererFeatures } from './features/feature-host/index.mjs'"));
+  assert.ok(app.includes("rendererFeatures.mount('campus-data', {"));
+  assert.ok(!app.includes('campusDataFeature.start()'));
   assert.doesNotMatch(app,/window\.campusDataModules/u);
   for(const name of ['calendar-model.mjs','calendar-view.mjs','controller.mjs','index.mjs']) {
     const source=fs.readFileSync(path.join(renderer,'features/campus-data',name),'utf8');

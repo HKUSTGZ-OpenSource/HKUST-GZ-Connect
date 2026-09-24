@@ -59,6 +59,14 @@ async function run() {
   })()`);
   assert.deepEqual(state, { dashboard: true, days: 7, legacyGlobal: false, authListeners: 1,
     favoriteChooser: true, favoriteFactoryGlobal: 'undefined', archive: true });
+  const retired = await window.webContents.executeJavaScript(`(() => {
+    window.dispatchEvent(new Event('pagehide'));
+    window.dispatchEvent(new Event('pagehide'));
+    return { calendarEmpty: document.getElementById('scheduleBody').innerHTML === '',
+      favoriteOpen: document.getElementById('officialFavoriteDialog').open };
+  })()`);
+  assert.deepEqual(retired, { calendarEmpty:true, favoriteOpen:true },
+    'the registered owner retires its DOM without disposing an unregistered feature');
   console.log('renderer native modules in ASAR: PASS');
 }
 

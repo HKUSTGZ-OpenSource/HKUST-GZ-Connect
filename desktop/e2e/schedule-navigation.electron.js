@@ -102,6 +102,7 @@ async function run() {
         openDeepLink: () => {},
       });
       feature.start(); const initialLoad = feature.load();
+      window.fixtureFeature = feature;
       window.fixtureInitialLoad = initialLoad;
     })()`);
     const initial = await window.webContents.executeJavaScript(`({
@@ -255,6 +256,27 @@ async function run() {
     assert.equal(await window.webContents.executeJavaScript(`document.getElementById('moduleSchedule').dataset.state`),'session-expired');
     assert.equal(await window.webContents.executeJavaScript(`document.querySelectorAll('.week-event').length`),0,'explicit expiry removes prior events');
     await window.webContents.executeJavaScript(`window.fixtureExpired=false;document.getElementById('scheduleRefresh').click()`);await settle();
+    const cleared = await window.webContents.executeJavaScript(`(async () => {
+      document.querySelectorAll('.week-event')[1].click();
+      const priorDialog = document.getElementById('scheduleDetail');
+      const hadDetails = priorDialog.open && priorDialog.querySelectorAll('.week-detail-item').length === 3;
+      priorDialog.close = () => { throw new Error('synthetic clear dialog failure'); };
+      window.fixtureHold = true; window.fixtureResolve = null;
+      const pending = window.fixtureFeature.refreshSchedule();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if (typeof window.fixtureResolve !== 'function') throw new Error('synthetic week request did not start');
+      let reported = false;
+      try { window.fixtureFeature.clearDisplay(true); }
+      catch (error) { reported = error instanceof AggregateError && error.errors.some(cause => cause.message === 'synthetic clear dialog failure'); }
+      window.fixtureHold = false; window.fixtureResolve(); await pending;
+      return { hadDetails, reported, scrubbed: priorDialog.innerHTML === '', detached: !priorDialog.isConnected,
+        snapshotCleared: window.fixtureFeature.snapshot() === null,
+        noEvents: document.querySelectorAll('.week-event').length === 0,
+        pendingDisabled: document.getElementById('scheduleRefresh').disabled };
+    })()`);
+    assert.deepEqual(cleared, {hadDetails:true,reported:true,scrubbed:true,detached:true,
+      snapshotCleared:true,noEvents:true,pendingDisabled:true}, 'failed close still clears real DOM and fences the pending reply');
+    process.stdout.write('schedule clear failure: PASS (real dialog scrubbed, pending result retired)\n');
     process.stdout.write('schedule navigation: PASS (date, adjacent weeks, today, refresh, detail, keyboard, minute geometry, overlap, narrow/wide/zoom, expiry recovery)\n');
   } finally { window.destroy(); }
 }

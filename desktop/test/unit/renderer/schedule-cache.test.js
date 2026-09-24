@@ -131,3 +131,13 @@ test('explicit full revalidation fences older week success and denial', async ()
     } finally {h.feature.clearDisplay();}
   }
 });
+
+test('a full-load denial still replaces visible personal data after advancing its authorization epoch',async()=>{
+  const h=harness();try {
+    await h.feature.load();const general=h.deferLoad();const work=h.feature.load(true);
+    general.resolve(value('session-expired'));await work;
+    assert.equal(h.feature.snapshot().modules.schedule.state,'session-expired');
+    assert.match(h.body.innerHTML,/workspace.portalExpired/);
+    assert.doesNotMatch(h.body.innerHTML,/data-schedule-index/);
+  } finally {h.feature.clearDisplay();}
+});
