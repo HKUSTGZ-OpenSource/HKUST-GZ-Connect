@@ -57,3 +57,49 @@ no data migration or installed-app change is involved.
 The full feature registry, locale ownership and stale-operation lifecycle follow-ups
 remain separate M1 work. This first seam is not a claim that HTML/global ordering is fully removed.
 Native installers, real-school behavior and signing are outside this source-only verification.
+
+## Lifecycle follow-up — PR #114
+
+The structural contract above describes #108; the separate lifecycle contribution owns start,
+dispose and stale-result fencing. Its 2026-09-12 review also covers explicit browser-data clearing:
+`clearDisplay` revokes cached state and pending publications before attempting UI effects. A failed
+detail-dialog close must not prevent clearing its markup, the other module surfaces or the catalog.
+Cleanup failures remain reported as an aggregate rather than being silently treated as success.
+
+The browser-data settings consumer catches failures in either clear-state callback, restores the
+button and requires fresh two-click confirmation before retrying. A failure before the Main clear
+operation prevents that operation from running. Tests inject only synthetic errors and display data;
+they do not clear the user's browser session. Both new regressions failed before the corresponding
+fix and passed afterwards. No IPC, storage format, network or release change is included.
+
+Mac Electron verification on 2026-09-12 uses production source `5f73088` and the expanded
+`e2e/schedule-navigation.electron.js` fixture, with isolated temporary userData and HTTP(S) blocked.
+The fixture passes date/week navigation, cached/manual refresh, grouped details, keyboard closure,
+expiry recovery, 360/440/960/1440-pixel windows and 150% zoom. Seven days remain in bounds without
+horizontal or nested vertical overflow; detail dialogs remain centered. An injected native-dialog
+close failure still scrubs and detaches the prior detail DOM and retires a pending week reply.
+Narrow and wide synthetic screenshots were inspected. This is Mac source/fixture evidence only,
+not a packaged-app, real-school or Windows/Linux acceptance claim. The installed app was untouched.
+
+Designated-host follow-up on 2026-09-12 checks source `64911bd30f1f3e0d8d8a03191dedd01c6e2f661f`.
+The selected Renderer, tests and fixture archive was hash-verified before extraction on 5070
+(SHA-256 `04a455b17bc6ebf21fdd77ea3a11e5711c7db616a09747e25b9c16e96d5d6dee`).
+Windows Node and WSL Linux Node each pass all 29 targeted tests with no skips: browser-data settings,
+campus-data lifecycle, schedule cache, calendar view and the native module contract. Both native
+Electron runtimes pass `schedule-navigation.electron.js`, including the real-DOM close-failure
+regression; Linux runs under Xvfb. Windows logs one GPU-process exit (code 34), so hardware
+acceleration health is not established. The Linux Renderer-only tests use the extracted source on
+the Windows-mounted filesystem; they do not verify Linux private-file or installation behavior.
+Existing runtimes were reused with no dependency installation, build, cloud workflow or execution
+policy change. These results close the targeted Windows/Linux omissions above, not the full suite,
+package/signing, live-school or independent-review gates. No published source or artifact changed.
+
+## Organization review handoff — 2026-09-12
+
+The verified repair is submitted through the existing #114 branch in `HKUSTGZ-OpenSource`, not a
+new PR. Its base remains #110; #115 is the direct descendant. A read-only merge-tree check against
+#115 is conflict-free, but that does not update or validate the descendant: synchronize it once
+the parent review checkpoint is agreed. No downstream branch history is rewritten by this handoff.
+The batch uses `[skip ci]` to respect the maintainer's Actions budget. Required checks remain
+unfulfilled rather than being represented as passed; independent review and release authority
+remain separate. The production/test delta is unchanged from the recorded native validation.

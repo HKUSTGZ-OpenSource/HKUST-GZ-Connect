@@ -452,21 +452,23 @@ impl AuthenticatedGatewaySession {
                 connector,
                 user_agent.to_owned(),
                 timeout_seconds,
-            )?,
+            )
+            .map_err(classify_prelogin_gateway_error)?,
             None => {
-                GatewaySession::new(base_url.to_owned(), user_agent.to_owned(), timeout_seconds)?
+                GatewaySession::new(base_url.to_owned(), user_agent.to_owned(), timeout_seconds)
+                    .map_err(classify_prelogin_gateway_error)?
             }
         };
 
         let discovery_path = required_endpoint(config, "discovery")?;
         let _ = http
             .request(discovery_path, Method::GET, None)
-            .map_err(classify_auth_gateway_error)?;
+            .map_err(classify_prelogin_gateway_error)?;
         cancel_partial_authentication_if_requested(&http, &logout_path, cancellation)?;
         let password_config_path = required_endpoint(config, "password_config")?;
         let (password_config, _, _) = http
             .request(password_config_path, Method::GET, None)
-            .map_err(classify_auth_gateway_error)?;
+            .map_err(classify_prelogin_gateway_error)?;
         cancel_partial_authentication_if_requested(&http, &logout_path, cancellation)?;
         let password_config = Zeroizing::new(password_config);
         let document = parse_xml(&password_config, "engine password configuration")
@@ -701,6 +703,21 @@ fn classify_auth_gateway_error(error: Error) -> Error {
     }
 }
 
+fn classify_prelogin_gateway_error(error: Error) -> Error {
+    match error.kind() {
+        ErrorKind::Configuration => error,
+        ErrorKind::GatewayHttp | ErrorKind::GatewayHttpIndeterminate => Error::classified(
+            ErrorKind::GatewayPreloginUnavailable,
+            "gateway pre-login request was unavailable",
+        ),
+        ErrorKind::GatewayProtocolInvalid => Error::classified(
+            ErrorKind::AuthenticationProtocolInvalid,
+            "gateway pre-login response violates the expected protocol",
+        ),
+        _ => classify_auth_gateway_error(error),
+    }
+}
+
 fn authentication_failure_after_cleanup(
     http: &GatewaySession,
     logout_path: &str,
@@ -860,6 +877,31 @@ mod tests {
             "synthetic malformed response",
         ));
         assert_eq!(malformed.kind(), ErrorKind::AuthenticationProtocolInvalid);
+    }
+
+    #[test]
+    fn gateway_failures_before_password_submission_can_retry_without_repeating_login() {
+        for failure in [
+            Error::classified(ErrorKind::GatewayHttpIndeterminate, "synthetic timeout"),
+            Error::classified(ErrorKind::GatewayHttp, "synthetic connection failure"),
+        ] {
+            let classified = classify_prelogin_gateway_error(failure);
+            assert_eq!(classified.kind(), ErrorKind::GatewayPreloginUnavailable);
+            assert!(!classified.to_string().contains("password"));
+        }
+        let invalid = classify_prelogin_gateway_error(Error::classified(
+            ErrorKind::GatewayProtocolInvalid,
+            "synthetic invalid response",
+        ));
+        assert_eq!(invalid.kind(), ErrorKind::AuthenticationProtocolInvalid);
+        assert_eq!(
+            classify_auth_gateway_error(Error::classified(
+                ErrorKind::GatewayHttpIndeterminate,
+                "synthetic password POST timeout",
+            ))
+            .kind(),
+            ErrorKind::AuthenticationIndeterminate,
+        );
     }
 
     #[test]

@@ -2,8 +2,8 @@
 
 - Status: Proposed behavior/lifecycle contribution, not installed or released
 - Owner: Desktop Renderer maintainers, issue #79
-- Base: PR #114 at `b5fcef731f37e3f380c5f1307f75eb4120382494`
-- Last verified: 2026-09-11
+- Base: PR #114 at `0ba176ca7ad5584052c6186436d265f31fa4c61c`
+- Last verified: 2026-09-12
 - Applies to: Issue #79, post-2.0.2 favorites lifecycle candidate
 
 ## Behavior contract
@@ -86,3 +86,19 @@ Windows/Linux native acceptance, installers and live-school/MFA canaries were no
 tree. Earlier receipts retain their exact-source scope. Reused dependency caches are unchanged;
 no installed app, user data, system network, GitHub protection or Organization ownership changed.
 The multi-step save still cannot roll back a Main mutation that has already been dispatched.
+
+## Direct-parent cleanup synchronization — 2026-09-12
+
+The updated #114 parent above merged locally without conflicts; no history was rewritten and no
+other descendant was changed. The exact pre-receipt tree is
+`60dd2184c2f521f9a888e03e518d8c409ae77451`. Mac Node 24 full source tests pass: **1,381 passed,
+14 platform skips, zero failures (1,395 total)**. Native schedule navigation passes including the
+detail-close fault regression. Control-shell layout passes including synthetic new-folder favorite
+creation and personal-tab handoff, using isolated temporary userData rather than the installed app.
+Architecture, exact-tree syntax/secret, install-script and diff checks pass. Desktop lib, Rust,
+workflows and package manifest/lock match the parent; the favorites contribution remains distinct.
+
+This checkpoint reuses the existing dependency runtimes. No Windows/Linux whole-tree rerun,
+distribution package, live-school action, new branch/PR, public merge or protection change occurred.
+Revert the local synchronization commit to recover the prior candidate; persisted user data has
+not changed. Prior cross-platform evidence is not promoted to this new tree.

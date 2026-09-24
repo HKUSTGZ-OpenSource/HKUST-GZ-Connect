@@ -12,12 +12,23 @@ const { app, BrowserWindow, WebContentsView, session } = require('electron');
 const { CampusBrowser } = require('../lib/browser/session/campus-browser');
 const { CAMPUS_PARTITION } = require('../lib/routing/policy/campus-route');
 
-const TEST_TIMEOUT_MS = 20_000;
 const WAIT_TIMEOUT_MS = 5_000;
 const LOGIN_URL = 'https://sso.example.invalid/login';
 const CHALLENGE_URL = 'https://mfa.example.invalid/challenge';
-const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-popup-mfa-'));
+const profile = process.argv[2];
+if (typeof profile !== 'string' || !path.isAbsolute(profile) ||
+    path.dirname(profile) !== fs.realpathSync(os.tmpdir()) ||
+    !/^hkustgz-popup-mfa-[a-zA-Z0-9]+$/u.test(path.basename(profile)) ||
+    fs.lstatSync(profile).isSymbolicLink() || !fs.lstatSync(profile).isDirectory()) {
+  throw new Error('MFA fixture requires an isolated Node-parent profile');
+}
 app.setPath('userData', profile);
+// The parent owns the 20-second deadline and observes process close before file removal.
+app.on('window-all-closed', () => {});
+process.on('unhandledRejection', error => {
+  process.stderr.write(`${error?.stack || error}\n`);
+  app.exit(1);
+});
 
 const loginPage = `<!doctype html>
   <title>Synthetic SSO</title>
@@ -82,7 +93,6 @@ async function cleanup() {
   browser = null;
   if (campusSession) await campusSession.protocol.uninterceptProtocol('https');
   campusSession = null;
-  fs.rmSync(profile, { recursive: true, force: true });
 }
 
 async function run() {
@@ -179,24 +189,24 @@ async function run() {
   ]]);
   assert.equal(owner.pendingCredential, null);
   assert.deepEqual(errors, []);
-  process.stdout.write('campus popup MFA credential safety: PASS\n');
+  process.stdout.write('campus popup MFA assertions: PASS\n');
 }
 
-const hardTimeout = setTimeout(() => {
-  process.stderr.write('campus popup MFA credential safety: hard timeout\n');
-  void cleanup().finally(() => app.exit(1));
-}, TEST_TIMEOUT_MS);
-
-run().then(
-  async () => {
-    clearTimeout(hardTimeout);
-    await cleanup();
-    app.quit();
-  },
-  async (error) => {
-    clearTimeout(hardTimeout);
+async function main() {
+  let failed = false;
+  try { await run(); }
+  catch (error) {
+    failed = true;
     process.stderr.write(`${error.stack || error}\n`);
-    await cleanup();
-    app.exit(1);
-  },
-);
+  }
+  try { await cleanup(); }
+  catch (error) {
+    failed = true;
+    process.stderr.write(`MFA runtime cleanup failed: ${error.message}\n`);
+  }
+  app.exit(failed ? 1 : 0);
+}
+void main().catch(error => {
+  process.stderr.write(`${error.stack || error}\n`);
+  app.exit(1);
+});
