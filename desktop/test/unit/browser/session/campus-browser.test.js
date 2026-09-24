@@ -1290,7 +1290,7 @@ test('toolbar find commands drive findInPage on the active tab', async () => {
   assert.equal(browser.findOpen, false, 'legacy URL hashes cannot issue toolbar commands');
 });
 
-test('downloads ask for a save location and surface failures', async () => {
+test('downloads use the native save picker and surface failures', async () => {
   const errors = [];
   const prompts = [];
   const shown = [];
@@ -1317,7 +1317,7 @@ test('downloads ask for a save location and surface failures', async () => {
     item.getFilename = () => item.filename;
     item.cancel = () => { item.cancelled = true; };
     item.setSaveDialogOptions = options => { prompts.push(options); };
-    item.getSavePath = () => '/tmp/课件.pdf';
+    item.getSavePath = () => `/tmp/${filename}`;
     item.getTotalBytes = () => 100;
     item.getReceivedBytes = () => item.received || 0;
     return item;
@@ -1348,15 +1348,43 @@ test('downloads ask for a save location and surface failures', async () => {
 
   const cancelled = makeItem('取消.zip');
   campusSession.emit('will-download', {}, cancelled);
-  await new Promise((resolve) => setImmediate(resolve));
   cancelled.emit('done', {}, 'cancelled');
   assert.equal(browser.downloadState, null, 'native cancellation clears progress without an error');
   assert.equal(errors.length, 1);
 
   const bare = new CampusBrowser({});
   const headless = makeItem('no-dialog.bin');
+  delete headless.setSaveDialogOptions;
   await bare.handleDownload(headless);
-  assert.equal(headless.cancelled, true, 'without a dialog the download cannot proceed');
+  assert.equal(headless.cancelled, true, 'without native save options the download cannot proceed');
+});
+
+test('fast downloads register native save options and completion synchronously', async () => {
+  const dialog = {
+    showSaveDialog: () => assert.fail('custom save dialog must not delay will-download setup'),
+    showMessageBox: async () => ({ response: 1 }),
+  };
+  const { browser, sessions } = createFakeBrowser({ dialog });
+  const campusSession = sessions.get(CAMPUS_PARTITION);
+  await browser.configure(1080, ROUTE_CAMPUS);
+
+  const item = new EventEmitter();
+  item.getFilename = () => 'fast.pdf';
+  item.getTotalBytes = () => 100;
+  item.getReceivedBytes = () => 100;
+  item.setSaveDialogOptions = (options) => { item.saveDialogOptions = options; };
+  item.getSavePath = () => '/tmp/fast.pdf';
+  item.cancel = () => { item.cancelled = true; };
+
+  campusSession.emit('will-download', {}, item);
+  assert.deepEqual(item.saveDialogOptions, { defaultPath: 'fast.pdf' },
+    'native picker options must be configured before will-download returns');
+
+  item.emit('done', {}, 'completed');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(browser.downloadState, {
+    filename: 'fast.pdf', status: 'completed', percent: 100,
+  });
 });
 
 test('site passwords are offered only after a successful later navigation', async () => {

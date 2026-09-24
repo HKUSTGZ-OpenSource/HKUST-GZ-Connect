@@ -82,6 +82,7 @@ function classifyEngineCode(code, socksPort, t = createT('zh'), secondaryCode = 
     case 'AUTH_FAILED': message = t('engine.authFailed'); break;
     case 'AUTH_REJECTED': message = t('engine.authRejected'); break;
     case 'AUTH_INDETERMINATE': message = t('engine.authIndeterminate'); break;
+    case 'GATEWAY_PRELOGIN_UNAVAILABLE': message = t('engine.gatewayPreloginUnavailable'); break;
     case 'AUTH_PROTOCOL_INVALID': message = t('engine.authProtocolInvalid'); break;
     case 'AUTH_EXPIRED': message = t('engine.authExpired'); break;
     case 'AUTH_LIMIT_EXCEEDED': message = t('engine.authLimitExceeded'); break;
@@ -122,7 +123,7 @@ function engineFailureKindFromCode(code) {
     'EVENT_OUTPUT_FAILED',
   ]
     .includes(code)) return 'terminal';
-  if (['DATA_PLANE_SETUP_TRANSIENT', 'NETWORK_DISCONNECTED'].includes(code)) {
+  if (['GATEWAY_PRELOGIN_UNAVAILABLE', 'DATA_PLANE_SETUP_TRANSIENT', 'NETWORK_DISCONNECTED'].includes(code)) {
     return 'gateway-transient';
   }
   return 'unknown';

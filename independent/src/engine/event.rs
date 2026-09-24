@@ -88,6 +88,7 @@ pub enum EngineErrorCode {
     AuthFailed,
     AuthRejected,
     AuthIndeterminate,
+    GatewayPreloginUnavailable,
     AuthProtocolInvalid,
     AuthCleanupUnconfirmed,
     AuthExpired,

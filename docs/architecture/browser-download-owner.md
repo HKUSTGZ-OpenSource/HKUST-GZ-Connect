@@ -19,22 +19,20 @@ consumer's existing public entrypoint, `campus-browser-manager.js`. Removing tha
 funds the download owner within the unchanged Main transitive cap of 170. No dependency was
 hidden from the architecture graph, no package dependency or workflow was added.
 
-CampusBrowser shrinks from 1,854 to 1,804 lines; the download owner is 90 lines. This is one
+CampusBrowser shrinks from 1,854 to 1,804 lines; the download owner is 94 lines after syncing
+the already-merged #126 native-save fix. This is one
 independently reviewable seam, not completion of the 600-line Browser ownership target.
 
-## Deliberately unresolved behavior
+## Native behavior and lifecycle follow-up
 
-This section records the structure-only checkpoint at `b484809`. The separate proposed
-[native behavior repair](../engineering/native-browser-downloads.md) addresses the defects below;
-it must not be conflated with the extraction's unchanged-behavior evidence.
-
-The legacy algorithm awaits `showSaveDialog` before `DownloadItem.setSavePath`. This extraction
-preserves that algorithm; EventEmitter tests do not prove Electron's native callback timing.
-The [Electron DownloadItem contract](https://www.electronjs.org/docs/latest/api/download-item#downloaditemsetsavepathpath)
-limits save-path and save-dialog configuration to the Session's `will-download` callback.
-Native save-picker configuration must be validated and corrected as a separate behavior change.
-Session listener retirement and deferred completion effects after a context switch likewise
-remain separate lifecycle work. Do not claim that this seam fixes either issue.
+The historical structure-only checkpoint at `b484809` retained an asynchronous custom
+`showSaveDialog` flow; it is not the behavior of the current main-based branch. #126 moved
+save-picker configuration and terminal callback registration into `will-download`, matching the
+[Electron DownloadItem contract](https://www.electronjs.org/docs/latest/api/download-item#downloaditemsetsavedialogoptionsoptions).
+This owner extraction preserves that fix. The separate #113 follow-up adds Session listener
+retirement, active-transfer cancellation and stale completion fencing without changing routing or
+credentials. EventEmitter tests cover ownership; native fixture evidence is recorded separately in
+[native-browser-downloads.md](../engineering/native-browser-downloads.md).
 
 Native follow-up must use a loopback synthetic download, an isolated temporary destination and
 exact-source native Electron evidence on Mac, Windows 5070 and Linux 5070. It must not use a live
@@ -81,7 +79,7 @@ the dated evidence above is not a live queue snapshot.
 Reverting this isolated change restores the original methods and private policy path without a
 data migration. Existing UI PRs are not imported into or overwritten by this main-based branch.
 
-## Post-release synchronization — 2026-09-11
+## Historical post-release synchronization — 2026-09-11
 
 Previous candidate: `7a84073`. The published main above merged without conflicts or public-history
 rewriting. Nine-file contribution remains the download ownership seam, open-request normalization
@@ -99,3 +97,12 @@ Windows/Linux native, real DownloadItem timing, popup-MFA cleanup and full insta
 were not rerun for this synchronized tree. The historical table retains its original source scope.
 No installed app, user browser data, network configuration, release, protection or Organization
 ownership changed. Review/rollback remains limited to this structural seam on published main.
+
+## Rebase onto current main — 2026-09-25
+
+Current main contains #126, so the isolated Browser download owner carries its native-save
+algorithm without changing behavior. The merge conflict was resolved by delegating synchronously
+from CampusBrowser and moving the already-reviewed #126 handler into this owner. Focused Node 25
+download-controller and campus-browser tests pass (59/59), including a fast completion before
+`will-download` returns; native platform checks and the complete suite remain to be rerun on the
+final head. The earlier table remains historical evidence for its listed revision only.

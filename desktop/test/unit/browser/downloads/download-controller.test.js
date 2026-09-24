@@ -12,6 +12,45 @@ test('download owner remains within the Browser owner budget', () => {
   const browser = fs.readFileSync(require.resolve('../../../../lib/browser/session/campus-browser'), 'utf8');
   assert(browser.trimEnd().split('\n').length <= 1804);
   assert(!browser.includes('item.setSavePath('));
+  assert(!browser.includes("item.once('done'"));
+});
+
+test('completion reveals only the selected path after an explicit prompt choice', async () => {
+  for (const response of [0, 1]) {
+    const revealed = [];
+    const fixture = owner({
+      showMessageBox: async () => ({ response }),
+    });
+    fixture.controller.showItemInFolder = path => revealed.push(path);
+    const download = item();
+    fixture.controller.handleDownload(download);
+    assert.deepEqual(download.saveOptions, { defaultPath: 'fixture.txt' });
+    download.emit('done', {}, 'completed');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(revealed, response === 0 ? ['/tmp/synthetic-download.txt'] : []);
+    assert.deepEqual(fixture.controller.downloadState,
+      { filename: 'fixture.txt', status: 'completed', percent: 100 });
+  }
+});
+
+test('injected effects read the current browser locale and window at call time', async () => {
+  let locale = 'zh';
+  let window = { id: 'original' };
+  const calls = [];
+  const controller = new BrowserDownloadController({
+    getDialog: () => ({
+      showMessageBox: async (parent, options) => { calls.push(parent, options.message); return { response: 1 }; },
+    }),
+    getWindow: () => window, getOnError: () => null,
+    t: key => `${locale}:${key}`, showItemInFolder: () => {}, onStateChanged: () => {},
+  });
+  locale = 'en';
+  window = { id: 'current' };
+  const download = item();
+  controller.handleDownload(download);
+  download.emit('done', {}, 'completed');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls, [window, 'en:download.completed']);
 });
 
 function item(filename = 'fixture.txt') {
@@ -38,14 +77,14 @@ function owner(dialog) {
     replaceWindow: () => { window = { isDestroyed: () => false }; } };
 }
 
-test('download ownership deduplicates sessions and bounds presentation progress', async () => {
-  const fixture = owner({ showSaveDialog: async () => ({ filePath: '/tmp/synthetic-download.txt' }) });
+test('download ownership deduplicates sessions and bounds presentation progress', () => {
+  const fixture = owner({});
   const session = new EventEmitter();
   fixture.controller.applyDownloadHandler(session);
   fixture.controller.applyDownloadHandler(session);
   assert.equal(session.listenerCount('will-download'), 1);
   const download = item('x'.repeat(200));
-  await fixture.controller.handleDownload(download);
+  fixture.controller.handleDownload(download);
   assert.equal(fixture.controller.downloadState.filename.length, 160);
   assert.equal(fixture.controller.downloadState.percent, null);
   download.total = 100; download.received = 140; download.emit('updated');
@@ -61,19 +100,19 @@ test('download ownership deduplicates sessions and bounds presentation progress'
   assert.equal(fixture.controller.downloadState.status, 'interrupted');
 });
 
-test('native cancellation is quiet and failed setup cancels the item', async () => {
+test('native cancellation is quiet and failed setup cancels the item', () => {
   const cancelled = item();
-  const fixture = owner({ showSaveDialog: () => { throw new Error('must use native picker'); } });
+  const fixture = owner({});
   fixture.closeWindow();
-  await fixture.controller.handleDownload(cancelled);
+  fixture.controller.handleDownload(cancelled);
   assert.deepEqual(cancelled.saveOptions, { defaultPath: 'fixture.txt' });
   cancelled.emit('done', {}, 'cancelled');
   assert.equal(fixture.controller.downloadState, null);
   assert.deepEqual(fixture.errors, []);
-  const failed = owner({ showSaveDialog: () => {} });
+  const failed = owner({});
   const download = item();
   download.setSaveDialogOptions = () => { throw new Error('synthetic setup failure'); };
-  await failed.controller.handleDownload(download);
+  failed.controller.handleDownload(download);
   assert.equal(download.cancelled, true);
   assert.deepEqual(failed.errors, ['download.noLocation:']);
 });
@@ -225,4 +264,22 @@ test('retirement followed by a presentation error still cancels once', async () 
   assert.equal(cancellations, 1);
   assert.equal(fixture.controller.activeItems.size, 0);
   assert.deepEqual(fixture.errors, []);
+});
+
+test('fast downloads attach native completion before will-download returns', async () => {
+  const fixture = owner({
+    showSaveDialog: () => assert.fail('a custom asynchronous save dialog must not run'),
+    showMessageBox: async () => ({ response: 1 }),
+  });
+  const session = new EventEmitter();
+  fixture.controller.applyDownloadHandler(session);
+  const download = item('fast.pdf');
+  download.total = 100; download.received = 100;
+  session.emit('will-download', {}, download);
+  assert.deepEqual(download.saveOptions, { defaultPath: 'fast.pdf' });
+  assert.equal(download.listenerCount('done'), 1);
+  download.emit('done', {}, 'completed');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(fixture.controller.downloadState,
+    { filename: 'fast.pdf', status: 'completed', percent: 100 });
 });

@@ -64,9 +64,9 @@ class BrowserDownloadController {
     this.downloadState = null;
   }
 
-  async handleDownload(item) {
-    if (this.retired) { try { item.cancel(); } catch {} return; }
-    if (typeof this.dialog?.showSaveDialog !== 'function') {
+  handleDownload(item) {
+    if (this.retired) { try { item?.cancel(); } catch {} return; }
+    if (typeof item?.setSaveDialogOptions !== 'function') {
       try { item.cancel(); } catch {}
       return;
     }
