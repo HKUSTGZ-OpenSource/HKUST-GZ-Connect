@@ -9,7 +9,7 @@ Cross-platform EasyConnect-compatible client for HKUST(GZ)
 
 [中文](#中文) · [English](#english)
 
-![Release](https://img.shields.io/github/v/release/heeh02/hkustgzconnect)
+![Release](https://img.shields.io/github/v/release/HKUSTGZ-OpenSource/HKUST-GZ-Connect)
 ![macOS](https://img.shields.io/badge/macOS-Apple_Silicon_%7C_Intel-000?logo=apple&logoColor=white)
 ![Windows](https://img.shields.io/badge/Windows-x64-0078D6?logo=windows&logoColor=white)
 ![Linux](https://img.shields.io/badge/Linux-x86__64_AppImage-FCC624?logo=linux&logoColor=111)
@@ -41,7 +41,7 @@ HKUST(GZ) Connect 用于在校外访问香港科技大学（广州）的校内�
 
 ## 下载
 
-请从 [GitHub Releases](https://github.com/heeh02/hkustgzconnect/releases/latest)
+请从 [GitHub Releases](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/latest)
 下载最新版本。
 
 | 系统 | 下载文件 | 适用设备 |
@@ -145,11 +145,10 @@ Service 保护。地址栏旁的密码按钮可以填入或删除当前网站的
 默认 SOCKS5 地址为 `127.0.0.1:1080`，端口可在设置中修改。它只监听本机，
 不会向校园网或局域网开放。
 
-新安装默认开启“严格本地代理认证”，避免同一台机器上的其他进程或用户直接借用
-已经认证的校园隧道。应用内校园浏览器会自动处理认证；Clash、Mihomo 和
-VS Code 可使用控制塔“外部工具集成”生成的配置。只有确需兼容不支持认证的旧
-SOCKS5 客户端时，才显式关闭该开关。
-旧版本已经保存的兼容选择会保留，不会在升级时静默破坏外部客户端。
+桌面应用新安装默认关闭“严格本地代理认证”，兼容不支持认证的 SOCKS5 客户端。
+关闭时同机其他程序或用户也可能使用代理；共享电脑可手动开启。
+Clash、Mihomo 和 VS Code 可使用控制塔“外部工具集成”生成的配置。
+已经保存的严格或兼容选择会保留。独立根目录 CLI 继续使用认证，不受桌面开关影响。
 
 修改 SOCKS 端口后，需要重新生成并更新外部软件的配置。
 
@@ -261,7 +260,7 @@ proxy, the default route, or the network behavior of other browsers.
 ## Download
 
 Download the latest build from
-[GitHub Releases](https://github.com/heeh02/hkustgzconnect/releases/latest).
+[GitHub Releases](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/latest).
 
 | Platform | Asset | Devices |
 | --- | --- | --- |

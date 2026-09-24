@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
 
 const PRIVATE_FILE_ENV = 'HKUSTGZ_PRIVATE_FILE';
@@ -67,16 +68,37 @@ function validWindowsPath(filePath) {
       : path.win32.isAbsolute(filePath));
 }
 
-function runAclScript(filePath, script, {
+// Resolve only our installed resource or source-tree build, never a PATH entry.
+// Once present, a helper rejection fails closed; it does not retry a different
+// implementation that could accidentally accept a rejected file.
+function nativeHelperPath() {
+  const name = 'ec-private-file-windows-amd64.exe';
+  const directory = process.resourcesPath
+    ? path.join(process.resourcesPath, 'engine')
+    : path.resolve(__dirname, '..', '..', '..', 'engine');
+  const packaged = path.join(directory, name);
+  if (fs.existsSync(packaged)) return packaged;
+  // Electron development runs have resourcesPath pointing to Electron itself.
+  if (!__dirname.includes('app.asar')) {
+    const development = path.resolve(__dirname, '..', '..', '..', 'engine', name);
+    if (fs.existsSync(development)) return development;
+  }
+  return null;
+}
+
+function runAclScript(filePath, script, operation, {
   execute = execFileSync,
   environment = process.env,
   platform = process.platform,
+  nativeHelper = execute === execFileSync,
 } = {}) {
   if (platform !== 'win32' || !validWindowsPath(filePath) || typeof execute !== 'function') {
     return false;
   }
   try {
-    const output = execute('powershell.exe', [...POWERSHELL_ARGS, script], {
+    const helper = nativeHelper && process.platform === 'win32' ? nativeHelperPath() : null;
+    const output = execute(helper || 'powershell.exe',
+      helper ? [operation] : [...POWERSHELL_ARGS, script], {
       encoding: 'utf8',
       env: { ...environment, [PRIVATE_FILE_ENV]: filePath },
       maxBuffer: 4096,
@@ -90,15 +112,15 @@ function runAclScript(filePath, script, {
 }
 
 function protectWindowsFileOwnerOnly(filePath, options) {
-  return runAclScript(filePath, PROTECT_SCRIPT, options);
+  return runAclScript(filePath, PROTECT_SCRIPT, 'protect', options);
 }
 
 function tightenWindowsFileOwnerOnly(filePath, options) {
-  return runAclScript(filePath, TIGHTEN_SCRIPT, options);
+  return runAclScript(filePath, TIGHTEN_SCRIPT, 'tighten', options);
 }
 
 function verifyWindowsFileOwnerOnly(filePath, options) {
-  return runAclScript(filePath, VERIFY_SCRIPT, options);
+  return runAclScript(filePath, VERIFY_SCRIPT, 'verify', options);
 }
 
 module.exports = {

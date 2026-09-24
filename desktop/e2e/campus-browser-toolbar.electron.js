@@ -231,7 +231,8 @@ async function assertSettingsButton(browser, settingsOpens) {
 
 async function assertRouteSwitch(browser) {
   await waitForMain(
-    () => browser.activeTab()?.failedUrl === DEAD_URL,
+    () => browser.activeTab()?.failedUrl === DEAD_URL &&
+      !browser.activeTab().view.webContents.isLoading(),
     'initial tab to settle on its error page',
   );
   assert.equal(browser.activeTab().route, 'campus');

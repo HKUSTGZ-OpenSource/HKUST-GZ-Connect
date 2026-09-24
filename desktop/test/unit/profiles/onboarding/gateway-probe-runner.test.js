@@ -22,6 +22,7 @@ test('probe launches one credential-free bounded native request', async () => {
   const process = child();
   const runner = new GatewayProbeRunner({
     executablePath: '/app/ec-gateway-probe-darwin-arm64',
+    platform: 'darwin',
     environment: {
       TMPDIR: '/private/tmp',
       HTTP_PROXY: 'http://untrusted.invalid',
@@ -112,6 +113,7 @@ test('synthetic probe uses only a fixed absolute prefix and an isolated Electron
   const process = child();
   const runner = new GatewayProbeRunner({
     executablePath: '/app/Electron',
+    platform: 'darwin',
     argsPrefix: ['/app/e2e/main-gateway-probe-fixture.js'],
     electronRunAsNode: true,
     environment: { TMPDIR: '/private/tmp', SECRET: 'must-not-cross' },
@@ -134,3 +136,32 @@ test('synthetic probe uses only a fixed absolute prefix and an isolated Electron
     executablePath: '/app/Electron', argsPrefix: ['relative.js'], spawnProcess: () => child(),
   }), /dependencies are invalid/u);
 });
+
+for (const platform of ['darwin', 'linux', 'win32']) {
+  test(`probe runner projects only the ${platform} environment allowlist`, async () => {
+    const calls = [];
+    const process = child();
+    const runner = new GatewayProbeRunner({
+      executablePath: '/app/synthetic-probe',
+      platform,
+      environment: {
+        TMPDIR: '/private/tmp',
+        SYSTEMROOT: 'C:\\Windows',
+        TEMP: 'C:\\Temp',
+        HTTP_PROXY: 'http://untrusted.invalid',
+        SSL_CERT_FILE: 'untrusted.pem',
+        TOKEN: 'synthetic-must-not-cross',
+      },
+      spawnProcess: (...args) => { calls.push(args); return process; },
+    });
+    const pending = runner.probe('https://vpn.example.edu');
+    process.stdout.emit('data', '{"ok":true}\n');
+    process.emit('close', 0, null);
+    assert.deepEqual(await pending, { ok: true });
+    assert.deepEqual(calls[0][2].env, platform === 'win32'
+      ? { SYSTEMROOT: 'C:\\Windows', TEMP: 'C:\\Temp' }
+      : { TMPDIR: '/private/tmp' });
+    assert.equal(calls[0][2].shell, false);
+    assert.equal(calls[0][2].windowsHide, true);
+  });
+}

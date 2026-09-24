@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } =
+  require('../../../../../lib/platform/storage/windows-private-file');
 const {
   LegacyCredentialRollbackStore,
 } = require('../../../../../lib/persistence/migration/legacy-hkust/legacy-credential-rollback-store');
@@ -25,6 +27,14 @@ function migrationJournal() {
     identity: { accountKey: `account-${'22'.repeat(16)}` },
     accountCredentialRevision: 1,
   };
+}
+
+function writeFixture(file, data) {
+  fs.writeFileSync(file, data, { mode: 0o600 });
+  if (process.platform === 'win32') {
+    assert.equal(protectWindowsFileOwnerOnly(file), true, 'protect only this synthetic fixture');
+    assert.equal(verifyWindowsFileOwnerOnly(file), true);
+  }
 }
 
 function fixture(t, { active = true } = {}) {
@@ -48,11 +58,10 @@ function fixture(t, { active = true } = {}) {
     sourceReceipt,
     now: () => 1_700_000_000_000,
   });
-  if (active) fs.writeFileSync(layout.account.legacyCredentialRollbackBlob, blob, { mode: 0o600 });
-  fs.writeFileSync(
+  if (active) writeFixture(layout.account.legacyCredentialRollbackBlob, blob);
+  writeFixture(
     layout.account.legacyCredentialRollbackState,
     JSON.stringify(state),
-    { mode: 0o600 },
   );
   const expectedBinding = {
     migrationId: state.migrationId,
@@ -175,9 +184,7 @@ test('retired state with resurrected blob is reconciled by deleting dedicated bl
     reason: 'credential_cleared',
     now: () => 1_700_000_000_100,
   });
-  fs.writeFileSync(value.layout.account.legacyCredentialRollbackState, JSON.stringify(retired), {
-    mode: 0o600,
-  });
+  writeFixture(value.layout.account.legacyCredentialRollbackState, JSON.stringify(retired));
   assert.deepEqual(store(value).reconcile(), { status: 'retired', changed: true });
   assert.equal(fs.existsSync(value.layout.account.legacyCredentialRollbackBlob), false);
 });
@@ -204,10 +211,9 @@ test('binding mismatch, link substitution and unknown retirement intent fail clo
 
 test('malformed retirement intent is never treated as authority', (t) => {
   const value = fixture(t);
-  fs.writeFileSync(
+  writeFixture(
     value.layout.account.legacyCredentialRollbackRetirement,
     JSON.stringify({ schemaVersion: 1, type: 'unknown' }),
-    { mode: 0o600 },
   );
   assert.throws(() => store(value).reconcile(), /schema|unsupported/u);
   assert.equal(fs.existsSync(value.layout.account.legacyCredentialRollbackBlob), true);
@@ -240,3 +246,21 @@ test('simulated Windows retirement protects and verifies state and intent DACLs'
   assert.equal(protectedPaths.some((file) => file.endsWith('.tmp')), true);
   assert.equal(verifiedPaths.includes(value.layout.account.legacyCredentialRollbackState), true);
 });
+
+for (const part of ['legacyCredentialRollbackState', 'legacyCredentialRollbackBlob']) {
+  test(`native Windows rejects insecure ${part} without deleting rollback material`, {
+    skip: process.platform !== 'win32',
+  }, (t) => {
+    const value = fixture(t), file = value.layout.account[part];
+    const original = fs.readFileSync(file);
+    fs.unlinkSync(file);
+    fs.writeFileSync(file, original, { mode: 0o600 });
+    assert.equal(verifyWindowsFileOwnerOnly(file), false);
+    assert.throws(() => store(value).readActiveRollbackBlob(), /invalid private file/);
+    assert.deepEqual(fs.readFileSync(file), original);
+    assert.equal(fs.existsSync(value.layout.account.legacyCredentialRollbackBlob), true);
+    assert.equal(fs.existsSync(value.layout.account.legacyCredentialRollbackRetirement), false);
+    assert.equal(persistedState(value).state, 'active');
+    assert.equal(verifyWindowsFileOwnerOnly(file), false);
+  });
+}

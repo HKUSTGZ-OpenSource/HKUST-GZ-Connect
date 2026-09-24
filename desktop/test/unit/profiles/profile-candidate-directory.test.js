@@ -19,6 +19,7 @@ const {
 const { createProfileAccountWorkspaceLayout } = require('../../../lib/persistence/paths/profile-workspace-layout');
 const { ReviewedProfileAnchorStore } = require('../../../lib/profiles/registry/reviewed-profile-anchor-store');
 const { createSchoolProfileView, PROTOCOL_FAMILY } = require('../../../lib/profiles/schema/school-profile-schema');
+const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../../lib/platform/storage/windows-private-file');
 
 const DESKTOP = path.resolve(__dirname, '..', '..', '..');
 const PROFILE_KEY = `profile-${'11'.repeat(16)}`;
@@ -33,8 +34,13 @@ function root(t) {
 }
 
 function writeJson(file, value) {
+  const existed = fs.existsSync(file);
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   fs.writeFileSync(file, `${JSON.stringify(value)}\n`, { mode: 0o600 });
+  if (process.platform === 'win32' && !existed) {
+    assert.equal(protectWindowsFileOwnerOnly(file), true);
+    assert.equal(verifyWindowsFileOwnerOnly(file), true);
+  }
 }
 
 function reviewedAuthority(userData) {

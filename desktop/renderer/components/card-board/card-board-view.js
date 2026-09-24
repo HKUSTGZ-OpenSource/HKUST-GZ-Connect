@@ -114,6 +114,8 @@
     const foot = count > previewLimit
       ? `<button class="cb-show-all" type="button" data-card-action="show-all" aria-label="${esc(format(label(context.strings, 'showAllAria', '查看 {name} 全部网站'), { name: cardName }))}">${esc(format(label(context.strings, 'showAll', '查看全部（{count}）'), { count }))}</button>`
       : '';
+    const expand = !context.editing && count > 0
+      ? `<button class="cb-card-more" type="button" data-card-action="expand" aria-haspopup="dialog" aria-label="${esc(format(label(context.strings, 'showAllAria', '查看 {name} 全部网站'), { name: cardName }))}">${esc(context.translate('workspace.more'))}</button>` : '';
     return `<article class="cb-card${front ? ' is-front' : ' is-back'}" role="group"`
       + ` data-card-placement-id="${esc(placement.placementId)}" data-card-ref-kind="${esc(kind)}"`
       + ` data-card-ref-id="${esc(placement.card.id)}" data-card-size="${esc(placement.size)}"`
@@ -126,7 +128,7 @@
       + `<span class="cb-category-icon">${icons.categoryIcon(kind, placement.card.id)}</span>`
       + `<span class="cb-card-title">${esc(cardName)}</span>`
       + `<span class="cb-card-count" aria-hidden="true">${count}</span>`
-      + `</button>${editControls}</header>`
+      + `</button>${expand}${editControls}</header>`
       + `<div class="cb-card-body"${front ? '' : ' inert'}>`
       + `<div class="cb-site-list">${renderSiteRows(card?.items || [], {
         ...context,

@@ -12,6 +12,13 @@ const { ProfileWorkspaceMigrationRuntime } =
 const { createLegacyFlatSourcePaths } = require('../../../../../lib/persistence/paths/profile-workspace-layout');
 const { normalizeSettings } = require('../../../../../lib/persistence/settings/settings-store');
 const { decryptVpnCredentialEnvelope } = require('../../../../../lib/persistence/credentials/vpn-credential-envelope');
+const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../../../../lib/platform/storage/windows-private-file');
+
+function prepareNewFixture(file) {
+  if (process.platform !== 'win32') return;
+  assert.equal(protectWindowsFileOwnerOnly(file), true);
+  assert.equal(verifyWindowsFileOwnerOnly(file), true);
+}
 
 function profile() {
   return JSON.parse(fs.readFileSync(
@@ -52,13 +59,16 @@ function fixture(t, { credential = true } = {}) {
       fs.writeFileSync(paths[id], '{"schemaVersion":1,"rules":[]}', { mode: 0o600 });
     }
   }
+  for (const file of Object.values(paths)) {
+    if (fs.existsSync(file)) prepareNewFixture(file);
+  }
   let entropy = 1;
   let timestamp = 1_700_000_000_000;
   const options = {
     userData,
     profile: profile(),
     safeStorage: safeStorage(),
-    platform: 'darwin',
+    platform: process.platform,
     randomBytes: () => Buffer.alloc(16, entropy++),
     now: () => timestamp++,
   };
@@ -82,7 +92,7 @@ test('runtime migrates real flat files to one verified Profile Workspace authori
   const owner = decryptVpnCredentialEnvelope(encrypted, {
     expectedBinding: result.authority.credentialBinding,
     safeStorage: safeStorage(),
-    platform: 'darwin',
+    platform: process.platform,
   });
   assert.deepEqual(owner.withStrings((username, password) => ({ username, password })), {
     username: 'synthetic-user',
@@ -115,13 +125,14 @@ test('empty first launch remains legacy-compatible while orphaned files block', 
     userData,
     profile: profile(),
     safeStorage: safeStorage(),
-    platform: 'darwin',
+    platform: process.platform,
   };
   const first = new ProfileWorkspaceMigrationRuntime(base).run();
   assert.equal(first.mode, 'legacy-flat');
   assert.equal(first.migration.status, 'not_applicable');
   const paths = createLegacyFlatSourcePaths(userData);
   fs.writeFileSync(paths.vpnCredential, 'orphaned', { mode: 0o600 });
+  prepareNewFixture(paths.vpnCredential);
   assert.throws(() => new ProfileWorkspaceMigrationRuntime(base).run(), /orphaned/u);
 });
 

@@ -9,6 +9,8 @@ const { CustomGatewayConfirmationOwner } = require('../lib/profiles/onboarding/c
 const { CustomProfileProvisioningRuntime } = require('../lib/profiles/provisioning/custom-profile-provisioning-runtime');
 const { PROTOCOL_FAMILY } = require('../lib/profiles/schema/school-profile-schema');
 
+const { ensureOwnerOnly } = require('../lib/platform/storage/private-file');
+
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'campus-custom-main-e2e-'));
 fs.chmodSync(userData, 0o700);
 process.env.HKUSTGZ_USER_DATA_DIR = userData;
@@ -19,6 +21,7 @@ dialog.showErrorBox = (title, message) => {
 function writeJson(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   fs.writeFileSync(file, `${JSON.stringify(value)}\n`, { mode: 0o600 });
+  assert.equal(ensureOwnerOnly(file), true, 'fixture JSON must have native private permissions');
 }
 
 function provision() {

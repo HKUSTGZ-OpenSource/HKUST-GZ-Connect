@@ -13,6 +13,13 @@ const {
 const {
   loadActiveProfileWorkspaceAuthority,
 } = require('../../../../lib/persistence/runtime/profile-workspace-runtime-authority');
+const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../../../lib/platform/storage/windows-private-file');
+
+function prepareNewFixture(file) {
+  if (process.platform !== 'win32') return;
+  assert.equal(protectWindowsFileOwnerOnly(file), true);
+  assert.equal(verifyWindowsFileOwnerOnly(file), true);
+}
 
 const PROFILE_KEY = `profile-${'11'.repeat(16)}`;
 const ACCOUNT_KEY = `account-${'22'.repeat(16)}`;
@@ -27,8 +34,10 @@ function profile() {
 }
 
 function writeJson(file, value) {
+  const existed = fs.existsSync(file);
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   fs.writeFileSync(file, `${JSON.stringify(value)}\n`, { mode: 0o600 });
+  if (!existed) prepareNewFixture(file);
 }
 
 function fixture(t, { withCredential = true } = {}) {
@@ -111,6 +120,7 @@ function fixture(t, { withCredential = true } = {}) {
     fs.writeFileSync(layout.account.vpnCredential, Buffer.from('synthetic-encrypted-envelope'), {
       mode: 0o600,
     });
+    prepareNewFixture(layout.account.vpnCredential);
   }
   return { userData, bootstrap, layout };
 }

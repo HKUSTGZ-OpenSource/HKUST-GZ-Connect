@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const { privatePathStat, privateDescriptorStat } = require('../../../platform/storage/private-file');
 const {
   createLegacyFlatSourcePaths,
   validateUserDataRoot,
@@ -42,7 +43,7 @@ function invalidSource(message, cause = null) {
 
 function sameFileVersion(left, right) {
   return left.dev === right.dev && left.ino === right.ino && left.size === right.size &&
-    left.mtimeMs === right.mtimeMs && left.ctimeMs === right.ctimeMs;
+    left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs;
 }
 
 function collectPrivateFileReceipt({
@@ -69,7 +70,7 @@ function collectPrivateFileReceipt({
   }
   let before;
   try {
-    before = fileSystem.lstatSync(file);
+    before = privatePathStat(fileSystem, file);
   } catch (error) {
     if (error?.code === 'ENOENT') return absentReceipt();
     throw invalidSource(`${label} could not be inspected`, error);
@@ -84,11 +85,11 @@ function collectPrivateFileReceipt({
       throw invalidSource(`${label} Windows ACL is not current-user-only`);
     }
     let tightened;
-    try { tightened = fileSystem.lstatSync(file); }
+    try { tightened = privatePathStat(fileSystem, file); }
     catch (error) { throw invalidSource(`${label} changed while tightening its Windows ACL`, error); }
     if (!tightened.isFile() || tightened.isSymbolicLink() ||
         tightened.dev !== before.dev || tightened.ino !== before.ino ||
-        tightened.size !== before.size || tightened.mtimeMs !== before.mtimeMs ||
+        tightened.size !== before.size || tightened.mtimeNs !== before.mtimeNs ||
         (Number.isSafeInteger(tightened.nlink) && tightened.nlink !== 1)) {
       throw invalidSource(`${label} changed while tightening its Windows ACL`);
     }
@@ -106,7 +107,7 @@ function collectPrivateFileReceipt({
     } catch (error) {
       throw invalidSource(`${label} could not be opened after observed presence`, error);
     }
-    const opened = fileSystem.fstatSync(descriptor);
+    const opened = privateDescriptorStat(fileSystem, descriptor);
     if (!opened.isFile() || !sameFileVersion(opened, before) || opened.size > maxBytes ||
         (Number.isSafeInteger(opened.nlink) && opened.nlink !== 1)) {
       throw invalidSource(`${label} changed while opening`);
@@ -123,7 +124,7 @@ function collectPrivateFileReceipt({
       buffer.fill(0, 0, count);
       offset += count;
     }
-    const after = fileSystem.fstatSync(descriptor);
+    const after = privateDescriptorStat(fileSystem, descriptor);
     if (!after.isFile() || !sameFileVersion(after, opened) ||
         (Number.isSafeInteger(after.nlink) && after.nlink !== 1)) {
       throw invalidSource(`${label} changed while reading`);

@@ -19,6 +19,17 @@ const {
   createCustomProfileProvisioningPlan,
 } = require('../../../../lib/profiles/provisioning/custom-profile-provisioning-plan');
 const { PROTOCOL_FAMILY } = require('../../../../lib/profiles/schema/school-profile-schema');
+const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../../../lib/platform/storage/windows-private-file');
+
+function assertPrivate(file) {
+  if (process.platform === 'win32') assert.equal(verifyWindowsFileOwnerOnly(file), true);
+  else assert.equal(fs.lstatSync(file).mode & 0o077, 0);
+}
+
+function prepareNewFixture(file) {
+  if (process.platform === 'win32') assert.equal(protectWindowsFileOwnerOnly(file), true);
+  assertPrivate(file);
+}
 
 function root(t) {
   const value = fs.mkdtempSync(path.join(os.tmpdir(), 'custom-profile-storage-'));
@@ -80,7 +91,7 @@ test('materializer preflights then writes and verifies one exact idempotent plan
   for (const file of Object.values(value.paths)) {
     const stat = fs.lstatSync(file);
     assert.equal(stat.isFile() && !stat.isSymbolicLink(), true);
-    assert.equal(stat.mode & 0o077, 0);
+    assertPrivate(file);
     assert.equal(stat.nlink, 1);
   }
 });
@@ -90,6 +101,7 @@ test('destination conflict blocks before any other plan file is written', (t) =>
   const value = plan(userData);
   fs.mkdirSync(path.dirname(value.paths.profileState), { recursive: true, mode: 0o700 });
   fs.writeFileSync(value.paths.profileState, '{"conflict":true}\n', { mode: 0o600 });
+  prepareNewFixture(value.paths.profileState);
   const materializer = new CustomProfileMaterializer();
   assert.throws(() => materializer.materialize(value, materializer.expected(value)), /conflict/u);
   assert.equal(fs.existsSync(value.paths.schoolProfile), false);
@@ -122,8 +134,7 @@ test('custom Profile index is owner-only additive idempotent and bounded', (t) =
   assert.equal(store.applyAdd(entry, transition), true);
   assert.equal(store.applyAdd(entry, transition), true);
   assert.deepEqual(store.read().entries, [entry]);
-  const stat = fs.lstatSync(store.filePath);
-  assert.equal(stat.mode & 0o077, 0);
+  assertPrivate(store.filePath);
   assert.throws(() => store.planAdd(entry), /cannot add/u);
 
   const secondPlan = plan(userData, 2);
@@ -302,6 +313,7 @@ test('a destination conflict leaves a prepared journal and never indexes or acti
   });
   fs.mkdirSync(path.dirname(planned.paths.account), { recursive: true, mode: 0o700 });
   fs.writeFileSync(planned.paths.account, '{"conflict":true}\n', { mode: 0o600 });
+  prepareNewFixture(planned.paths.account);
   assert.throws(() => deterministic().begin(confirmation), /destination conflict/u);
   assert.equal(new CustomProfileIndexStore({ userData }).read().entries.length, 0);
   assert.equal(new CustomProfileProvisioningJournalStore({ userData }).read()?.state, 'prepared');

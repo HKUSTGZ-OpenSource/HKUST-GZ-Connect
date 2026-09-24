@@ -110,7 +110,12 @@ class EngineConnectionRuntime {
   }
 
   feed(data) {
-    if (this.disposed || !this.isCurrent(this.generation)) return;
+    if (this.disposed) return;
+    if (!this.isCurrent(this.generation)) {
+      // A stop invalidates UI/serving authority before waiting for this owned child's ack.
+      this.control.feedShutdown?.(data);
+      return;
+    }
     this.control.feed(data);
     for (const event of this.events.feed(data)) this.#apply(event);
   }

@@ -12,6 +12,7 @@ const {
   materializeDestinationFiles,
   verifyDestinationFiles,
 } = require('../../../../lib/persistence/paths/profile-workspace-destination-files');
+const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../../../lib/platform/storage/windows-private-file');
 
 const ABSENT_IDS = new Set([
   'globalProxyHelperCredential',
@@ -81,6 +82,10 @@ test('mismatched destination blocks without overwriting any existing file', (t) 
   const paths = destinationPathMap(layout);
   fs.mkdirSync(path.dirname(paths.globalSettings), { recursive: true, mode: 0o700 });
   fs.writeFileSync(paths.globalSettings, 'unexpected', { mode: 0o600 });
+  if (process.platform === 'win32') {
+    assert.equal(protectWindowsFileOwnerOnly(paths.globalSettings), true);
+    assert.equal(verifyWindowsFileOwnerOnly(paths.globalSettings), true);
+  }
   assert.throws(() => materializeDestinationFiles({ layout, files }), /conflict/u);
   assert.equal(fs.readFileSync(paths.globalSettings, 'utf8'), 'unexpected');
   assert.equal(fs.existsSync(paths.profileState), false);

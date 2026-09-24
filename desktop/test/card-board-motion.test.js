@@ -5,6 +5,17 @@ const test = require('node:test');
 
 const motion = require('../renderer/components/card-board/card-board-motion');
 
+test('service-style switches share a bounded soft animation and respect Reduced Motion', async () => {
+  const { animations, makeCard, container } = fixture();
+  await motion.animateSwitch(container, { front: makeCard('front'), back: makeCard('back') });
+  assert.deepEqual(animations.map(a=>a.options.duration),[240,220]);
+  assert.ok(animations.every(a=>a.options.easing==='cubic-bezier(.2,.8,.2,1)'));
+  assert.equal(animations[0].frames[0].transform,'translateY(-7px) scale(.994)');
+  const reduced=fixture({reduced:true});
+  await motion.animateSwitch(reduced.container,{front:reduced.makeCard('front')});
+  assert.equal(reduced.animations.length,0);
+});
+
 function fixture({ reduced = false } = {}) {
   const animations = [];
   const makeCard = (placementId) => ({

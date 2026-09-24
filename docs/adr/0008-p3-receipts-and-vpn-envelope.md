@@ -72,6 +72,27 @@ This ADR originally described the pre-activation P3b boundary. The current runti
 Profile/Account/Workspace credential store through `DesktopPersistenceRuntime`; Renderer and IPC still receive
 no plaintext credential or direct persistence capability.
 
+## File-stat precision addendum (2026-09-10)
+
+The maintainer authorized the private correction, review and subsequent inclusion in 2.0.2.
+The implementation requests native `bigint` path/descriptor stats for private-file reads,
+permission hardening and receipt collection. Device/inode identity is compared without Number
+conversion; receipt version checks retain reported mtime/ctime nanoseconds. A numeric adapter may
+provide only safe integer identities; unsafe numeric identities fail closed instead of inventing
+lost bits. Native Node supplies nanoseconds; legacy injected numeric timestamp snapshots retain
+only their reported millisecond precision. This does not assert filesystem timestamp granularity
+or eliminate every possible inode-reuse race.
+
+Bounded sizes, modes/link counts and compatibility display timestamps remain numbers. Receipt and
+credential schemas are unchanged: file identities and nanoseconds never enter receipt JSON,
+Renderer DTOs or stored credentials. Windows ACL and POSIX no-follow/link/permission policies remain
+mandatory. The internal private-read stat projection now carries BigInt identity/time fields;
+callers needing display time retain numeric `mtimeMs`. Native compatibility, bounded-allocation
+and replacement/hash-race fixtures passed on macOS, Windows and Linux. The combined candidate's
+full Desktop suites also passed on each platform. This is source/fixture evidence, not proof of
+installed-package behavior, independent human review or a completed release. The maintainer's
+one-time review/check exception does not remove package-verification requirements.
+
 ## Deferred work
 
 P3c must gate all flat writers, complete the existing credential/settings recovery first, collect receipts,

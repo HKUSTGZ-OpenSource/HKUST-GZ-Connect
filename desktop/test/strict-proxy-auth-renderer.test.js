@@ -10,7 +10,9 @@ const html = fs.readFileSync(path.join(renderer, 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(renderer, 'styles.css'), 'utf8');
 const app = fs.readFileSync(path.join(renderer, 'app.js'), 'utf8');
 const proxyFeature = fs.readFileSync(path.join(renderer, 'proxy-auth-migration.js'), 'utf8');
-const integrationFeature = fs.readFileSync(path.join(renderer, 'integration-center.js'), 'utf8');
+const integrationFeature = ['features/integration-center/lifecycle.mjs', 'features/integration-center/model.mjs',
+  'features/integration-center/controller.mjs', 'features/integration-center/lifetime.mjs']
+  .map(file=>fs.readFileSync(path.join(renderer,file),'utf8')).join('\n');
 const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
 const integrationSuite = fs.readFileSync(
   path.join(__dirname, '..', 'lib', 'ipc', 'integration-center-suite.js'), 'utf8',
@@ -59,25 +61,25 @@ test('strict authentication changes only through an explicit Control Tower apply
     'a failed immediate save must restore the persisted switch value');
 });
 
-test('bilingual help states the secure default, explicit compatibility downgrade, and setup', () => {
+test('bilingual help states compatibility default, local access implications, and setup', () => {
   const zhSummary = i18n.dictionaries.zh['tower.strictProxyAuthSummary'];
   const enSummary = i18n.dictionaries.en['tower.strictProxyAuthSummary'];
   const zh = i18n.dictionaries.zh['tower.strictProxyAuthHint'];
   const en = i18n.dictionaries.en['tower.strictProxyAuthHint'];
-  assert.match(zhSummary, /新安装默认开启/);
-  assert.match(zhSummary, /本机其他进程或用户/);
-  assert.match(enSummary, /enabled by default on new installations/i);
-  assert.match(enSummary, /local process or user/i);
-  assert.match(zh, /本地回环端口.*授权边界/);
-  assert.match(zh, /旧 SOCKS5 客户端.*显式关闭/);
+  assert.match(zhSummary, /新安装默认关闭/);
+  assert.match(zh, /本机其他进程或用户/);
+  assert.match(enSummary, /off by default on new installations/i);
+  assert.match(en, /local processes or users/i);
+  assert.match(zh, /共享电脑.*手动开启/);
+  assert.match(zh, /默认关闭.*SOCKS5 客户端/);
   assert.match(zh, /应用内浏览器(?:会)?自动处理/);
   assert.match(zh, /Clash.*Mihomo.*VS Code/);
   assert.match(zh, /点击应用/);
   assert.match(zh, /在其他软件中使用/);
   assert.match(zh, /127\.0\.0\.1/);
   assert.match(en, /Campus Browser handles it automatically/i);
-  assert.match(en, /local authorization boundary/i);
-  assert.match(en, /legacy SOCKS5 client/i);
+  assert.match(en, /shared computers/i);
+  assert.match(en, /SOCKS5 clients/i);
   assert.match(en, /Click Apply/i);
   assert.match(en, /Use in other apps/i);
   assert.match(en, /127\.0\.0\.1/);

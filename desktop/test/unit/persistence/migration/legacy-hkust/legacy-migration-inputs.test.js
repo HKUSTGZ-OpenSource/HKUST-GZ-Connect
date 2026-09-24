@@ -12,6 +12,13 @@ const {
 } = require('../../../../../lib/persistence/migration/legacy-hkust/legacy-migration-inputs');
 const { createLegacyFlatSourcePaths } = require('../../../../../lib/persistence/paths/profile-workspace-layout');
 const { normalizeSettings } = require('../../../../../lib/persistence/settings/settings-store');
+const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../../../../lib/platform/storage/windows-private-file');
+
+function prepareNewFixture(file) {
+  if (process.platform !== 'win32') return;
+  assert.equal(protectWindowsFileOwnerOnly(file), true);
+  assert.equal(verifyWindowsFileOwnerOnly(file), true);
+}
 
 function safeStorage() {
   return {
@@ -36,6 +43,9 @@ function fixture(t) {
     mode: 0o600,
   });
   fs.writeFileSync(paths.routingRules, 'synthetic-routing', { mode: 0o600 });
+  for (const id of ['settings', 'settingsBackup', 'vpnCredential', 'routingRules']) {
+    prepareNewFixture(paths[id]);
+  }
   return {
     userData,
     paths,
@@ -65,6 +75,7 @@ test('payload owner reads exact receipts through bounded private files and zeroi
 test('empty regenerable diagnostic files remain receipt-bound migration inputs', (t) => {
   const value = fixture(t);
   fs.writeFileSync(value.paths.engineLogRotated, Buffer.alloc(0), { mode: 0o600 });
+  prepareNewFixture(value.paths.engineLogRotated);
   const expectedReceipts = collectLegacyFlatSourceReceipts({ userData: value.userData });
   assert.deepEqual(expectedReceipts.engineLogRotated, {
     present: true,

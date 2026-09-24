@@ -29,6 +29,7 @@ const {
 const {
   loadRoutingRules,
 } = require('../../../../lib/routing/rules/routing-rule-store');
+const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../../../lib/platform/storage/windows-private-file');
 
 const desktopRoot = path.resolve(__dirname, '..', '..', '..', '..');
 const reviewedResourcesFile = path.join(
@@ -37,6 +38,10 @@ const reviewedResourcesFile = path.join(
 
 function writeFixture(file, document) {
   fs.writeFileSync(file, `${JSON.stringify(document)}\n`, { mode: 0o600 });
+  if (process.platform === 'win32') {
+    assert.equal(protectWindowsFileOwnerOnly(file), true);
+    assert.equal(verifyWindowsFileOwnerOnly(file), true);
+  }
 }
 
 test('2.0 workspace upgrade keeps URLs favorites recents hidden sites and routing', (t) => {
@@ -80,7 +85,7 @@ test('2.0 workspace upgrade keeps URLs favorites recents hidden sites and routin
   const originalFavorites = fs.readFileSync(favoritesFile, 'utf8');
   const groups = new FavoriteGroupStore({
     filePath: groupsFile,
-    platform: 'darwin',
+    platform: process.platform,
     randomBytes: () => Buffer.alloc(12, 7),
   });
   assert.deepEqual(groups.snapshot(), emptyGroupDocument());
@@ -92,7 +97,7 @@ test('2.0 workspace upgrade keeps URLs favorites recents hidden sites and routin
     0,
     fixture.favorites.entries,
   );
-  const restartedGroups = new FavoriteGroupStore({ filePath: groupsFile, platform: 'darwin' });
+  const restartedGroups = new FavoriteGroupStore({ filePath: groupsFile, platform: process.platform });
   assert.equal(restartedGroups.snapshot().schemaVersion, 2);
   assert.deepEqual(restartedGroups.groups().map(({ name, resourceIds }) => ({
     name, resourceIds,

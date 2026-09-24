@@ -22,9 +22,10 @@ test('orphan cleanup matches only the resolved engine executable', () => {
 });
 
 test('native resource resolver selects exact platform architecture and kind', () => {
-  const baseDirectory = '/app/desktop';
-  const resourcesPath = '/app/resources';
-  const existing = new Set(['/app/resources/engine/ec-gateway-probe-darwin-arm64']);
+  const baseDirectory = path.resolve('/app/desktop');
+  const resourcesPath = path.resolve('/app/resources');
+  const expected = path.join(resourcesPath, 'engine', 'ec-gateway-probe-darwin-arm64');
+  const existing = new Set([expected]);
   assert.equal(resolveNativeResourcePath({
     kind: 'ec-gateway-probe',
     appIsPackaged: true,
@@ -33,7 +34,7 @@ test('native resource resolver selects exact platform architecture and kind', ()
     platform: 'darwin',
     architecture: 'arm64',
     fileSystem: { existsSync: (file) => existing.has(file) },
-  }), '/app/resources/engine/ec-gateway-probe-darwin-arm64');
+  }), expected);
   assert.throws(() => resolveNativeResourcePath({
     kind: 'unknown', appIsPackaged: true, baseDirectory, resourcesPath,
   }), /native resource/u);

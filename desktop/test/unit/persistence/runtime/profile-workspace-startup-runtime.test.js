@@ -19,6 +19,7 @@ const { ProfileWorkspaceStartupRuntime } = require('../../../../lib/persistence/
 const { createLegacyFlatSourcePaths } = require('../../../../lib/persistence/paths/profile-workspace-layout');
 const { projectRuntimeSettings } = require('../../../../lib/persistence/settings/profile-workspace-settings-bundle');
 const { normalizeSettings } = require('../../../../lib/persistence/settings/settings-store');
+const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../../../lib/platform/storage/windows-private-file');
 
 function profile() {
   return JSON.parse(fs.readFileSync(
@@ -55,13 +56,20 @@ function fixture(t) {
       fs.writeFileSync(legacy[id], '{"schemaVersion":1,"rules":[]}', { mode: 0o600 });
     }
   }
+  if (process.platform === 'win32') {
+    for (const file of Object.values(legacy)) {
+      if (!fs.existsSync(file)) continue;
+      assert.equal(protectWindowsFileOwnerOnly(file), true);
+      assert.equal(verifyWindowsFileOwnerOnly(file), true);
+    }
+  }
   let entropy = 1;
   let timestamp = 1_700_000_000_000;
   const options = {
     userData,
     profile: profile(),
     safeStorage: safeStorage(),
-    platform: 'darwin',
+    platform: process.platform,
     randomBytes: () => Buffer.alloc(16, entropy++),
     now: () => timestamp++,
   };
@@ -141,7 +149,7 @@ test('startup repairs credential intermediate state before complete authority lo
     loadWorkspaceAuthority: loaders.workspace,
     retireRollback: ({ authority, reason }) => rollbackRetirer(authority, reason),
     safeStorage: safeStorage(),
-    platform: 'darwin',
+    platform: process.platform,
     fileSystem: injected,
     randomBytes: () => Buffer.alloc(16, 0x77),
     now: () => 1_700_000_001_000,
@@ -172,7 +180,7 @@ test('startup finishes a pending split settings redo after credential recovery',
   const crashing = new ProfileWorkspaceSettingsStore({
     loadAuthority: loaders.workspace,
     fileSystem: injected,
-    platform: 'darwin',
+    platform: process.platform,
     randomBytes: () => Buffer.alloc(16, 0x78),
     now: () => 1_700_000_001_000,
   });

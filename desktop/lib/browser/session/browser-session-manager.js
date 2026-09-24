@@ -15,6 +15,26 @@ const {
 } = require('./myportal-catalog');
 
 const requestBoundaryGates = new WeakMap();
+const DAY_MS = 86_400_000;
+const CAMPUS_OFFSET_MS = 28_800_000;
+
+function calendarWeekQuery(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) ||
+      Object.keys(value).some(key => !['date', 'force'].includes(key)) ||
+      typeof value.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/u.test(value.date) ||
+      (value.force !== undefined && typeof value.force !== 'boolean')) {
+    throw new TypeError('calendar selection must contain only a valid date and optional force');
+  }
+  const date = new Date(`${value.date}T00:00:00.000Z`);
+  if (!Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== value.date) {
+    throw new TypeError('calendar date is invalid');
+  }
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  const start = date.getTime() - CAMPUS_OFFSET_MS;
+  return Object.freeze({ date: value.date, force: value.force === true,
+    start, end: start + 7 * DAY_MS });
+}
+
 const CAMPUS_REQUEST_FILTER = Object.freeze({
   // Deliberately omit `types`: the boundary applies to main frames and every
   // subresource type, including fetch/XHR, WebSocket upgrades, media, and CSP.
@@ -363,7 +383,7 @@ function campusDataUrl(value, name, { optional = false } = {}) {
 
 function campusDataTimestamp(value, name, { optional = false } = {}) {
   if (optional && value == null) return null;
-  if (!Number.isSafeInteger(value) || value <= 0) {
+  if (!Number.isSafeInteger(value) || value <= 0 || !Number.isFinite(new Date(value).getTime())) {
     throw new TypeError(`${name} must be a positive millisecond timestamp`);
   }
   return value;
@@ -379,10 +399,13 @@ function campusDataItem(value, moduleId, index) {
     url: campusDataUrl(value.url, `${moduleId} item URL`, { optional: true }),
   };
   if (moduleId === 'schedule') {
+    const startsAt = campusDataTimestamp(value.startsAt, 'schedule startsAt');
+    const endsAt = campusDataTimestamp(value.endsAt, 'schedule endsAt');
+    if (endsAt <= startsAt) throw new TypeError('schedule interval must have positive duration');
     return Object.freeze({
       ...base,
-      startsAt: campusDataTimestamp(value.startsAt, 'schedule startsAt'),
-      endsAt: campusDataTimestamp(value.endsAt, 'schedule endsAt'),
+      startsAt,
+      endsAt,
       location: campusDataText(value.location, 'schedule location', { optional: true, maxLength: 120 }),
       kind: campusDataText(value.kind || 'event', 'schedule kind', { maxLength: 40 }),
     });
@@ -544,14 +567,27 @@ function portalScheduleField(item, names) {
   return portalField(item, names) || portalField(item?.schedule, names);
 }
 
-function portalTimestamp(value) {
+function portalTimestamp(value, localOffset = null) {
   if (Number.isFinite(value)) {
     const number = Number(value);
     return number > 10_000_000_000 ? Math.trunc(number) : Math.trunc(number * 1000);
   }
   const source = String(value || '').trim();
   if (!source) return null;
-  const parsed = Date.parse(source.replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/u, '$1T$2'));
+  const calendar = /^(\d{4})-(\d{2})-(\d{2})(?:T|\s|$)/u.exec(source);
+  if (calendar) {
+    const [, year, month, day] = calendar.map(Number);
+    const date = new Date(0);
+    date.setUTCFullYear(year, month - 1, day);
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 ||
+        date.getUTCDate() !== day) return null;
+  }
+  let normalized = source.replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})/u, '$1T$2');
+  if (localOffset && /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?)?$/u.test(normalized)) {
+    if (normalized.length === 10) normalized += 'T00:00:00';
+    normalized += localOffset;
+  }
+  const parsed = Date.parse(normalized);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
@@ -620,10 +656,10 @@ function scheduleProjection(payload, context) {
     const title = portalScheduleField(item,
       ['title', 'subject', 'name', 'summary', 'eventTitle', 'eventName']);
     const startsAt = portalTimestamp(portalScheduleField(item,
-      ['startsAt', 'startTime', 'startDate', 'beginTime', 'beginDate', 'fromDate']));
+      ['startsAt', 'startTime', 'startDate', 'beginTime', 'beginDate', 'fromDate']), '+08:00');
     const endsAt = portalTimestamp(portalScheduleField(item,
-      ['endsAt', 'endTime', 'endDate', 'finishTime', 'finishDate', 'toDate']));
-    if (!title || !startsAt || !endsAt || endsAt < startsAt) {
+      ['endsAt', 'endTime', 'endDate', 'finishTime', 'finishDate', 'toDate']), '+08:00');
+    if (!title || !startsAt || !endsAt || endsAt <= startsAt) {
       throw portalSourceError('PORTAL_RESPONSE_INVALID', 'calendar item schema is unsupported');
     }
     return {
@@ -668,12 +704,13 @@ const hkustMyPortalSources = Object.freeze({
   catalog: hkustPortalCatalogSource,
   schedule: Object.freeze({
     async read(context) {
-      const start = new Date(context.checkedAt);
-      start.setHours(0, 0, 0, 0);
-      start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
-      const end = new Date(start);
-      end.setDate(end.getDate() + 7);
-      end.setMilliseconds(-1);
+      // Calendar weeks belong to the campus, independent of the host timezone.
+      const campusOffsetMs = 8 * 60 * 60 * 1000;
+      const campusDay = new Date((context.scheduleWeekStart ?? context.checkedAt) + campusOffsetMs);
+      campusDay.setUTCHours(0, 0, 0, 0);
+      campusDay.setUTCDate(campusDay.getUTCDate() - ((campusDay.getUTCDay() + 6) % 7));
+      const start = new Date(campusDay.getTime() - campusOffsetMs);
+      const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
       const payload = await fetchPortalJsonp(context,
         '/calendar/mgr/api/hkust/calendarList.rst', {
           _p: 'YXM9MiZ0PTUmZD05NyZwPTEmZj0yMiZtPU4m',
@@ -716,6 +753,35 @@ class MyPortalDataRuntime {
       now, cacheMs, timeoutMs });
     this.cached = null;
     this.inflight = null;
+    this.calendarCache = new Map();
+    this.calendarEpoch = 0;
+    this.calendarInflight = new Map();
+    this.contextKey = null;
+  }
+
+  captureContext() {
+    const portalUrl = myPortalRoot(this.getPortalUrl());
+    const partition = this.getPartition();
+    if (typeof partition !== 'string' || partition.length > 96 || !/^persist:[a-z0-9-]+$/u.test(partition)) {
+      throw new TypeError('portal browser partition is invalid');
+    }
+    const key = JSON.stringify([partition, portalUrl]);
+    if (key !== this.contextKey) { this.invalidate(); this.contextKey = key; }
+    return Object.freeze({ key, partition, portalUrl, epoch: this.calendarEpoch });
+  }
+
+  assertContext(context) {
+    let current = false;
+    try {
+      current = context.epoch === this.calendarEpoch && context.partition === this.getPartition() &&
+        context.portalUrl === myPortalRoot(this.getPortalUrl());
+    } catch {}
+    if (!current) throw Object.assign(new Error('portal data context changed'), { code: 'PORTAL_CONTEXT_CHANGED' });
+  }
+
+  cacheFresh(value) {
+    const age = this.now() - value?.checkedAt;
+    return Number.isFinite(age) && age >= 0 && age < this.cacheMs;
   }
 
   async probeSession(targetSession, portalUrl, signal) {
@@ -742,17 +808,14 @@ class MyPortalDataRuntime {
     return Object.freeze({ state: 'unknown', sessionUrl: portalUrl });
   }
 
-  async readNow({ moduleId = null } = {}) {
+  async readNow({ moduleId = null, scheduleWeekStart = null } = {}) {
     if (moduleId !== null && !CAMPUS_DATA_MODULES.includes(moduleId)) {
       throw new TypeError('campus data module refresh is invalid');
     }
     const checkedAt = this.now();
-    const portalUrl = myPortalRoot(this.getPortalUrl());
-    const partition = this.getPartition();
-    if (typeof partition !== 'string' || partition.length > 96 ||
-        !/^persist:[a-z0-9-]+$/u.test(partition)) {
-      throw new TypeError('portal browser partition is invalid');
-    }
+    const requestContext = this.captureContext();
+    const { portalUrl, partition } = requestContext;
+    const cachedBase = this.cached;
     const targetSession = this.electronSession.fromPartition(partition);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -765,6 +828,7 @@ class MyPortalDataRuntime {
     try { if (!hint) probe = await this.probeSession(targetSession, portalUrl, controller.signal); }
     catch { probe = Object.freeze({ state: 'unknown', sessionUrl: portalUrl }); }
     finally { clearTimeout(timer); }
+    this.assertContext(requestContext);
     const sessionState = probe.state;
     if (sessionState === 'unauthenticated') {
       return campusDataSnapshot(sessionState, checkedAt, portalUrl,
@@ -780,14 +844,14 @@ class MyPortalDataRuntime {
     // inside Main and is never included in the Renderer snapshot.
     const context = Object.freeze({
       session: targetSession, portalUrl, sessionUrl: probe.sessionUrl,
-      checkedAt, timeoutMs: this.timeoutMs,
+      checkedAt, timeoutMs: this.timeoutMs, scheduleWeekStart,
     });
     const errorState = (error) => error?.code === 'PORTAL_SESSION_EXPIRED' ? 'session-expired'
       : error?.code === 'PORTAL_FORBIDDEN' ? 'forbidden'
         : error?.code === 'PORTAL_TUNNEL_REQUIRED' ? 'tunnel-required' : 'failed';
     const requestedModules = moduleId ? [moduleId] : CAMPUS_DATA_MODULES;
-    const baseModules = moduleId && this.cached?.sessionState === 'authenticated'
-      ? { ...this.cached.modules }
+    const baseModules = moduleId && cachedBase?.sessionState === 'authenticated'
+      ? { ...cachedBase.modules }
       : campusDataStateModules('source-unavailable', 'official-api-not-configured', checkedAt);
     const entriesPromise = Promise.all(requestedModules.map(async (requestedModuleId) => {
       const source = sources[requestedModuleId];
@@ -808,8 +872,8 @@ class MyPortalDataRuntime {
     }));
     const catalogPromise = (async () => {
       if (moduleId) {
-        return this.cached?.sessionState === 'authenticated'
-          ? this.cached.catalog : portalCatalogState('source-unavailable', checkedAt);
+        return cachedBase?.sessionState === 'authenticated'
+          ? cachedBase.catalog : portalCatalogState('source-unavailable', checkedAt);
       }
       if (!sources.catalog || typeof sources.catalog.read !== 'function') {
         return portalCatalogState('source-unavailable', checkedAt);
@@ -818,31 +882,97 @@ class MyPortalDataRuntime {
       catch (error) { return portalCatalogState(errorState(error), checkedAt); }
     })();
     const [entries, catalog] = await Promise.all([entriesPromise, catalogPromise]);
+    this.assertContext(requestContext);
     return campusDataSnapshot(
       sessionState, checkedAt, portalUrl, { ...baseModules, ...Object.fromEntries(entries) }, catalog,
     );
   }
 
   async snapshot({ force = false } = {}) {
+    const context = this.captureContext();
     const now = this.now();
-    if (!force && this.cached && now - this.cached.checkedAt <= this.cacheMs) return this.cached;
+    const weekKey = timestamp => calendarWeekQuery({ date: new Date(timestamp + 28_800_000).toISOString().slice(0, 10) }).start;
+    if (!force && this.cached && this.cacheFresh(this.cached) &&
+        weekKey(now) === weekKey(this.cached.checkedAt)) return this.cached;
     if (!force && this.inflight) return this.inflight;
-    const operation = this.readNow().then((value) => (this.cached = value));
-    this.inflight = operation;
-    try { return await operation; }
-    finally { if (this.inflight === operation) this.inflight = null; }
+    return this.readSnapshot(context);
   }
 
   async refreshSchedule() {
+    const context = this.captureContext();
     if (this.inflight) await this.inflight;
-    const operation = this.readNow({ moduleId: 'schedule' })
-      .then((value) => (this.cached = value));
+    this.assertContext(context);
+    return this.readSnapshot(context, 'schedule');
+  }
+
+  async readSnapshot(context, moduleId = null) {
+    this.assertContext(context);
+    // A new source read supersedes prior week requests, including late denials.
+    this.calendarEpoch++;
+    context = this.captureContext();
+    this.calendarCache.clear(); this.calendarInflight.clear();
+    const operation = this.readNow({ moduleId }).then(value => {
+      const accepted = this.acceptDataResult(context, value);
+      if (accepted && this.inflight === operation) this.cached = value;
+      return value;
+    });
     this.inflight = operation;
     try { return await operation; }
     finally { if (this.inflight === operation) this.inflight = null; }
   }
 
-  invalidate() { this.cached = null; }
+  async scheduleWeek(selection) {
+    const query = calendarWeekQuery(selection);
+    const context = this.captureContext();
+    const key = JSON.stringify([context.key, query.start]);
+    const cached = this.calendarCache.get(key);
+    if (!query.force && cached && this.cacheFresh(cached)) return cached;
+    if (!query.force && this.calendarInflight.has(key)) return this.calendarInflight.get(key);
+    const operation = this.readWeek(context, query).then(value => {
+      const accepted = this.acceptDataResult(context, value);
+      if (accepted && this.calendarInflight.get(key) === operation && ['ready', 'empty'].includes(value.modules.schedule.state)) {
+        this.calendarCache.delete(key); this.calendarCache.set(key, value);
+        if (this.calendarCache.size > 12) this.calendarCache.delete(this.calendarCache.keys().next().value);
+      }
+      return value;
+    });
+    this.calendarInflight.set(key, operation);
+    try { return await operation; }
+    finally { if (this.calendarInflight.get(key) === operation) this.calendarInflight.delete(key); }
+  }
+
+  async readWeek(context, query) {
+    if (this.inflight) await this.inflight;
+    this.assertContext(context);
+    if (!query.force && this.cached?.sessionState === 'authenticated' &&
+        ['ready', 'empty'].includes(this.cached.modules.schedule.state) &&
+        this.cacheFresh(this.cached) &&
+        calendarWeekQuery({ date: new Date(this.cached.checkedAt + 28_800_000).toISOString().slice(0, 10) }).start === query.start) {
+      return Object.freeze({ ...this.cached, scheduleWeek: { start: query.start, end: query.end } });
+    }
+    const result = await this.readNow({ moduleId: 'schedule', scheduleWeekStart: query.start });
+    this.assertContext(context);
+    return Object.freeze({ ...result, scheduleWeek: { start: query.start, end: query.end } });
+  }
+
+  acceptDataResult(context, value) {
+    this.assertContext(context);
+    if (value.sessionState === 'unauthenticated' ||
+        ['not-authenticated', 'session-expired', 'forbidden'].includes(value.modules.schedule.state)) {
+      // Return this authoritative denial, but invalidate every older cache/flight.
+      this.invalidate();
+      // A signed-out snapshot contains no personal items; retain that status to avoid
+      // repeatedly probing SSO. Forced refresh still revalidates after user login.
+      if (value.sessionState === 'unauthenticated') this.cached = value;
+      return false;
+    }
+    return true;
+  }
+
+  invalidate() {
+    this.cached = null; this.inflight = null;
+    this.calendarCache.clear(); this.calendarInflight.clear(); this.calendarEpoch++;
+  }
 }
 
 module.exports = {
@@ -851,6 +981,7 @@ module.exports = {
   FAIL_CLOSED_PAC,
   FAIL_CLOSED_PROXY,
   MyPortalDataRuntime,
+  calendarWeekQuery,
   applyCampusRequestBoundary,
   applyCampusSessionPolicy,
   campusRequestsBlocked,

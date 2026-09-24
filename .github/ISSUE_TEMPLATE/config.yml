@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/heeh02/HKUST-GZ-Connect/security
+    url: https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/security
     about: Use the private reporting process; do not publish exploit details or credentials.
   - name: Usage questions
-    url: https://github.com/heeh02/HKUST-GZ-Connect/discussions
+    url: https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/discussions
     about: Use Discussions after it is enabled; otherwise open a sanitized question issue.

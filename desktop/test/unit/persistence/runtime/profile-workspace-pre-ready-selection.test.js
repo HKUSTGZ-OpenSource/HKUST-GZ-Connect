@@ -13,6 +13,7 @@ const {
 const { ProfileWorkspaceStartupRuntime } = require('../../../../lib/persistence/runtime/profile-workspace-startup-runtime');
 const { createLegacyFlatSourcePaths } = require('../../../../lib/persistence/paths/profile-workspace-layout');
 const { normalizeSettings } = require('../../../../lib/persistence/settings/settings-store');
+const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../../../lib/platform/storage/windows-private-file');
 
 function profile() {
   return JSON.parse(fs.readFileSync(
@@ -48,13 +49,20 @@ function migratedFixture(t) {
       fs.writeFileSync(legacy[id], '{"schemaVersion":1,"rules":[]}', { mode: 0o600 });
     }
   }
+  if (process.platform === 'win32') {
+    for (const file of Object.values(legacy)) {
+      if (!fs.existsSync(file)) continue;
+      assert.equal(protectWindowsFileOwnerOnly(file), true);
+      assert.equal(verifyWindowsFileOwnerOnly(file), true);
+    }
+  }
   let entropy = 1;
   let timestamp = 1_700_000_000_000;
   const runtime = new ProfileWorkspaceStartupRuntime({
     userData,
     profile: profile(),
     safeStorage: safeStorage(),
-    platform: 'darwin',
+    platform: process.platform,
     randomBytes: () => Buffer.alloc(16, entropy++),
     now: () => timestamp++,
   }).initialize();

@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('api', {
   getCampusData: () => ipcRenderer.invoke('get-campus-data'),
   refreshCampusData: () => ipcRenderer.invoke('refresh-campus-data'),
   refreshCampusSchedule: () => ipcRenderer.invoke('refresh-campus-schedule'),
+  getCampusScheduleWeek: (selection) => ipcRenderer.invoke('get-campus-schedule-week', selection),
   openBookmarkManager: () => ipcRenderer.invoke('open-bookmark-manager'),
   openResource: (resourceId) => ipcRenderer.invoke('open-resource', { resourceId }),
   getCardBoardLayout: () => ipcRenderer.invoke('get-card-board-layout'),
@@ -58,7 +59,9 @@ contextBridge.exposeInMainWorld('api', {
   listIntegrations: () => ipcRenderer.invoke('list-integrations'),
   prepareIntegration: (request) => ipcRenderer.invoke('prepare-integration', request),
   confirmIntegration: (request) => ipcRenderer.invoke('confirm-integration', request),
-  cancelIntegration: () => ipcRenderer.invoke('cancel-integration'),
+  cancelIntegration: (request) => request === undefined
+    ? ipcRenderer.invoke('cancel-integration')
+    : ipcRenderer.invoke('cancel-integration', request),
   resize: (height) => ipcRenderer.invoke('resize', height),
   onOpenRoutingRules: (cb) => {
     if (typeof cb !== 'function') return () => {};

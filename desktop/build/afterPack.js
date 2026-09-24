@@ -127,6 +127,13 @@ exports.default = async function afterPack(context) {
   const gatewayProbePath = assertGatewayProbePresent(
     packagedEngineDirectory, context.electronPlatformName, context.arch,
   );
+  if (context.electronPlatformName === 'win32') {
+    const helper = path.join(packagedEngineDirectory,
+      'ec-private-file-windows-' + architectureName(context.arch) + '.exe');
+    if (!fs.existsSync(helper) || !fs.statSync(helper).isFile() || fs.statSync(helper).size === 0) {
+      throw new Error('missing packaged Windows private-file helper: ' + helper);
+    }
+  }
   assertPackagedSchoolProfiles(path.join(resourcesDir, 'app.asar'), packagedEngineDirectory);
   if (context.electronPlatformName !== 'darwin') return;
   assertMacAppIcon(appPath);

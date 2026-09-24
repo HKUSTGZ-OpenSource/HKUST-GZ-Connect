@@ -13,6 +13,7 @@ const { normalizeRuleHost } = require('../../routing/rules/routing-rule-store');
 const { normalizeToolbarCommand } = require('../toolbar/campus-toolbar-contract');
 const { projectWorkspaceGroups } = require('../workspace/campus-workspace-controller');
 const { CertificateController } = require('../certificates/certificate-controller');
+const { BrowserDownloadController } = require('../downloads/download-controller');
 const { CredentialController } = require('../credentials/credential-controller');
 const {
   RESOURCE_CATEGORIES,
@@ -334,13 +335,19 @@ class CampusBrowser {
     // One-release compatibility for diagnostics/tests; ownership and mutation
     // live exclusively in CertificateController.
     this.certificateDecisions = this.certificateController.decisions;
-    this.downloadSessions = new Set();
+    this.downloadController = new BrowserDownloadController({
+      getDialog: () => this.dialog,
+      getWindow: () => this.window,
+      getOnError: () => this.onError,
+      t: (...args) => this.t(...args),
+      showItemInFolder: (...args) => this.showItemInFolder(...args),
+      onStateChanged: () => this.scheduleToolbarUpdate(),
+    });
     // Authentication windows are intentionally kept as native children instead
     // of being flattened into tabs. Some IdPs complete SMS MFA through
     // window.opener/postMessage and window.close; preserving that relationship
     // is required for the opener to observe a successful challenge.
     this.managedCredentialPopups = new Set();
-    this.downloadState = null;
     this.findOpen = false;
     this.lastFindQuery = '';
     this.scheduledLayout = null;
@@ -351,6 +358,8 @@ class CampusBrowser {
 
   // Keep the existing CampusBrowser diagnostics/test surface while all state
   // mutations flow through the dedicated managers.
+  get downloadSessions() { return this.downloadController.downloadSessions; }
+  get downloadState() { return this.downloadController.downloadState; }
   get tabs() { return this.tabManager.tabs; }
   get activeTabId() { return this.tabManager.activeTabId; }
   get nextTabId() { return this.tabManager.nextTabId; }
@@ -623,71 +632,12 @@ class CampusBrowser {
     return this.certificateController.handle(request);
   }
 
-  // Electron would otherwise silently drop downloads because the campus
-  // sessions have no default download behavior wired to a dialog.
   applyDownloadHandler(routeSession) {
-    if (typeof routeSession.on !== 'function' || this.downloadSessions.has(routeSession)) {
-      return;
-    }
-    this.downloadSessions.add(routeSession);
-    routeSession.on('will-download', (_event, item) => this.handleDownload(item));
+    return this.downloadController.applyDownloadHandler(routeSession);
   }
 
-  async handleDownload(item) {
-    if (!this.dialog?.showSaveDialog) {
-      item.cancel();
-      return;
-    }
-    try {
-      const parent = this.window && !this.window.isDestroyed?.() ? this.window : undefined;
-      const result = await this.dialog.showSaveDialog(parent, {
-        defaultPath: item.getFilename(),
-      });
-      if (result.canceled || !result.filePath) {
-        item.cancel();
-        return;
-      }
-      item.setSavePath(result.filePath);
-      const filename = String(item.getFilename() || '').slice(0, 160);
-      const updateProgress = () => {
-        const total = Number(item.getTotalBytes?.());
-        const received = Number(item.getReceivedBytes?.());
-        const percent = Number.isFinite(total) && total > 0 && Number.isFinite(received)
-          ? Math.max(0, Math.min(100, Math.round(received * 100 / total))) : null;
-        this.downloadState = Object.freeze({ filename, status: 'downloading', percent });
-        this.scheduleToolbarUpdate();
-      };
-      item.on?.('updated', updateProgress);
-      updateProgress();
-      item.once('done', async (_event, state) => {
-        this.downloadState = Object.freeze({
-          filename,
-          status: state === 'completed' ? 'completed' : 'interrupted',
-          percent: state === 'completed' ? 100 : null,
-        });
-        this.scheduleToolbarUpdate();
-        if (state === 'interrupted' && this.onError) {
-          this.onError(this.t('download.interrupted', { filename: item.getFilename() }));
-        }
-        if (state === 'completed' && typeof this.dialog.showMessageBox === 'function') {
-          try {
-            const prompt = await this.dialog.showMessageBox(this.window, {
-              type: 'info',
-              message: this.t('download.completed', { filename }),
-              buttons: [this.t('download.showInFolder'), this.t('common.close')],
-              defaultId: 0,
-              cancelId: 1,
-              noLink: true,
-            });
-            if (prompt.response === 0) this.showItemInFolder(result.filePath);
-          } catch {}
-        }
-      });
-    } catch {
-      // The item may already have finished while the dialog was open.
-      try { item.cancel(); } catch {}
-      if (this.onError) this.onError(this.t('download.noLocation'));
-    }
+  handleDownload(item) {
+    return this.downloadController.handleDownload(item);
   }
 
   async policyProxyConfig(port) {

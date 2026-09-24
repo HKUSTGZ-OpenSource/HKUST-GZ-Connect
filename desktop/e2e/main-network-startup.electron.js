@@ -24,6 +24,7 @@ const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-network-startup-e
 const networkStateFile = path.join(profile, 'synthetic-network-state.txt');
 const attemptFile = path.join(profile, 'synthetic-engine-attempt.txt');
 process.env.HKUSTGZ_USER_DATA_DIR = profile;
+app.setPath('userData', profile);
 process.env.HKUSTGZ_SYNTHETIC_ENGINE_E2E = '1';
 process.env.HKUSTGZ_SYNTHETIC_ENGINE_STABLE_E2E = '1';
 process.env.HKUSTGZ_SYNTHETIC_NETWORK_E2E = '1';

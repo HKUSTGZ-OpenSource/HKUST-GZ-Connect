@@ -3,6 +3,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { ensureOwnerOnly, readPrivateFileBounded } = require('../../platform/storage/private-file');
+const { atomicWritePrivateFile } = require('../../platform/storage/atomic-private-file');
+const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } =
+  require('../../platform/storage/windows-private-file');
 const {
   STOP_CONTROL_GRACE_MS,
   STOP_GRACE_MS,
@@ -31,8 +34,6 @@ const WINDOWS_EXACT_CLEANUP_SCRIPT = [
   'if ($remaining) { exit 1 }',
 ].join('\n');
 
-let ownerTemporarySequence = 0;
-
 function normalizeOwnerRecord(value) {
   if (!value || typeof value !== 'object' || value.version !== 1 ||
       !Number.isInteger(value.pid) || value.pid <= 0 ||
@@ -51,30 +52,21 @@ function loadEngineOwnerRecord(filePath) {
   }
 }
 
-function writeEngineOwnerRecord(filePath, record) {
+function writeEngineOwnerRecord(filePath, record, {
+  fileSystem = fs,
+  platform = process.platform,
+  windowsAcl = { protect: protectWindowsFileOwnerOnly, verify: verifyWindowsFileOwnerOnly },
+} = {}) {
   const normalized = normalizeOwnerRecord({ ...record, version: 1 });
   if (!normalized) throw new TypeError('invalid engine owner record');
-  const directory = path.dirname(filePath);
-  const temporary = path.join(
-    directory,
-    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.${ownerTemporarySequence++}.tmp`,
-  );
-  fs.mkdirSync(directory, { recursive: true });
-  let descriptor = null;
-  try {
-    descriptor = fs.openSync(temporary, 'wx', 0o600);
-    fs.writeFileSync(descriptor, JSON.stringify(normalized), 'utf8');
-    fs.fsyncSync(descriptor);
-    fs.closeSync(descriptor);
-    descriptor = null;
-    fs.renameSync(temporary, filePath);
-    if (!ensureOwnerOnly(filePath)) throw new Error('engine owner record is not a private file');
-  } finally {
-    if (descriptor !== null) {
-      try { fs.closeSync(descriptor); } catch {}
-    }
-    try { fs.unlinkSync(temporary); } catch {}
-  }
+  // This is a newly created process record, not an existing user file to tighten.
+  // Establish its private ACL before publication; elevated Windows may default to Administrators.
+  const saved = atomicWritePrivateFile(filePath, JSON.stringify(normalized), fileSystem, {
+    protectTemporary: platform === 'win32' ? file => windowsAcl.protect(file) : null,
+    verifyCommitted: platform === 'win32' ? file => windowsAcl.verify(file) : ensureOwnerOnly,
+    removeCommittedOnFailure: true,
+  });
+  if (!saved) throw new Error('engine owner record is not a private file');
   return normalized;
 }
 

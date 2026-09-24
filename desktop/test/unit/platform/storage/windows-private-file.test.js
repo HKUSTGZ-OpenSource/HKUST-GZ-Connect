@@ -4,7 +4,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
 const test = require('node:test');
 const {
   PRIVATE_FILE_ENV,
@@ -15,6 +14,9 @@ const {
 } = require('../../../../lib/platform/storage/windows-private-file');
 const { ensureOwnerOnly } = require('../../../../lib/platform/storage/private-file');
 const { atomicWritePrivateFile } = require('../../../../lib/platform/storage/atomic-private-file');
+const {
+  prepareBroadCurrentUserFile, prepareAdministratorsOwnedFile, securityDescriptor,
+} = require('./support/windows-acl-fixture');
 
 test('Windows ACL commands keep paths out of scripts and require fixed verification output', () => {
   const calls = [];
@@ -99,26 +101,7 @@ test('real Windows upgrade tightens an inherited current-user legacy file', {
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const file = path.join(directory, 'settings.json');
   fs.writeFileSync(file, '{"version":1}');
-  assert.equal(protectWindowsFileOwnerOnly(file), true);
-  execFileSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', String.raw`
-$ErrorActionPreference = 'Stop'
-$privatePath = [Environment]::GetEnvironmentVariable('${PRIVATE_FILE_ENV}')
-$acl = [System.IO.File]::GetAccessControl($privatePath)
-$usersSid = New-Object Security.Principal.SecurityIdentifier('S-1-5-32-545')
-$rule = New-Object Security.AccessControl.FileSystemAccessRule(
-  $usersSid,
-  [Security.AccessControl.FileSystemRights]::Read,
-  [Security.AccessControl.AccessControlType]::Allow
-)
-$acl.AddAccessRule($rule)
-[System.IO.File]::SetAccessControl($privatePath, $acl)
-`], {
-    env: { ...process.env, [PRIVATE_FILE_ENV]: file },
-    timeout: POWERSHELL_ACL_TIMEOUT_MS,
-    windowsHide: true,
-  });
-  assert.equal(verifyWindowsFileOwnerOnly(file), false,
-    'the fixture must reproduce a broad legacy DACL');
+  prepareBroadCurrentUserFile(file);
   assert.equal(ensureOwnerOnly(file), true);
   assert.equal(verifyWindowsFileOwnerOnly(file), true);
 });
@@ -136,4 +119,55 @@ test('real Windows ACL survives the atomic temporary-file commit boundary', {
   }), true);
   assert.equal(verifyWindowsFileOwnerOnly(file), true);
   assert.equal(fs.readFileSync(file, 'utf8'), '{"schemaVersion":1}\n');
+});
+
+test('native Windows helper preserves private ACL policy without PowerShell startup', {
+  skip: process.platform !== 'win32',
+}, (t) => {
+  const helper = path.resolve(__dirname, '../../../../engine/ec-private-file-windows-amd64.exe');
+  assert.ok(fs.existsSync(helper), 'build the native Windows helper before this suite');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-native-acl-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const file = path.join(directory, "private unicode 文 ' $value.json");
+  fs.writeFileSync(file, 'synthetic');
+  prepareBroadCurrentUserFile(file);
+  assert.equal(tightenWindowsFileOwnerOnly(file), true);
+  assert.equal(verifyWindowsFileOwnerOnly(file, { nativeHelper: false }), true,
+    'the independent PowerShell verifier must accept the native ACL');
+  assert.equal(protectWindowsFileOwnerOnly(directory), false);
+  assert.equal(verifyWindowsFileOwnerOnly(path.join(directory, 'absent')), false);
+  const link = path.join(directory, 'hard-link.json');
+  fs.linkSync(file, link);
+  assert.equal(verifyWindowsFileOwnerOnly(file), false);
+  assert.equal(tightenWindowsFileOwnerOnly(file), false);
+  assert.equal(protectWindowsFileOwnerOnly(file), false, 'hardlinks cannot be mutated');
+  fs.unlinkSync(link);
+  assert.equal(verifyWindowsFileOwnerOnly(file), true);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'synthetic');
+});
+
+test('native and PowerShell hardening refuse a foreign owner without changing its ACL', {
+  skip: process.platform !== 'win32',
+}, (t) => {
+  const helper = path.resolve(__dirname, '../../../../engine/ec-private-file-windows-amd64.exe');
+  assert.ok(fs.existsSync(helper), 'build the native Windows helper before this suite');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-foreign-owner-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const file = path.join(directory, 'synthetic.json');
+  fs.writeFileSync(file, 'synthetic');
+  const fixture = prepareAdministratorsOwnedFile(file);
+  if (fixture === 'requires_elevation') {
+    t.skip('creating a foreign-owner fixture requires an elevated Windows token');
+    return;
+  }
+  assert.equal(fixture, 'foreign_owner');
+  const before = securityDescriptor(file);
+  assert.equal(verifyWindowsFileOwnerOnly(file), false);
+  assert.equal(tightenWindowsFileOwnerOnly(file), false);
+  assert.equal(securityDescriptor(file), before, 'native rejection must not mutate owner or DACL');
+  assert.equal(tightenWindowsFileOwnerOnly(file, { nativeHelper: false }), false);
+  assert.equal(securityDescriptor(file), before, 'PowerShell rejection must not mutate owner or DACL');
+  assert.equal(ensureOwnerOnly(file), false);
+  assert.equal(securityDescriptor(file), before, 'descriptor wrapper must retain the same policy');
+  assert.equal(fs.readFileSync(file, 'utf8'), 'synthetic');
 });

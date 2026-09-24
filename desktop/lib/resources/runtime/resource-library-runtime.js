@@ -7,7 +7,7 @@ const { ResourceActivityStore } = require('./resource-activity-store');
 const { localizeResources } = require('../presentation/localized-resource-view');
 const { normalizePageFavoriteCandidate } = require('../schema/campus-resource-contract');
 const { PageFavoriteController } = require('./page-favorite-controller');
-const { FavoriteGroupStore } = require('./favorite-group-store');
+const { FavoriteGroupStore, groupProjection } = require('./favorite-group-store');
 
 class ResourceLibraryRuntime {
   constructor({
@@ -35,6 +35,8 @@ class ResourceLibraryRuntime {
     this.isContextCurrent = isContextCurrent;
     this.openRequest = openRequest;
     this.activityStore = new ActivityStoreClass({ favoritesFile, recentFile, platform });
+    this.activitySnapshot = null;
+    this.groupSnapshot = null;
     this.groupStore = new GroupStoreClass({
       filePath: path.join(path.dirname(favoritesFile), 'favorite-groups.json'),
       platform,
@@ -71,15 +73,17 @@ class ResourceLibraryRuntime {
     }));
   }
 
-  snapshot() { return this.#reconcileActivity(null); }
+  snapshot() { this.activitySnapshot = null; return this.#reconcileActivity(null); }
 
   toggleFavorite(resourceId, resources) {
+    this.activitySnapshot = null;
     const next = this.activityStore.toggleFavorite(resourceId, resources);
-    if (!next.entries.includes(resourceId)) this.groupStore.removeResource(resourceId);
+    if (!next.entries.includes(resourceId)) this.removeResourceFromGroups(resourceId);
     return next;
   }
 
   replaceFavorites(document) {
+    this.activitySnapshot = null;
     return this.activityStore.replaceFavorites(document);
   }
 
@@ -90,7 +94,7 @@ class ResourceLibraryRuntime {
     try {
       favorites = new Set(this.#reconcileActivity(null).favorites.entries);
       resources = new Set(this.loadResources().map(({ id }) => id));
-      document = this.groupStore.groups();
+      document = groupProjection(this.#groupDocument());
     }
     catch { return Object.freeze([]); }
     const groups = document.map((group) => Object.freeze({
@@ -100,19 +104,21 @@ class ResourceLibraryRuntime {
     return Object.freeze(groups);
   }
 
-  groupsSnapshot() { return this.groupStore.snapshot(); }
+  groupsSnapshot() { this.groupSnapshot = null; return this.#groupDocument(); }
 
-  replaceGroups(document) { return this.groupStore.replace(document); }
+  replaceGroups(document) { this.groupSnapshot = null; return this.groupStore.replace(document); }
 
-  createGroup(name) { return this.groupStore.create(name); }
+  createGroup(name) { this.groupSnapshot = null; return this.groupStore.create(name); }
 
-  renameGroup(groupId, name) { return this.groupStore.rename(groupId, name); }
+  renameGroup(groupId, name) { this.groupSnapshot = null; return this.groupStore.rename(groupId, name); }
 
-  deleteGroup(groupId) { return this.groupStore.remove(groupId); }
+  deleteGroup(groupId) { this.groupSnapshot = null; return this.groupStore.remove(groupId); }
 
-  reorderGroups(groupIds) { return this.groupStore.reorder(groupIds); }
+  reorderGroups(groupIds) { this.groupSnapshot = null; return this.groupStore.reorder(groupIds); }
 
   moveResource(resourceId, groupId, index) {
+    this.groupSnapshot = null;
+    this.activitySnapshot = null;
     return this.groupStore.move(
       resourceId,
       groupId,
@@ -122,6 +128,8 @@ class ResourceLibraryRuntime {
   }
 
   addResourcesToGroup(resourceIds, groupId) {
+    this.groupSnapshot = null;
+    this.activitySnapshot = null;
     return this.groupStore.addMany(
       resourceIds,
       groupId,
@@ -129,7 +137,7 @@ class ResourceLibraryRuntime {
     );
   }
 
-  removeResourceFromGroups(resourceId) { return this.groupStore.removeResource(resourceId); }
+  removeResourceFromGroups(resourceId) { this.groupSnapshot = null; return this.groupStore.removeResource(resourceId); }
 
   recordOpenByUrl(rawUrl) {
     let canonical;
@@ -151,6 +159,7 @@ class ResourceLibraryRuntime {
       }
     });
     if (!resource) return false;
+    this.activitySnapshot = null;
     this.activityStore.recordOpen(resource.id, resources);
     return true;
   }
@@ -169,6 +178,7 @@ class ResourceLibraryRuntime {
     });
     if (!result?.ok) return result;
     if (this.isContextCurrent(context)) {
+      this.activitySnapshot = null;
       try { this.activityStore.recordOpen(resource.id, this.loadResources()); } catch {}
     }
     return Object.freeze({
@@ -179,6 +189,8 @@ class ResourceLibraryRuntime {
     });
   }
 
+  #groupDocument() { return this.groupSnapshot ||= this.groupStore.snapshot(); }
+
   #reconcileActivity(settings) {
     const aliases = this.loadAliases(settings);
     if (!Array.isArray(aliases) || aliases.length > 32 || aliases.some((alias) =>
@@ -186,7 +198,9 @@ class ResourceLibraryRuntime {
       !/^[a-z0-9-]{1,40}$/u.test(alias.to))) {
       throw new TypeError('resource activity aliases are invalid');
     }
-    const current = this.activityStore.snapshot();
+    // Presentation reads share one validated snapshot. Explicit snapshots and
+    // mutations invalidate it; the store still verifies every disk operation.
+    const current = this.activitySnapshot ||= this.activityStore.snapshot();
     if (!aliases.length) return current;
     const map = new Map(aliases.map(({ from, to }) => [from, to]));
     const favoriteEntries = [...new Set(current.favorites.entries.map((id) => map.get(id) || id))];
@@ -201,15 +215,17 @@ class ResourceLibraryRuntime {
     const nextFavorites = { schemaVersion: 1, entries: favoriteEntries };
     const nextRecent = { schemaVersion: 1, entries: recentEntries };
     if (JSON.stringify(nextFavorites) !== JSON.stringify(current.favorites)) {
+      this.activitySnapshot = null;
       this.activityStore.replaceFavorites(nextFavorites);
     }
     if (JSON.stringify(nextRecent) !== JSON.stringify(current.recent)) {
       if (typeof this.activityStore.replaceRecent !== 'function') {
         throw new Error('resource activity store cannot migrate recent entries');
       }
+      this.activitySnapshot = null;
       this.activityStore.replaceRecent(nextRecent);
     }
-    const groupDocument = this.groupStore.snapshot();
+    const groupDocument = this.#groupDocument();
     const pairs = new Set();
     const placements = groupDocument.placements.map((placement) => ({
       ...placement,
@@ -227,12 +243,10 @@ class ResourceLibraryRuntime {
         .map((placement, order) => ({ ...placement, order }))),
     };
     if (JSON.stringify(nextGroups) !== JSON.stringify(groupDocument)) {
+      this.groupSnapshot = null;
       this.groupStore.replace(nextGroups);
     }
-    return Object.freeze({
-      favorites: this.activityStore.snapshot().favorites,
-      recent: this.activityStore.snapshot().recent,
-    });
+    return this.activitySnapshot ||= this.activityStore.snapshot();
   }
 }
 

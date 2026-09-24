@@ -103,6 +103,7 @@
       pager,
       pageSize,
       pagerByCard,
+      switchStyle: boardId === 'browser-personal' ? 'service' : 'draw',
       renameCards: boardId === 'browser-personal',
       adapter: adapterForMainWindow(),
       escapeHtml: current?.escapeHtml || ((value) => String(value)),

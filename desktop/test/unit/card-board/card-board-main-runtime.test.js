@@ -16,7 +16,7 @@ test('Main composition derives layout authority and commits through one context 
   const notifications = [];
   const runtime = createCardBoardMainRuntime({
     favoritesFile: path.join(root, 'favorites.json'),
-    platform: 'darwin',
+    platform: process.platform,
     ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
     allowedFiles: [allowedFile],
     getResources: () => [

@@ -16,6 +16,21 @@
       ?.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
   }
 
+  function animateSwitch(container, { front, back = null } = {}) {
+    if (isReducedMotion(container)) return Promise.resolve();
+    const options = { duration: 240, easing: 'cubic-bezier(.2,.8,.2,1)' };
+    const animations = [];
+    if (front?.animate) animations.push(front.animate([
+      { opacity: .72, transform: 'translateY(-7px) scale(.994)' },
+      { opacity: 1, transform: 'none' },
+    ], options));
+    if (back?.animate) animations.push(back.animate([
+      { opacity: .82, transform: 'translateY(5px)' },
+      { opacity: 1, transform: 'none' },
+    ], { ...options, duration: 220 }));
+    return Promise.all(animations.map(animation => animation.finished.catch(() => {})));
+  }
+
   function placementRects(container) {
     return new Map([...container.querySelectorAll('[data-card-placement-id]')].map((card) => [
       card.dataset.cardPlacementId,
@@ -139,6 +154,7 @@
     DRAW_EASING,
     LAYER_OFFSET_PX,
     animateDraw,
+    animateSwitch,
     animateFrom,
     isReducedMotion,
     observeResponsive,

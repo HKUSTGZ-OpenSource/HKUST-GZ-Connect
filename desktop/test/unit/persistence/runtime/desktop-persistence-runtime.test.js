@@ -147,3 +147,34 @@ test('Profile Workspace mode routes settings and credentials only through scoped
   assert.equal(cleared, true);
   assert.equal(persistence.hasAccountIdentity(), false);
 });
+
+test('frequent settings and account display reads reuse the validated runtime snapshot', () => {
+  let current = authority();
+  let reloads = 0;
+  const runtime = {
+    mode: 'profile-workspace',
+    authority: current,
+    settingsStore: { save() { return { authority: current }; } },
+    credentialStore: { open: () => owner() },
+    reloadAuthority() { reloads += 1; return current; },
+  };
+  const persistence = new DesktopPersistenceRuntime({
+    preReadySelection: { mode: 'profile-workspace', paths: { root: '/scoped' } },
+    initializeAfterReady: () => runtime,
+    legacy: legacy(),
+  });
+  persistence.initialize();
+  for (let i = 0; i < 20; i += 1) {
+    assert.equal(persistence.loadSettings().port, 6180);
+    assert.equal(persistence.hasCredential(), true);
+    assert.equal(persistence.hasAccountIdentity(), true);
+  }
+  assert.equal(reloads, 0, 'display reads must not synchronously reload disk/Windows ACLs');
+  current = authority({ port: 6280, hasCredential: false });
+  assert.equal(persistence.currentAuthority(), current, 'explicit authority reads still validate disk');
+  assert.equal(reloads, 1);
+  assert.equal(persistence.loadSettings().port, 6280);
+  assert.equal(persistence.hasAccountIdentity(), false);
+  runtime.reloadAuthority = () => { throw new Error('invalid ACL'); };
+  assert.throws(() => persistence.currentAuthority(), /invalid ACL/);
+});

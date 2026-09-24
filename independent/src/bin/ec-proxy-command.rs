@@ -425,7 +425,23 @@ where
         })
         .map_err(|_| CommandError::RelayFailed)?;
 
-    let downloaded = io::copy(&mut download, output).is_ok() && output.flush().is_ok();
+    // Stdout is line-buffered even when used as a ProxyCommand pipe. Binary
+    // protocols must make progress without waiting for a newline or remote EOF.
+    let downloaded = (|| -> io::Result<()> {
+        let mut buffer = [0_u8; 16 * 1024];
+        loop {
+            let count = match download.read(&mut buffer) {
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                result => result?,
+            };
+            if count == 0 {
+                return output.flush();
+            }
+            output.write_all(&buffer[..count])?;
+            output.flush()?;
+        }
+    })()
+    .is_ok();
     if !downloaded {
         let _ = download.shutdown(Shutdown::Both);
         return Err(CommandError::RelayFailed);

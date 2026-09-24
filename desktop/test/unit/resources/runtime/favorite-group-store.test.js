@@ -10,6 +10,10 @@ const {
   emptyGroupDocument,
   validateGroupDocument,
 } = require('../../../../lib/resources/runtime/favorite-group-store');
+const {
+  protectWindowsFileOwnerOnly,
+  verifyWindowsFileOwnerOnly,
+} = require('../../../../lib/platform/storage/windows-private-file');
 
 test('favorite collections are owner-only ordered and placements support many-to-many use', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-favorite-groups-'));
@@ -17,7 +21,7 @@ test('favorite collections are owner-only ordered and placements support many-to
   let seed = 1;
   const store = new FavoriteGroupStore({
     filePath: path.join(root, 'favorite-groups.json'),
-    platform: 'darwin',
+    platform: process.platform,
     randomBytes: () => Buffer.alloc(12, seed++),
     now: () => 1_800_000_000_000 + seed,
   });
@@ -39,7 +43,12 @@ test('favorite collections are owner-only ordered and placements support many-to
   assert.equal(store.groups()[0].name, '研究');
   document = store.remove(research);
   assert.deepEqual(store.groups().map(({ name }) => name), ['学习']);
-  assert.equal(fs.statSync(path.join(root, 'favorite-groups.json')).mode & 0o077, 0);
+  const file = path.join(root, 'favorite-groups.json');
+  if (process.platform === 'win32') {
+    assert.equal(verifyWindowsFileOwnerOnly(file), true);
+  } else {
+    assert.equal(fs.statSync(file).mode & 0o077, 0);
+  }
 });
 
 test('v1 group documents migrate without losing order or resource identity', (t) => {
@@ -49,7 +58,12 @@ test('v1 group documents migrate without losing order or resource identity', (t)
   fs.writeFileSync(file, JSON.stringify({ schemaVersion: 1, groups: [{
     id: 'group_abcdefghijkl', name: '学习', resourceIds: ['canvas', 'sis'],
   }] }), { mode: 0o600 });
-  const store = new FavoriteGroupStore({ filePath: file, platform: 'darwin' });
+  if (process.platform === 'win32') {
+    // This is a newly created synthetic legacy document, not an existing user file.
+    assert.equal(protectWindowsFileOwnerOnly(file), true);
+    assert.equal(verifyWindowsFileOwnerOnly(file), true);
+  }
+  const store = new FavoriteGroupStore({ filePath: file, platform: process.platform });
   assert.equal(store.snapshot().schemaVersion, 2);
   assert.deepEqual(store.groups(), [{
     id: 'group_abcdefghijkl', name: '学习', resourceIds: ['canvas', 'sis'],

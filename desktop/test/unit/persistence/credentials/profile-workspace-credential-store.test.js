@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } =
+  require('../../../../lib/platform/storage/windows-private-file');
 const { createProfileAccountWorkspaceLayout } = require('../../../../lib/persistence/paths/profile-workspace-layout');
 const {
   loadActiveProfileAccountAuthority,
@@ -41,6 +43,11 @@ function safeStorage() {
 function writeJson(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   fs.writeFileSync(file, `${JSON.stringify(value)}\n`, { mode: 0o600 });
+  // Only synthetic fixture files: match the production creation boundary on Windows.
+  if (process.platform === 'win32') {
+    assert.equal(protectWindowsFileOwnerOnly(file), true);
+    assert.equal(verifyWindowsFileOwnerOnly(file), true);
+  }
 }
 
 function fixture(t) {
@@ -136,7 +143,7 @@ function createStore(value, options = {}) {
       return { status: 'retired', changed: true };
     },
     safeStorage: safeStorage(),
-    platform: 'darwin',
+    platform: process.platform,
     randomBytes: () => Buffer.alloc(16, 0x66),
     now: () => timestamp++,
     ...options,
@@ -273,4 +280,23 @@ test('simulated Windows credential writes are ACL protected and verified', (t) =
   assert.equal(protectedFiles.some((file) => file.endsWith('.tmp')), true);
   assert.equal(verifiedFiles.includes(value.layout.account.vpnCredential), true);
   assert.equal(verifiedFiles.includes(value.layout.account.document), true);
+});
+
+test('native Windows credential mutation rejects an insecure Account before retirement or writes', {
+  skip: process.platform !== 'win32',
+}, (t) => {
+  const value = fixture(t), retirementCalls = [];
+  const file = value.layout.account.document;
+  const original = fs.readFileSync(file);
+  fs.unlinkSync(file);
+  fs.writeFileSync(file, original, { mode: 0o600 });
+  assert.equal(verifyWindowsFileOwnerOnly(file), false, 'replacement must reproduce the insecure fixture');
+  assert.throws(() => createStore(value, { retirementCalls }).replace({
+    username: 'synthetic-user', password: 'synthetic-password',
+  }), /private file ACL is invalid/);
+  assert.deepEqual(retirementCalls, []);
+  assert.equal(fs.existsSync(value.layout.account.credentialTransaction), false);
+  assert.equal(fs.existsSync(value.layout.account.vpnCredential), false);
+  assert.deepEqual(fs.readFileSync(file), original);
+  assert.equal(verifyWindowsFileOwnerOnly(file), false);
 });

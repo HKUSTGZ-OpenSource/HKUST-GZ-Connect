@@ -86,6 +86,7 @@
       pager = null,
       pageSize = 0,
       pagerByCard = false,
+      switchStyle = 'draw',
       renameCards = false,
       onDocument = null,
       onEditingChange = null,
@@ -111,7 +112,12 @@
     let editing = false;
     let resetRequested = false;
     let frontByDeck = {};
-    let columns = model.columnsForWidth(container.getBoundingClientRect().width);
+    // Service-style personal cards follow the official desk's viewport breakpoint.
+    // Only the projection changes: resizing never rewrites a saved deck or ordering.
+    const serviceLayout = autoStack && switchStyle === 'service';
+    const responsiveModel = serviceLayout ? { columnsForWidth: () =>
+      container.ownerDocument.defaultView.innerWidth >= 980 ? 2 : 1 } : model;
+    let columns = responsiveModel.columnsForWidth(container.getBoundingClientRect().width);
     let page = 0;
     let activePagerPlacementId = null;
     let destroyed = false;
@@ -140,10 +146,14 @@
 
     function visibleUnits() {
       const current = reconcile(liveDocument());
-      return model.boardUnits(current, boardId).map((unit) => ({
+      const units = model.boardUnits(current, boardId).map((unit) => ({
         ...unit,
         placements: unit.placements.filter((placement) => cardsByKey.has(model.cardKey(placement.card))),
       })).filter(({ placements }) => placements.length);
+      return serviceLayout && columns > 1 && !editing ? units.flatMap(unit =>
+        unit.deck?.deckId.startsWith(`auto_${boardId}_`) ? unit.placements.map(placement => ({
+          unitId: placement.placementId, kind: 'placement', deck: null, placements: [placement],
+        })) : [unit]) : units;
     }
 
     // Positions every card inside its fixed slot. This is the only place that
@@ -184,7 +194,7 @@
 
     function renderPager(units) {
       if (!pager) return;
-      if (pagerByCard) {
+      if (pagerByCard && !(serviceLayout && columns > 1 && !editing)) {
         const targets = units.flatMap((unit, unitIndex) => unit.placements.map((placement) => ({
           placement,
           unit,
@@ -245,7 +255,7 @@
       const units = boundedPageSize
         ? allUnits.slice(page * boundedPageSize, (page + 1) * boundedPageSize)
         : allUnits;
-      container.innerHTML = view.renderBoard({
+      const markup = view.renderBoard({
         boardId,
         units,
         cardsByKey,
@@ -260,6 +270,19 @@
           .map((placement) => model.cardKey(placement.card))),
         renameCards,
       });
+      if (overlay?.open && overlay.parentNode === container) {
+        // Keep the modal connected to the top layer while replacing only the card projection.
+        // Detaching/reinserting the dialog would lose modal state and keyboard focus.
+        const template = container.ownerDocument.createElement('template');
+        template.innerHTML = markup;
+        for (const child of [...container.childNodes]) {
+          if (child !== overlay) child.remove();
+        }
+        container.insertBefore(template.content, overlay);
+      } else {
+        closeOverlay();
+        container.innerHTML = markup;
+      }
       container.style.setProperty('--cb-columns', String(columns));
       renderPager(allUnits);
       layoutBoard();
@@ -292,6 +315,24 @@
       if (index < 0 || index === count - 1) return false;
       const deckId = slot.dataset.cardDeckId;
       const startedAt = container.ownerDocument.defaultView?.performance?.now?.() ?? 0;
+      if (switchStyle === 'service') {
+        frontByDeck = { ...frontByDeck, [deckId]: placementId };
+        activePagerPlacementId = placementId;
+        render({ preserveFocus: false });
+        const nextSlot = [...container.querySelectorAll('[data-card-deck-id]')]
+          .find(element => element.dataset.cardDeckId === deckId);
+        nextSlot.classList.add('cb-drawing');
+        const front = nextSlot.querySelector('.is-front');
+        Promise.resolve(motion.animateSwitch(nextSlot, { front, back: nextSlot.querySelector('.is-back') })).finally(() => {
+          nextSlot.classList.remove('cb-drawing');
+          if (destroyed || !nextSlot.isConnected) return;
+          if (focus) front.querySelector('[data-card-action="draw"]')?.focus({ preventScroll: true });
+          container.dispatchEvent(new CustomEvent('card-board-drawn', { bubbles: true,
+            detail: { deckId, placementId, duration: (container.ownerDocument.defaultView?.performance?.now?.() ?? 0) - startedAt } }));
+          announceMessage(strings().drawnToFront.replace('{name}', cardForPlacement(placementId)?.name || placementId));
+        });
+        return true;
+      }
       slot.classList.add('cb-drawing');
 
       const nextOrderIds = [...cards.filter((card) => card.dataset.cardPlacementId !== placementId)
@@ -371,7 +412,7 @@
       closeOverlay();
       const labels = strings();
       const dialog = container.ownerDocument.createElement('dialog');
-      dialog.className = 'cb-overlay';
+      dialog.className = `cb-overlay${switchStyle === 'service' ? ' cb-service-overlay' : ''}`;
       dialog.setAttribute('aria-label', card.name || placementId);
       dialog.innerHTML = `<div class="cb-overlay-head"><h3 class="cb-overlay-title">${escapeHtml(card.name || placementId)}</h3>`
         + `<button class="cb-overlay-close" type="button" aria-label="${escapeHtml(labels.closeOverlay)}">×</button></div>`
@@ -385,6 +426,8 @@
       container.appendChild(dialog);
       overlay = dialog;
       dialog.showModal();
+      if (switchStyle === 'service') void motion.animateSwitch(dialog, { front: dialog });
+      dialog.querySelector('.cb-overlay-close').focus({ preventScroll: true });
     }
 
     function pushDraft(nextDocument, nextOperations, message = strings().draftChanged) {
@@ -408,6 +451,7 @@
 
     function enterEdit() {
       if (editing) return;
+      closeOverlay();
       editing = true;
       baseDocument = reconcile(documentState);
       draftDocument = model.cloneDocument(baseDocument);
@@ -529,15 +573,20 @@
       announceMessage(strings().pinToConnect);
     }
 
+    function revealPlacement(placementId) {
+      const units = visibleUnits();
+      const index = units.findIndex(unit => unit.placements.some(placement => placement.placementId === placementId));
+      if (index < 0) return false;
+      if (pageSize > 0) page = Math.floor(index / pageSize);
+      frontByDeck = { ...frontByDeck, [units[index].unitId]: placementId };
+      activePagerPlacementId = placementId;
+      return true;
+    }
+
     function focusCard(kind, id) {
       const placement = liveDocument().placements.find((candidate) =>
         candidate.boardId === boardId && candidate.card.kind === kind && candidate.card.id === id && !candidate.hidden);
-      if (!placement) return false;
-      const deckId = placement.deckId || placement.placementId;
-      const unitIndex = visibleUnits().findIndex(({ unitId }) => unitId === deckId);
-      if (pageSize > 0 && unitIndex >= 0) page = Math.floor(unitIndex / pageSize);
-      frontByDeck = { ...frontByDeck, [deckId]: placement.placementId };
-      activePagerPlacementId = placement.placementId;
+      if (!placement || !revealPlacement(placement.placementId)) return false;
       render({ preserveFocus: false });
       motion.scrollPlacementIntoView(container, placement.placementId);
       const target = [...container.querySelectorAll('[data-card-placement-id]')]
@@ -559,7 +608,7 @@
         if (slot) drawPlacement(slot, placementId);
         return;
       }
-      if (cardAction === 'show-all' && placementId) {
+      if ((cardAction === 'show-all' || cardAction === 'expand') && placementId) {
         openOverlay(placementId);
         return;
       }
@@ -630,6 +679,8 @@
     }
 
     function setData(next = {}) {
+      // Data/context changes retire old detail actions; only geometry-only redraws preserve them.
+      closeOverlay();
       categories = (Array.isArray(next.categories) ? next.categories : []).map((category) => ({
         ...category,
         kind: category.kind || 'official-category',
@@ -646,6 +697,7 @@
 
     function setDocument(nextDocument) {
       if (!nextDocument || editing) return false;
+      closeOverlay();
       documentState = reconcile(nextDocument);
       render();
       return true;
@@ -657,6 +709,7 @@
         const result = await adapter.get();
         const loaded = resultDocument(result);
         if (loaded && !editing) {
+          closeOverlay();
           documentState = reconcile(loaded);
           onDocument?.(model.cloneDocument(documentState));
           render({ preserveFocus: false });
@@ -685,7 +738,12 @@
         const unit = units[unitIndex];
         frontByDeck = { ...frontByDeck, [unit.unitId]: placementId };
         activePagerPlacementId = placementId;
-        render({ preserveFocus: false, animate: true });
+        render({ preserveFocus: false, animate: switchStyle !== 'service' });
+        if (switchStyle === 'service') {
+          const slot = [...container.querySelectorAll('[data-card-deck-id]')]
+            .find(element => element.dataset.cardDeckId === unit.unitId);
+          if (slot) void motion.animateSwitch(slot, { front: slot.querySelector('.is-front'), back: slot.querySelector('.is-back') });
+        }
         pager.querySelector(`[data-card-page-placement="${CSS.escape(placementId)}"]`)
           ?.focus({ preventScroll: true });
         return;
@@ -693,7 +751,13 @@
       const button = event.target.closest('[data-card-page-index]');
       if (!button) return;
       page = Number(button.dataset.cardPageIndex) || 0;
-      render({ preserveFocus: false, animate: true });
+      render({ preserveFocus: false, animate: !serviceLayout });
+      if (serviceLayout) {
+        for (const slot of container.querySelectorAll('.cb-deck')) {
+          void motion.animateSwitch(slot, { front: slot.querySelector('.is-front'), back: slot.querySelector('.is-back') });
+        }
+        pager.querySelector(`[data-card-page-index="${page}"]`)?.focus({ preventScroll: true });
+      }
     };
     pager?.addEventListener('click', handlePagerClick);
     dragFeature = drag.attach({
@@ -706,10 +770,16 @@
     });
     responsiveFeature = motion.observeResponsive({
       container,
-      model,
+      model: responsiveModel,
       current: () => ({ columns }),
       onChange: (next) => {
+        const focused = container.ownerDocument.activeElement;
+        const anchor = serviceLayout && next.columns !== columns
+          ? (container.contains(focused) ? focused?.closest('[data-card-placement-id]')?.dataset.cardPlacementId : null)
+            || container.querySelector('.cb-card.is-front')?.dataset.cardPlacementId || activePagerPlacementId
+          : null;
         columns = next.columns;
+        if (anchor) revealPlacement(anchor);
         if (next.measureOnly) layoutBoard();
         else render({ animate: next.animate === true });
       },

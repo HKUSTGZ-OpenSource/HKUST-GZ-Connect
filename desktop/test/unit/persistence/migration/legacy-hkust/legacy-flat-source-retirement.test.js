@@ -8,6 +8,13 @@ const test = require('node:test');
 const { collectLegacyFlatSourceReceipts } = require('../../../../../lib/persistence/migration/legacy-hkust/legacy-flat-source-receipts');
 const { retireLegacyFlatSources } = require('../../../../../lib/persistence/migration/legacy-hkust/legacy-flat-source-retirement');
 const { createLegacyFlatSourcePaths } = require('../../../../../lib/persistence/paths/profile-workspace-layout');
+const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../../../../lib/platform/storage/windows-private-file');
+
+function prepareNewFixture(file) {
+  if (process.platform !== 'win32') return;
+  assert.equal(protectWindowsFileOwnerOnly(file), true);
+  assert.equal(verifyWindowsFileOwnerOnly(file), true);
+}
 
 function fixture(t) {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'campus-legacy-retirement-'));
@@ -16,6 +23,7 @@ function fixture(t) {
   for (const id of ['settings', 'settingsBackup', 'vpnCredential', 'routingRules',
     'proxyCredential', 'engineLog', 'engineLogRotated', 'engineLogRetention']) {
     fs.writeFileSync(paths[id], `synthetic-${id}`, { mode: 0o600 });
+    prepareNewFixture(paths[id]);
   }
   return { userData, paths, expected: collectLegacyFlatSourceReceipts({ userData }) };
 }
@@ -44,6 +52,7 @@ test('one mismatched source blocks before any retirement side effect', (t) => {
 test('unexpected source appearing where receipt proved absence blocks retirement', (t) => {
   const { userData, paths, expected } = fixture(t);
   fs.writeFileSync(paths.siteCredentials, 'unexpected', { mode: 0o600 });
+  prepareNewFixture(paths.siteCredentials);
   assert.throws(() => retireLegacyFlatSources({ userData, expectedReceipts: expected }),
     /unexpected legacy source/u);
   assert.equal(fs.existsSync(paths.settings), true);

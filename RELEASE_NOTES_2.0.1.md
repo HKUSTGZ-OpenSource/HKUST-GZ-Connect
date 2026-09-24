@@ -1,32 +1,30 @@
 # HKUST(GZ) Connect 2.0.1
 
-HKUST(GZ) Connect 2.0.1 is a repository-ownership migration bridge. It preserves the 2.0.0
-connection, Campus Browser, myPortal, MFA and workspace behavior while making future update checks
-survive a GitHub Organization transfer.
+- Status: release candidate; publish only with matching verified artifacts
+- Owner: HKUST(GZ) Connect maintainers
+- Last verified: 2026-09-07
+- Applicability: Windows x64, Linux x86_64, macOS arm64/x64
 
-## 主要更新
+## Windows 登录页卡顿修复（#97）
 
-- 更新检查不再把可变的 GitHub `owner/repository` 当作仓库身份。
-- 客户端先查询 HKUST-GZ-Connect 不变的 GitHub repository ID，再严格验证仓库 ID、名称、
-  当前 owner、API URL、Web URL 和 Release 模板。
-- 仓库转入 Organization 后，客户端可自动发现新 owner 的正式 Release 页面，无需放宽到
-  任意 GitHub 仓库或任意外部链接。
-- ID、仓库名、owner、主机、路径或 Release URL 不匹配时继续 fail-closed。
-- 本补丁不修改校园网关协议、凭据/MFA 处理、路由、DNS、SOCKS、用户数据结构或 GUI。
+2.0.0 在 Windows 上反复同步启动 PowerShell 检查持久化文件权限。设置、账号显示状态、收藏和分组的刷新重复读取文件，阻塞 Electron 主进程，表现为登录页长时间转圈、输入和按钮迟迟没有响应。
 
-## 安全与兼容性
+- 展示刷新复用已验证的设置、收藏、最近访问和分组快照；写入后失效并刷新缓存。连接时读取凭据、持久化写入和显式刷新仍通过实际存储权限与归属校验。
+- Windows 安装包包含小型原生权限组件，通过 Win32 文件句柄检查和设置当前用户专属 DACL，避免启动时重复加载 PowerShell。组件拒绝目录、重解析点和硬链接；收紧旧文件权限前检查归属，拒绝后不会转用另一实现放行。
 
-- 固定 repository ID 为 GitHub 当前公开记录的 `1279507615`；仓库转移不改变该身份。
-- 只接受 GitHub API 返回且与该 ID 完整一致的当前 owner 和 Release 前缀。
-- 更新功能仍然只提示并打开 Release 页面，不静默下载、安装或执行文件。
-- 升级保留设置、收藏、校园浏览器数据和已安全保存的凭据。
+5070 Windows 合成工作区复测中，主窗口启动约从 17 秒降至 1.8 秒；连续状态查询没有启动权限子进程，登录输入框可编辑。耗时取决于设备和工作区，并非对所有电脑的性能承诺。
 
-## 安装与签名说明
+## 更新渠道与依赖
 
-- macOS DMG 使用包体校验和 ad-hoc 签名，尚未 Developer ID 公证；首次启动可能需要在
-  Finder 中右键应用并选择“打开”。
-- Windows 安装器尚未配置 Authenticode 发布者证书，SmartScreen 可能提示未知发布者。
-- GitHub Release 为每个附件公布 SHA-256 摘要，可在安装前核对完整性。
+- 保留 main 已合入的更新渠道修复：通过不可变 GitHub repository ID 发现当前 owner，并验证规范 API 和 Release URL，支持后续仓库转移。
+- 包含 main 中的 Rust 依赖安全更新（包括 time 0.3.47）。
+- 不改变校园网关协议、MFA 能力、路由策略或用户数据格式。
+
+## 升级与验证
+
+保留设置、收藏、分组、校园浏览器数据和安全保存的凭据。Windows/Linux 验收在 5070 完成，使用临时合成工作区；未使用真实校园账号。回归覆盖登录响应、1.2.3 数据迁移、学校新增/切换、网络恢复、浏览器路由/MFA/布局、渲染器恢复、空闲性能和原生权限边界。
+
+旧版迁移测试先让独立写入进程正常退出，再启动新版，覆盖 Windows 加密配置的实际落盘与重新加载。macOS 只构建和校验安装包，本次未重新执行 macOS 功能测试。附件源码提交、签名状态和 SHA-256 以 Release 构建收据为准。
 
 ## Downloads
 
@@ -37,7 +35,4 @@ survive a GitHub Organization transfer.
 
 ## English summary
 
-Version 2.0.1 resolves the repository's current owner through its immutable GitHub repository ID,
-validates the complete canonical API and web identity, and accepts only that repository's Release
-pages. This lets update checks survive an ownership transfer without trusting arbitrary redirects or
-repositories. Runtime networking, MFA, routing, persistence and GUI behavior are unchanged.
+Fixes the Windows login freeze caused by repeated synchronous PowerShell ACL checks. Display updates reuse validated snapshots, invalidated after mutations. A bundled Win32 helper checks and applies private permissions without PowerShell startup, preserving current-user ownership and rejecting reparse points and hardlinks. Credential access and writes still validate storage authority. Includes repository-transfer-aware update discovery and Rust dependency security updates. Windows/Linux acceptance runs on 5070; macOS receives package builds and verification only. Release receipts record artifact provenance and signing status.

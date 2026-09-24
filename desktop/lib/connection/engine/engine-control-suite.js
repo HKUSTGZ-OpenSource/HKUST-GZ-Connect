@@ -23,6 +23,9 @@ class EngineControlSuite {
     this.auth.feed(value);
   }
 
+  // Retirement may drain only this child's pending shutdown, never interactive auth.
+  feedShutdown(value) { this.v2.feed(value, { shutdownOnly: true }); }
+
   setAuthHandlers(handlers) { this.auth.setHandlers(handlers); }
 
   respond(secret) { return this.auth.respond(secret); }

@@ -94,14 +94,15 @@ test('invalid ports and retry counts use reviewed defaults', () => {
   const settings = normalizeSettings({ port: 80, maxAttempts: 1.5 });
   assert.equal(settings.port, 1080);
   assert.equal(settings.maxAttempts, 3);
-  assert.equal(settings.strictProxyAuth, true);
+  assert.equal(settings.strictProxyAuth, false);
   assert.equal(settings.proxySecurityVersion, PROXY_SECURITY_VERSION);
 });
 
-test('new installs default strict while current compatibility choices survive migration', () => {
-  assert.equal(normalizeSettings({}).strictProxyAuth, true);
-  assert.equal(normalizeSettings({ strictProxyAuth: false }).strictProxyAuth, true,
-    'an unversioned value is not proof of an explicit downgrade');
+test('new installs default compatibility while explicit strict choices survive migration', () => {
+  assert.equal(normalizeSettings({}).strictProxyAuth, false);
+  assert.equal(normalizeSettings({ proxySecurityVersion: PROXY_SECURITY_VERSION }).strictProxyAuth, false);
+  assert.equal(normalizeSettings({ strictProxyAuth: false }).strictProxyAuth, false,
+    'an unversioned value follows the compatibility default');
   assert.equal(normalizeSettings({
     strictProxyAuth: true,
     proxySecurityVersion: 1,
@@ -233,7 +234,7 @@ test('corrupt settings are isolated and restored from the latest committed backu
   const recovered = loadSettings(file, { onRecovery: (notice) => notices.push(notice) });
   assert.equal(recovered.username, 'second');
   assert.equal(recovered.port, 7200);
-  assert.equal(recovered.strictProxyAuth, true);
+  assert.equal(recovered.strictProxyAuth, false);
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).port, 7200,
     'the recovered settings are restored to the primary path');
   const quarantined = fs.readdirSync(directory)
@@ -301,7 +302,7 @@ test('backup recovery preserves compatibility and explicit strict choices', (t) 
   }), { mode: 0o600 });
   const legacyRecovered = loadSettings(legacyFile);
   assert.equal(legacyRecovered.port, 7200);
-  assert.equal(legacyRecovered.strictProxyAuth, true);
+  assert.equal(legacyRecovered.strictProxyAuth, false);
   assert.equal(legacyRecovered.proxySecurityVersion, PROXY_SECURITY_VERSION);
 });
 

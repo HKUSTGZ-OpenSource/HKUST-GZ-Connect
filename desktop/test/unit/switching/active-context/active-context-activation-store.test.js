@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const { ensureOwnerOnly } = require('../../../../lib/platform/storage/private-file');
+const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../../../lib/platform/storage/windows-private-file');
 const { ActiveContextActivationStore } = require('../../../../lib/switching/active-context/active-context-activation-store');
 const {
   createPreparedActiveContextSwitch,
@@ -33,6 +35,10 @@ function context(profileId, profileSeed, accountSeed, workspaceSeed, epoch) {
 function writeJson(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   fs.writeFileSync(file, `${JSON.stringify(value)}\n`, { mode: 0o600 });
+  // These are newly created synthetic files. Elevated Windows can assign Administrators
+  // as their default owner; creation protection is distinct from tightening an existing file.
+  assert.equal(process.platform === 'win32' ? protectWindowsFileOwnerOnly(file) : ensureOwnerOnly(file),
+    true, 'fixture must satisfy the real private-file boundary');
 }
 
 function fixture(t) {
@@ -185,4 +191,18 @@ test('simulated Windows verifies source ACLs and protects both committed targets
   assert.equal(verifiedPaths.includes(value.globalSettings), true);
   assert.equal(verifiedPaths.includes(value.toLayout.workspace.state), true);
   assert.equal(protectedPaths.filter((file) => file.endsWith('.tmp')).length, 2);
+});
+
+test('native Windows rejects a recreated source with inherited ACLs before activation', {
+  skip: process.platform !== 'win32',
+}, (t) => {
+  const value = fixture(t);
+  assert.equal(verifyWindowsFileOwnerOnly(value.globalSettings), true);
+  assert.equal(verifyWindowsFileOwnerOnly(value.toLayout.workspace.state), true);
+  const bytes = fs.readFileSync(value.globalSettings);
+  fs.unlinkSync(value.globalSettings);
+  fs.writeFileSync(value.globalSettings, bytes, { mode: 0o600 });
+  assert.equal(verifyWindowsFileOwnerOnly(value.globalSettings), false,
+    'mode 0600 must not be confused with a protected Windows DACL');
+  assert.throws(() => ready(value), /GlobalSettings ACL is invalid/u);
 });

@@ -12,9 +12,9 @@ changes can be supported without review.
 - The engine listener is always an explicit loopback endpoint. The app never
   changes system DNS, the default route, the global proxy, or a system network
   extension.
-- 新安装默认要求本地代理认证；回环地址不是跨本机用户/进程的授权边界。已由旧版
-  security schema 保存的兼容选择继续保留，确需支持无认证旧客户端时可显式关闭。
-- Strict authentication is the new-install default. A
+- 桌面新安装默认关闭严格认证以兼容 SOCKS5 客户端；回环地址不是跨本机用户/进程的
+  授权边界。已有明确设置继续保留，共享电脑用户可手动开启严格认证。
+- Desktop installations default to compatibility mode; strict authentication remains opt-in. A
   stable random local-proxy credential is encrypted with the operating-system
   secure-storage service; each engine generation receives only a short-lived
   in-memory copy. Campus Browser authenticates automatically, Clash receives an

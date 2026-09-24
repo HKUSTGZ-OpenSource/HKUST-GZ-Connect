@@ -11,6 +11,7 @@ const {
   verifyCustomEngineConfigFile,
 } = require('../../../../lib/profiles/provisioning/custom-engine-config');
 const { customProfileDocument } = require('../../../../lib/profiles/onboarding/custom-gateway-onboarding');
+const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../../../lib/platform/storage/windows-private-file');
 
 function profile(origin = 'https://vpn.example.edu') {
   return customProfileDocument({
@@ -50,6 +51,10 @@ test('owner-only config is re-read and hash-bound before Engine launch', (t) => 
   const file = path.join(root, 'engine-config.json');
   const source = profile();
   fs.writeFileSync(file, serializeCustomEngineConfig(source), { mode: 0o600 });
+  if (process.platform === 'win32') {
+    assert.equal(protectWindowsFileOwnerOnly(file), true);
+    assert.equal(verifyWindowsFileOwnerOnly(file), true);
+  }
   const verified = verifyCustomEngineConfigFile({ filePath: file, profile: source });
   assert.equal(verified.gatewayOrigin, 'https://vpn.example.edu');
   assert.match(verified.sha256, /^[a-f0-9]{64}$/u);

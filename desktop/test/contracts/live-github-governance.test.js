@@ -192,6 +192,30 @@ test('live capture uses only fixed read endpoints and emits a secret-free projec
     phase: 'pre-transfer', expectedOwner: 'heeh02',
   }).ok, true);
 
+  // Missing API fields are unavailable, never evidence that protection is enabled.
+  // Keep these mandatory failures separate from optional non-provider/validity deferrals.
+  const analysis = responses['repos/heeh02/HKUST-GZ-Connect'].security_and_analysis;
+  for (const [field, projected] of [
+    ['secret_scanning', 'secretScanning'],
+    ['secret_scanning_push_protection', 'pushProtection'],
+  ]) {
+    const original = analysis[field];
+    for (const state of ['disabled', 'missing']) {
+      if (state === 'missing') delete analysis[field];
+      else analysis[field] = { status: state };
+      const degraded = captureLiveSnapshot('heeh02/HKUST-GZ-Connect', { execute });
+      assert.equal(degraded.security[projected], state === 'missing' ? 'unavailable' : 'disabled');
+      const result = auditSnapshot(contract, degraded, {
+        phase: 'pre-transfer', expectedOwner: 'heeh02',
+      });
+      assert.equal(result.ok, false);
+      assert.equal(result.errors.length, 1);
+      assert.ok(result.errors[0].startsWith(`security.${projected}: expected enabled`));
+      assert.ok(!result.deferred.some(message => message.includes(`security.${projected}`)));
+    }
+    analysis[field] = original;
+  }
+
   responses['orgs/hkust-connect/teams/release'] = {
     id: 42, slug: 'release', name: 'Release', permission: 'push',
   };

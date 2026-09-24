@@ -27,11 +27,8 @@ const DEFAULTS = Object.freeze({
   maxAttempts: 3,
   startAtLogin: false,
   autoConnect: true,
-  // A loopback listener is still a local authorization boundary: other
-  // processes and users on one machine can otherwise borrow the authenticated
-  // campus session. New installations therefore require proxy credentials.
-  // Existing version-2 choices are preserved by normalizeStrictProxyAuth.
-  strictProxyAuth: true,
+  // Compatibility is the default; explicit versioned user choices survive.
+  strictProxyAuth: false,
   proxySecurityVersion: PROXY_SECURITY_VERSION,
   proxyAuthMigrationPending: false,
   closeAction: 'ask',
@@ -81,7 +78,7 @@ function normalizeBrowserNewTabUrl(value) {
 
 function normalizeStrictProxyAuth(saved = {}) {
   const version = Number(saved.proxySecurityVersion);
-  if (version === PROXY_SECURITY_VERSION) return saved.strictProxyAuth !== false;
+  if (version === PROXY_SECURITY_VERSION) return saved.strictProxyAuth === true;
   if (version === COMPATIBILITY_DEFAULT_PROXY_SECURITY_VERSION) {
     // Version 2 shipped compatibility as the default and then persisted the
     // normalized value on any settings save. Preserve that installed-base
@@ -93,8 +90,7 @@ function normalizeStrictProxyAuth(saved = {}) {
     // credential contract. Keep repairing that known automatic opt-in.
     return false;
   }
-  // A missing/unknown security version is not proof of an explicit downgrade.
-  // It follows the reviewed secure default and can be changed in the UI.
+  // Missing or unknown versions follow the current installation default.
   return DEFAULTS.strictProxyAuth;
 }
 

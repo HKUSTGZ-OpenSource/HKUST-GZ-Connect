@@ -1,10 +1,11 @@
 (function initializeCampusServiceWorkspace(root, factory) {
   const api = factory(
     typeof module !== 'undefined' && module.exports ? require('./campus-search-presenter') : root.campusSearchPresenter,
+    typeof module !== 'undefined' && module.exports ? require('./components/card-board/card-board-motion') : root.cardBoardMotion,
   );
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.campusServiceWorkspace = api;
-})(typeof self !== 'undefined' ? self : globalThis, function campusServiceWorkspaceFactory(searchPresenter) {
+})(typeof self !== 'undefined' ? self : globalThis, function campusServiceWorkspaceFactory(searchPresenter, motion) {
   'use strict';
 
   if (!searchPresenter?.scoreEntry || !searchPresenter?.highlight) {
@@ -155,12 +156,8 @@
       if (next === officialFront) return;
       officialFront = next;
       renderOfficial();
-      if (isReduced()) return;
       const deck = $('officialMainDeck');
-      deck.classList.remove('is-switching');
-      void deck.offsetWidth;
-      deck.classList.add('is-switching');
-      doc.defaultView.setTimeout(() => deck.classList.remove('is-switching'), 260);
+      void motion.animateSwitch(deck, { front: deck.querySelector('.is-front'), back: deck.querySelector('.is-back') });
     }
 
     function renderOfficial() {
@@ -235,6 +232,7 @@
       renderExpanded();
       const dialog = $('officialCatalogDialog');
       if (!dialog.open) dialog.showModal();
+      void motion.animateSwitch(dialog, { front: dialog });
       $('closeOfficialCatalog').focus({ preventScroll: true });
     }
 

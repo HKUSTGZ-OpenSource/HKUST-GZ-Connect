@@ -45,8 +45,8 @@ editing the SOCKS frontend, desktop UI, or unrelated protocol generations.
 
 The loopback listener is the current shared frontend, not a permanent product
 constraint. The raw Engine retains a flagless SOCKS5 `NO_AUTH` compatibility
-contract, but both shipped Desktop new installations and the root macOS CLI
-pass the strict-auth flag by default. The explicit optional
+contract. Desktop new installations use optional authentication for compatibility,
+while the independent root macOS CLI passes the strict-auth flag by default. The explicit optional
 contract accepts both `NO_AUTH` and RFC 1929, preferring `NO_AUTH` when both are
 offered so legacy tools stay compatible. Its UDP decision follows the selected
 method: `NO_AUTH` retains UDP while RFC 1929 rejects it. The separate strict

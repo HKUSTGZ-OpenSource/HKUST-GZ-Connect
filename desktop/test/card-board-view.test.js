@@ -111,6 +111,8 @@ test('small medium and large decks preview four six and eight sites with a show-
     assert.doesNotMatch(courses, /https?:\/\//u);
   }
   const few = fixture({ courseSize: 'small', items: 3 });
+  assert.match(cardMarkup(few, 'placement_courses'), /data-card-action="expand" aria-haspopup="dialog"/u,
+    'small categories still have an explicit header expansion control');
   assert.doesNotMatch(cardMarkup(few, 'placement_courses'), /data-card-action="show-all"/u,
     'the show-all entry appears only when the preview truncates');
 });

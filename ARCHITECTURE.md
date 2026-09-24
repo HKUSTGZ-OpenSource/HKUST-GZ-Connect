@@ -330,7 +330,7 @@ Infrastructure/Protocol Error
 - Gateway TLS、Browser TLS 和证书 pin 均 fail-closed；
 - vendor TLS 兼容实现只用于经验证的窄通道，不能成为通用 TLS；
 - 本地 listener 只绑定 loopback；
-- 新安装默认严格本地 proxy 认证；兼容降级必须显式；
+- 桌面新安装默认兼容本地 proxy，严格认证可手动开启；保留已有明确设置；
 - Renderer 不得取得 VPN/Proxy secret；
 - POSIX私有文件采用原子写入、no-follow和owner-only mode；Windows明文proxy helper
   sidecar必须关闭继承、设置current-user-only DACL并回读验证；其他profile-scoped私有文件

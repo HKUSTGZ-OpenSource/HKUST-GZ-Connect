@@ -11,6 +11,7 @@ const {
 } = require('../../../../lib/persistence/credentials/external-proxy-credential-store');
 
 const HOST_PRIVATE_FILE_PLATFORM = process.platform === 'win32' ? 'win32' : 'darwin';
+const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../../../lib/platform/storage/windows-private-file');
 
 function temporaryFile() {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-proxy-credential-'));
@@ -82,6 +83,10 @@ test('an unreadable existing credential fails without replacement or new entropy
   const temporary = temporaryFile();
   t.after(temporary.cleanup);
   fs.writeFileSync(temporary.file, 'not-an-encrypted-document', { mode: 0o600 });
+  if (process.platform === 'win32') {
+    assert.equal(protectWindowsFileOwnerOnly(temporary.file), true);
+    assert.equal(verifyWindowsFileOwnerOnly(temporary.file), true);
+  }
   const before = fs.readFileSync(temporary.file);
   const safeStorage = fakeSafeStorage();
   let generated = 0;
@@ -97,6 +102,7 @@ test('an unreadable existing credential fails without replacement or new entropy
   assert.throws(() => store.loadOrCreate(), /cannot be decrypted/);
   assert.equal(generated, 0, 'load failure must never fall through to generation');
   assert.equal(safeStorage.calls.encrypt, 0);
+  assert.equal(safeStorage.calls.decrypt, 1, 'the fixture must reach decryption, not fail at ACL setup');
   assert.deepEqual(fs.readFileSync(temporary.file), before);
 });
 

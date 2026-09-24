@@ -199,7 +199,8 @@ async function exerciseAddWebsiteDialogLayout(window) {
       `${label}: dialog is not horizontally centered`);
     assert.ok(view.close.top >= view.dialog.top && view.close.right <= view.dialog.right,
       `${label}: close control is clipped`);
-    assert.ok(view.actions.bottom <= view.dialog.bottom, `${label}: action bar is outside the dialog`);
+    // DOMRect uses floating point; compare at Blink's 1/64 CSS-pixel layout precision.
+    assert.ok(Math.round(view.actions.bottom * 64) <= Math.round(view.dialog.bottom * 64), `${label}: action bar is outside the dialog`);
     assert.ok(view.bodyOverflow <= 0, `${label}: dialog overflows horizontally`);
     await window.webContents.executeJavaScript(`document.getElementById('addWebsiteDialog').close()`);
   }

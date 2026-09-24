@@ -416,7 +416,14 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     '/lib/connection/recovery/tunnel-health.js',
     '/lib/platform/update/update-check.js',
     '/renderer/app.js',
-    '/renderer/auth-challenge.js',
+    '/renderer/features/auth-challenge/index.mjs',
+    '/renderer/features/auth-challenge/controller.mjs',
+    '/renderer/features/auth-challenge/lifecycle.mjs',
+    '/renderer/features/integration-center/index.mjs',
+    '/renderer/features/integration-center/controller.mjs',
+    '/renderer/features/integration-center/model.mjs',
+    '/renderer/features/integration-center/lifecycle.mjs',
+    '/renderer/features/integration-center/lifetime.mjs',
     '/renderer/routing-manager.js',
     '/renderer/certificate-manager.js',
     '/renderer/group-dialog.js',
@@ -544,15 +551,19 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
   const engine = path.join(resources, 'engine', engineName);
   const proxyCommand = path.join(resources, 'engine', proxyCommandName);
   const gatewayProbe = path.join(resources, 'engine', gatewayProbeName);
+  const privateFileName = 'ec-private-file-windows-' + architectureName + '.exe';
+  const privateFile = path.join(resources, 'engine', privateFileName);
   const packagedProfiles = assertPackagedSchoolProfiles(archive, path.join(resources, 'engine'));
   assertExactNativeResources(path.join(resources, 'engine'), [
     engineName,
     proxyCommandName,
     gatewayProbeName,
+    ...(platformName === 'windows' ? [privateFileName] : []),
     ...packagedProfiles.map(({ profileId }) => `${profileId}.json`),
   ]);
   for (const [label, executable] of [
     ['engine', engine], ['SSH proxy helper', proxyCommand], ['Gateway probe', gatewayProbe],
+    ...(platformName === 'windows' ? [['private-file helper', privateFile]] : []),
   ]) {
     if (!fs.existsSync(executable) || !fs.statSync(executable).isFile() || fs.statSync(executable).size === 0) {
       throw new Error(`missing packaged ${label}: ${executable}`);
@@ -560,7 +571,7 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
   }
   assertNoTestOnlyEngineMarker(engine);
   if (platformName === 'windows') {
-    for (const executable of [engine, proxyCommand, gatewayProbe]) {
+    for (const executable of [engine, proxyCommand, gatewayProbe, privateFile]) {
       const header = fs.readFileSync(executable);
       const peOffset = header.length >= 0x40 ? header.readUInt32LE(0x3c) : -1;
       const signature = peOffset >= 0 && peOffset + 6 <= header.length

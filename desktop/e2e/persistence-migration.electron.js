@@ -13,6 +13,13 @@ const {
 const v123Settings = require('./fixtures/v1.2.3-settings.json');
 
 const WAIT_MS = 30_000;
+const prepareIndex = process.argv.indexOf('--prepare-legacy-credential');
+const preparingCredential = prepareIndex >= 0;
+const userData = preparingCredential ? process.argv[prepareIndex + 1]
+  : fs.mkdtempSync(path.join(os.tmpdir(), 'hkust-persistence-e2e-'));
+const harnessData = preparingCredential ? userData
+  : fs.mkdtempSync(path.join(os.tmpdir(), 'hkust-persistence-harness-'));
+app.setPath('userData', harnessData);
 
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
@@ -45,18 +52,29 @@ async function stopOwnedProcess(pid) {
 async function run() {
   app.setName('HKUST(GZ) Connect');
   await app.whenReady();
-  assert.equal(safeStorage.isEncryptionAvailable(), true);
-  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'hkust-persistence-e2e-'));
   const legacy = createLegacyFlatSourcePaths(userData);
+  if (preparingCredential) {
+    assert.equal(safeStorage.isEncryptionAvailable(), true);
+    fs.writeFileSync(legacy.vpnCredential, safeStorage.encryptString('synthetic-v1-2-3-password'), {
+      mode: 0o600,
+    });
+    return;
+  }
+  // Windows writes the OSCrypt Local State key when Electron exits. Finish the
+  // legacy writer before starting migration, exactly as an application upgrade.
+  await new Promise((resolve, reject) => {
+    const preparer = spawn(process.execPath,
+      [__filename, '--prepare-legacy-credential', userData], { stdio: 'inherit' });
+    preparer.once('error', reject);
+    preparer.once('exit', (code) => code === 0 ? resolve()
+      : reject(new Error('legacy credential preparation failed: ' + code)));
+  });
   // This checked-in document is the exact flat settings shape emitted by the
   // published v1.2.3 line. Do not generate it with current normalizers: doing
   // so would let a schema regression change both the migration and its input.
   const bytes = Buffer.from(JSON.stringify(v123Settings), 'utf8');
   fs.writeFileSync(legacy.settings, bytes, { mode: 0o600 });
   fs.writeFileSync(legacy.settingsBackup, bytes, { mode: 0o600 });
-  fs.writeFileSync(legacy.vpnCredential, safeStorage.encryptString('synthetic-v1-2-3-password'), {
-    mode: 0o600,
-  });
   fs.writeFileSync(legacy.routingRules, '{"schemaVersion":1,"rules":[]}', { mode: 0o600 });
   fs.writeFileSync(legacy.engineLogRotated, Buffer.alloc(0), { mode: 0o600 });
   const markerPath = path.join(userData, 'persistence-e2e-ready.json');
@@ -137,7 +155,7 @@ async function run() {
   }
 }
 
-run().then(() => app.quit()).catch((error) => {
+run().then(() => { app.quit(); if (!preparingCredential) fs.rmSync(harnessData, { recursive: true, force: true }); }).catch((error) => {
   process.stderr.write(`${error.stack || error}\n`);
   process.exitCode = 1;
   app.exit(1);

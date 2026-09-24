@@ -459,11 +459,12 @@ async function main() {
       __dirname, '..', 'assets', 'profiles', 'hkustgz', 'builtin-service-desk.json',
     ), 'utf8');
   }
+  // These hidden fixtures measure foreground animation timing, not background throttling.
   const window = new BrowserWindow({
-    show: false,
+    show: true,
     width: preview ? 1024 : 480,
     height: preview ? 576 : 854,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, preload } });
+    webPreferences: { contextIsolation: true, nodeIntegration: false, preload, backgroundThrottling: false } });
   try {
     await window.loadFile(renderer);
     await window.webContents.executeJavaScript("new Promise((resolve) => { const done = () => document.getElementById('dash').hidden ? setTimeout(done, 20) : resolve(); done(); })");
@@ -570,10 +571,11 @@ async function main() {
       assert.match(personal.placeholder, /我的网站|my sites/iu);
       const personalBoard = await shellSnapshot(window, 'browser');
       assert.equal(personalBoard.boardId, 'browser-personal', `${label}: personal cards use the wrong board`);
-      assert.equal(personalBoard.decks, 2, `${label}: the first category page must keep two stacked slots`);
-      assert.equal(personalBoard.stackCounts.reduce((sum, count) => sum + count, 0), 5,
+      assert.equal(personalBoard.decks, 2, `${label}: the first category page must keep two slots`);
+      // Manual decks remain stacked; automatic decks spread in wide browsing mode.
+      assert.equal(personalBoard.stackCounts.reduce((sum, count) => sum + count, 0), width >= 980 ? 3 : 5,
         `${label}: the first category page lost one of its stacked cards`);
-      assert.equal(personalBoard.personalPagerItems, 6,
+      assert.equal(personalBoard.personalPagerItems, width >= 980 ? 3 : 6,
         `${label}: every personal category must remain reachable through underline pagination`);
       assert.ok(Math.max(...personalBoard.stackCounts) <= 3, `${label}: a deck exceeds three cards`);
       assert.equal(personalBoard.boardEditing, 'false', `${label}: browsing opened in editing mode`);
@@ -581,6 +583,29 @@ async function main() {
       assert.equal(personalBoard.nestedCardScrollers, 0, `${label}: card content owns a permanent inner scrollbar`);
       assert.ok(personalBoard.bodyOverflow <= 0 && personalBoard.contentOverflow <= 0,
         `${label}: personal workspace overflows horizontally`);
+      if (width >= 980) {
+        const reached = await window.webContents.executeJavaScript(`(async () => {
+          const pager = document.getElementById('personalCategoryPager');
+          const controller = window.campusCategoryStacks.activeController();
+          const before = JSON.stringify(controller.snapshot());
+          const expected = controller.snapshot().placements.filter(p =>
+            p.boardId === 'browser-personal' && !p.hidden).map(p => p.placementId).sort();
+          const ids = new Set();
+          const count = pager.querySelectorAll('[data-card-page-index]').length;
+          for (let page = 0; page < count; page++) {
+            pager.querySelector('[data-card-page-index="' + page + '"]').click();
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            document.querySelectorAll('#campusResources [data-card-placement-id]')
+              .forEach(card => ids.add(card.dataset.cardPlacementId));
+          }
+          pager.querySelector('[data-card-page-index="0"]').click();
+          return { ids: [...ids].sort(), expected,
+            stable: before === JSON.stringify(controller.snapshot()) };
+        })()`);
+        assert.equal(reached.expected.length, 6, `${label}: fixture category identity changed`);
+        assert.deepEqual(reached.ids, reached.expected, `${label}: wide pagination lost a category`);
+        assert.equal(reached.stable, true, `${label}: browsing rewrote the saved layout`);
+      }
       await capture(window, output, `${label}-workspace-personal`);
       await window.webContents.executeJavaScript(`document.getElementById('serviceTabOfficial').click()`);
 
@@ -787,6 +812,61 @@ async function main() {
       return { page: document.querySelector('.page.active').dataset.page, focused: document.activeElement.id };
     })()`);
     assert.deepEqual(shortcut, { page: 'browser', focused: 'resourceSearch' });
+    // Exercise the real timetable DOM with synthetic dates, independent of a
+    // portal session. The ordinary layout fixture only renders signed-out data.
+    await settle(window, 440, 540);
+    await shellSnapshot(window, 'browser');
+    if (!window.webContents.debugger.isAttached()) window.webContents.debugger.attach('1.3');
+    await window.webContents.debugger.sendCommand('Emulation.setTimezoneOverride', {
+      timezoneId: 'America/Los_Angeles',
+    });
+    const calendar = await window.webContents.executeJavaScript(`(async () => {
+      const campusData = await import(new URL('./features/campus-data/index.mjs', document.baseURI));
+      const range = campusData.weekRange(Date.now(), true);
+      const start = new Date(range.days[1] + 20 * 3600000);
+      const end = new Date(range.days[2] + 10 * 3600000);
+      const feature = campusData.create({
+        document,
+        api: { getCampusData: async () => ({ sessionState: 'fixture', modules: {
+          schedule: { state: 'ready', source: 'myportal-calendar', items: [{ id: 'overnight', title: 'Fixture event',
+            startsAt: start.getTime(), endsAt: end.getTime() }, {
+              id: 'overlap', title: 'Concurrent fixture', startsAt: start.getTime(),
+              endsAt: start.getTime() + 2 * 3600000,
+            }] },
+        } }) },
+        translate: (key, values) => key === 'workspace.scheduleWeekCount'
+          ? String(values.count) : key,
+        escapeHtml: (text) => String(text).replaceAll('&', '&amp;').replaceAll('<', '&lt;'),
+        openDeepLink: () => {},
+      });
+      await feature.load();
+      document.getElementById('moduleSchedule').scrollIntoView();
+      return {
+        days: [...document.querySelectorAll('#scheduleBody .week-event')].map(el => el.dataset.day),
+        times: [...document.querySelectorAll('#scheduleBody .week-event time')].map(el => el.textContent),
+        count: document.querySelector('#scheduleBody .week-summary span').textContent,
+        firstTime: document.querySelector('#scheduleBody .week-time').textContent,
+        rows: getComputedStyle(document.querySelector('#scheduleBody .week-body')).gridTemplateRows.split(' ').length,
+        eventRows: [...document.querySelectorAll('#scheduleBody .week-event')]
+          .map(el => Number(el.dataset.count)),
+        eventRects: [...document.querySelectorAll('#scheduleBody .week-event')].map(el => {
+          const r = el.getBoundingClientRect();
+          return { left: r.left, right: r.right, top: r.top, width: r.width };
+        }),
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    })()`);
+    assert.deepEqual(calendar.days, ['1', '2']);
+    assert.deepEqual(calendar.times, ['20:00', '00:00']);
+    assert.equal(calendar.count, '2');
+    assert.equal(calendar.firstTime, '00:00');
+    assert.equal(calendar.rows, 12);
+    assert.deepEqual(calendar.eventRows, [2, 1]);
+    assert.ok(calendar.eventRects[0].right <= calendar.eventRects[1].left,
+      'different days must occupy separate columns; concurrent events remain in the detail group');
+    assert.ok(calendar.eventRects.every(rect => rect.width > 0));
+    assert.ok(calendar.overflow <= 0);
+    await capture(window, output, 'narrow-calendar-segments');
     process.stdout.write('control shell layout: PASS\n');
   } finally {
     if (window.webContents.debugger.isAttached()) window.webContents.debugger.detach();

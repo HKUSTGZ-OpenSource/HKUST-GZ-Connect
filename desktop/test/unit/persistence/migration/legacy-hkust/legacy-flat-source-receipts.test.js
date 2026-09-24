@@ -117,13 +117,13 @@ test('replacement between lstat and opened descriptor fails closed', (t) => {
   writePrivate(paths.settings, 'settings');
   const injected = Object.create(fs);
   let changed = false;
-  injected.fstatSync = (descriptor) => {
-    const stat = fs.fstatSync(descriptor);
+  injected.fstatSync = (descriptor, options) => {
+    const stat = fs.fstatSync(descriptor, options);
     if (!changed) {
       changed = true;
       return {
         ...stat,
-        ino: stat.ino + 1,
+        ino: stat.ino + 1n,
         isFile: () => true,
       };
     }
@@ -138,12 +138,12 @@ test('same-inode same-size modification during hashing fails closed', (t) => {
   writePrivate(paths.settings, 'settings');
   const injected = Object.create(fs);
   let fstats = 0;
-  injected.fstatSync = (descriptor) => {
-    const stat = fs.fstatSync(descriptor);
+  injected.fstatSync = (descriptor, options) => {
+    const stat = fs.fstatSync(descriptor, options);
     if (++fstats === 2) {
       return {
         ...stat,
-        mtimeMs: stat.mtimeMs + 1,
+        mtimeNs: stat.mtimeNs + 1_000_000n,
         isFile: () => true,
       };
     }

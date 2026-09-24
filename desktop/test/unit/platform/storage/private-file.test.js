@@ -6,12 +6,14 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const { ensureOwnerOnly, readPrivateFileBounded } = require('../../../../lib/platform/storage/private-file');
+const { prepareBroadCurrentUserFile } = require('./support/windows-acl-fixture');
 
 test('owner-only hardening changes only an opened regular file', (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-private-file-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const file = path.join(directory, 'private.json');
   fs.writeFileSync(file, '{}', { mode: 0o644 });
+  if (process.platform === 'win32') prepareBroadCurrentUserFile(file);
 
   assert.equal(ensureOwnerOnly(file), true);
   if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);

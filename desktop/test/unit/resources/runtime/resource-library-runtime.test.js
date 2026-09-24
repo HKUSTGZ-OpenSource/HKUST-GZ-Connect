@@ -22,6 +22,12 @@ class FakeActivityStore {
   }
 }
 
+class EmptyGroupStore {
+  groups() { return []; }
+  snapshot() { return { schemaVersion: 2, collections: [], placements: [] }; }
+  removeResource() {}
+}
+
 const resources = [{
   id: 'outlook', name: 'Outlook', description: '', url: 'https://outlook.office.com/owa/',
   localizedName: { zh: '邮箱', en: 'Outlook' },
@@ -41,6 +47,7 @@ test('ID-only open resolves inside Main ownership and records activity after suc
     isContextCurrent: (value) => value === context,
     openRequest: async (request) => { requests.push(request); return { ok: true }; },
     ActivityStoreClass: FakeActivityStore,
+    GroupStoreClass: EmptyGroupStore,
   });
   const result = await runtime.openById('outlook');
   assert.deepEqual(requests, [{
@@ -111,6 +118,7 @@ test('resource presentation selects reviewed text for the active locale', () => 
     isContextCurrent: () => true,
     openRequest: async () => ({ ok: true }),
     ActivityStoreClass: FakeActivityStore,
+    GroupStoreClass: EmptyGroupStore,
   });
   assert.equal(runtime.listLocalized(null, 'zh')[0].name, '邮箱');
   assert.equal(runtime.listLocalized(null, 'en')[0].name, 'Outlook');
@@ -127,6 +135,7 @@ test('Browser navigation records a known resource by canonical URL without retai
     isContextCurrent: () => true,
     openRequest: async () => ({ ok: true }),
     ActivityStoreClass: FakeActivityStore,
+    GroupStoreClass: EmptyGroupStore,
   });
   assert.equal(runtime.recordOpenByUrl(
     'https://outlook.office.com/owa/?code=opaque#fragment',
@@ -145,6 +154,7 @@ test('failed or stale opens never record recent activity', async () => {
     isContextCurrent: () => true,
     openRequest: async () => ({ ok: false, error: 'offline' }),
     ActivityStoreClass: FakeActivityStore,
+    GroupStoreClass: EmptyGroupStore,
   });
   assert.deepEqual(await runtime.openById('outlook'), { ok: false, error: 'offline' });
   assert.deepEqual(runtime.snapshot().recent.entries, []);
@@ -162,7 +172,76 @@ test('an already stale Profile context opens no page', async () => {
     isContextCurrent: () => false,
     openRequest: async () => { openCalls += 1; return { ok: true }; },
     ActivityStoreClass: FakeActivityStore,
+    GroupStoreClass: EmptyGroupStore,
   });
   await assert.rejects(() => runtime.openById('outlook'), /stale/u);
   assert.equal(openCalls, 0);
+});
+
+test('resource display reads reuse activity and refresh after mutations', () => {
+  let reads = 0;
+  class CountedActivity extends FakeActivityStore {
+    snapshot() { reads += 1; return super.snapshot(); }
+  }
+  class Groups {
+    snapshot() { return { schemaVersion: 2, collections: [], placements: [] }; }
+    groups() { return []; }
+    removeResource() {}
+  }
+  const runtime = new ResourceLibraryRuntime({
+    favoritesFile: '/fixture/favorites.json', recentFile: '/fixture/recent.json',
+    platform: 'darwin', loadResources: () => resources,
+    loadAliases: () => [{ from: 'custom-old', to: 'outlook' }],
+    captureContext: () => ({}), isContextCurrent: () => true,
+    openRequest: async () => ({ ok: true }),
+    ActivityStoreClass: CountedActivity, GroupStoreClass: Groups,
+  });
+  for (let i = 0; i < 20; i += 1) { runtime.list(); runtime.listGroups(); }
+  assert.equal(reads, 1, 'display polling must not repeatedly read files/Windows ACLs');
+  runtime.toggleFavorite('outlook', resources);
+  assert.equal(runtime.list()[0].favorite, true);
+  assert.equal(reads, 2);
+  runtime.recordOpenByUrl('https://outlook.office.com/owa/');
+  assert.equal(runtime.list()[0].lastOpenedAt, 10);
+  assert.equal(reads, 3);
+  runtime.replaceFavorites({ schemaVersion: 1, entries: [] });
+  assert.equal(runtime.list()[0].favorite, false);
+  assert.equal(reads, 4);
+});
+
+test('collection display reads refresh after group mutations', () => {
+  let reads = 0;
+  class Groups extends EmptyGroupStore {
+    constructor() { super(); this.document = super.snapshot(); }
+    snapshot() { reads += 1; return this.document; }
+    create(name) {
+      this.document = { schemaVersion: 2, collections: [{
+        id: 'group_abcdefghijkl', name, createdAt: 1, updatedAt: 1,
+      }], placements: [] };
+    }
+    rename(id, name) {
+      this.document = { ...this.document, collections: this.document.collections.map(
+        (group) => group.id === id ? { ...group, name } : group) };
+    }
+    remove() { this.document = super.snapshot(); }
+  }
+  const runtime = new ResourceLibraryRuntime({
+    favoritesFile: '/fixture/favorites.json', recentFile: '/fixture/recent.json',
+    platform: 'darwin', loadResources: () => resources,
+    captureContext: () => ({}), isContextCurrent: () => true,
+    openRequest: async () => ({ ok: true }),
+    ActivityStoreClass: FakeActivityStore, GroupStoreClass: Groups,
+  });
+  for (let i = 0; i < 20; i += 1) assert.deepEqual(runtime.listGroups(), []);
+  assert.equal(reads, 1);
+  runtime.createGroup('First');
+  assert.equal(runtime.listGroups()[0].name, 'First');
+  assert.equal(reads, 2);
+  runtime.renameGroup('group_abcdefghijkl', 'Renamed');
+  assert.equal(runtime.listGroups()[0].name, 'Renamed');
+  runtime.deleteGroup('group_abcdefghijkl');
+  assert.deepEqual(runtime.listGroups(), []);
+  assert.equal(reads, 4);
+  runtime.groupsSnapshot();
+  assert.equal(reads, 5, 'explicit group snapshots still revalidate storage');
 });

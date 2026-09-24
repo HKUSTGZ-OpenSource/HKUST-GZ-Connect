@@ -86,6 +86,10 @@ jobs:
         if: matrix.platform == 'linux'
         run: node build/verify-package.js release/linux-unpacked/resources linux x64
 
+      - name: Build Windows private-file helper
+        if: matrix.platform == 'windows'
+        run: npm run build:windows-private-file
+
       - name: Build unpacked Windows application
         if: matrix.platform == 'windows'
         run: node node_modules/electron-builder/out/cli/cli.js --win dir --x64 --publish never
@@ -242,6 +246,8 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
         run: npm ci
+      - name: Build native Windows private-file helper
+        run: npm run build:windows-private-file
       - name: Verify Windows private files, legacy upgrade, and packaged school discovery
         run: >-
           node --test
@@ -251,6 +257,12 @@ jobs:
           test/windows-platform-smoke.test.js
       - name: Verify current-user-only helper credential DACL
         run: node --test test/unit/integrations/external-proxy-config.test.js
+      - name: Install pinned Rust toolchain for pipe regression
+        working-directory: independent
+        run: rustup show active-toolchain
+      - name: Verify real Windows ProxyCommand pipes
+        working-directory: independent
+        run: cargo test --locked --no-default-features --test proxy_command_pipe
 
   engine:
     timeout-minutes: 20

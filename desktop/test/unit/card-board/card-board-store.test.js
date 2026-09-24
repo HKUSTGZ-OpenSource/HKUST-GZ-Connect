@@ -7,16 +7,21 @@ const path = require('node:path');
 const test = require('node:test');
 const { CardBoardStore } = require('../../../lib/card-board/runtime/card-board-store');
 const { emptyCardBoardLayoutDocument } = require('../../../lib/card-board/schema/card-board-contract');
+const { verifyWindowsFileOwnerOnly } = require('../../../lib/platform/storage/windows-private-file');
 
 test('card board store is missing-safe and atomically persists an owner-only document', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-card-board-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const filePath = path.join(root, 'workspace', 'card-board-layout.json');
-  const store = new CardBoardStore({ filePath, platform: 'darwin' });
+  const store = new CardBoardStore({ filePath, platform: process.platform });
   assert.equal(store.read(), null);
   const written = store.replace(emptyCardBoardLayoutDocument());
   assert.deepEqual(store.read(), written);
-  assert.equal(fs.statSync(filePath).mode & 0o077, 0);
+  if (process.platform === 'win32') {
+    assert.equal(verifyWindowsFileOwnerOnly(filePath), true);
+  } else {
+    assert.equal(fs.statSync(filePath).mode & 0o077, 0);
+  }
   assert.equal(fs.readdirSync(path.dirname(filePath)).some((name) => name.endsWith('.tmp')), false);
 });
 

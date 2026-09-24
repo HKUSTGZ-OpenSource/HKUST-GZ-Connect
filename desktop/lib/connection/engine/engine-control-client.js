@@ -189,7 +189,7 @@ class EngineControlClient {
       apiVersion: ENGINE_CONTROL_API_VERSION,
       requestId,
       command: { name: 'shutdown' },
-    })).then((response) => {
+    }), true).then((response) => {
       if (response.type !== 'control_result' || response.status !== 'accepted') {
         throw new Error('engine control shutdown was rejected');
       }
@@ -209,11 +209,11 @@ class EngineControlClient {
     }));
   }
 
-  feed(value) {
+  feed(value, { shutdownOnly = false } = {}) {
     if (this.closed) return;
     for (const response of this.parser.feed(value)) {
       const pending = this.pending.get(response.requestId);
-      if (!pending) continue;
+      if (!pending || (shutdownOnly && pending.shutdown !== true)) continue;
       this.pending.delete(response.requestId);
       this.clearTimeoutFn(pending.timer);
       if (response.type === 'control_error') {
@@ -238,7 +238,7 @@ class EngineControlClient {
     this.pending.clear();
   }
 
-  #request(kind, buildFrame) {
+  #request(kind, buildFrame, shutdown = false) {
     if (this.closed) return Promise.reject(new Error('engine control stream is closed'));
     const requestId = this.nextRequestId;
     this.nextRequestId += 1;
@@ -259,7 +259,7 @@ class EngineControlClient {
         reject(new Error('engine control request timed out'));
       }, this.requestTimeoutMs);
       timer.unref?.();
-      this.pending.set(requestId, { kind, resolve, reject, timer });
+      this.pending.set(requestId, { kind, shutdown, resolve, reject, timer });
       try {
         this.writable.write(encoded, (error) => {
           if (!error) return;

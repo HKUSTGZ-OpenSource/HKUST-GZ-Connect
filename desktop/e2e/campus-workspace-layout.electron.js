@@ -124,11 +124,12 @@ async function main() {
     cardBoardDocument = { ...next, revision: cardBoardDocument.revision + 1 };
     return { document: cardBoardDocument, changed: true };
   });
+  // These hidden fixtures measure foreground animation timing, not background throttling.
   const window = new BrowserWindow({
-    width: 1040, height: 740, show: false, backgroundColor: '#f4f7fb',
+    width: 1040, height: 740, show: true, backgroundColor: '#f4f7fb',
     webPreferences: {
       preload: path.join(__dirname, '..', 'lib', 'browser', 'workspace', 'campus-workspace-preload.js'),
-      sandbox: true, contextIsolation: true, nodeIntegration: false,
+      sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false,
     },
   });
   const controller = new CampusWorkspaceController({

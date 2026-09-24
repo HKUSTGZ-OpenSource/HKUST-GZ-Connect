@@ -29,6 +29,7 @@ const {
   verifyDestinationFiles,
 } = require('../../../../../lib/persistence/paths/profile-workspace-destination-files');
 const { createLegacyFlatSourcePaths } = require('../../../../../lib/persistence/paths/profile-workspace-layout');
+const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../../../../lib/platform/storage/windows-private-file');
 const {
   LEGACY_COPY_SOURCE_IDS,
   createHkustMigrationDestinationPlan,
@@ -349,6 +350,13 @@ test('all P3 storage adapters complete one synthetic all-old to all-new filesyst
   for (const id of LEGACY_COPY_SOURCE_IDS) {
     legacyPayloads[id] = Buffer.from(`legacy-${id}`, 'utf8');
     fs.writeFileSync(legacyPaths[id], legacyPayloads[id], { mode: 0o600 });
+  }
+  if (process.platform === 'win32') {
+    for (const file of Object.values(legacyPaths)) {
+      if (!fs.existsSync(file)) continue;
+      assert.equal(protectWindowsFileOwnerOnly(file), true);
+      assert.equal(verifyWindowsFileOwnerOnly(file), true);
+    }
   }
   const sourceReceipts = collectLegacyFlatSourceReceipts({ userData });
   const journalStore = new ProfileWorkspaceMigrationJournalStore({

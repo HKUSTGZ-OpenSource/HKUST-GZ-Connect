@@ -236,7 +236,12 @@ async function runStage1(dependencies, profile) {
     route: dependencies.ROUTE_DIRECT,
   }, 200);
   assertPersistedResolution(store, dependencies);
-  assert.equal(fs.statSync(ruleFile).mode & 0o077, 0);
+  if (process.platform === 'win32') {
+    const { verifyWindowsFileOwnerOnly } = require('../lib/platform/storage/windows-private-file');
+    assert.equal(verifyWindowsFileOwnerOnly(ruleFile), true);
+  } else {
+    assert.equal(fs.statSync(ruleFile).mode & 0o077, 0);
+  }
   process.stdout.write('routing restart stage1: PASS\n');
 }
 

@@ -101,7 +101,10 @@ class DesktopPersistenceRuntime {
   loadSettings() {
     this.#requireReady();
     if (this.mode === 'legacy-flat') return this.legacy.loadSettings();
-    this.authority = this.runtime.reloadAuthority();
+    // Startup and committed mutations own this validated snapshot. Display and
+    // locale reads must not reload every document (and launch synchronous
+    // Windows ACL checks). Security-sensitive consumers use currentAuthority
+    // or the credential store, which still validate the files on disk.
     return projectRuntimeSettings(this.authority, { accountLabel: this.accountLabel });
   }
 
@@ -143,7 +146,7 @@ class DesktopPersistenceRuntime {
   hasCredential() {
     this.#requireReady();
     if (this.mode === 'legacy-flat') return this.legacy.hasCredential();
-    this.authority = this.runtime.reloadAuthority();
+    // This is a display hint; openCredential still validates current storage.
     return this.authority.hasCredential;
   }
 
