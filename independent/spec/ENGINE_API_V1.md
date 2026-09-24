@@ -76,6 +76,7 @@ Stable fatal codes in v1 are:
 - `AUTH_FAILED`
 - `AUTH_REJECTED`
 - `AUTH_INDETERMINATE`
+- `GATEWAY_PRELOGIN_UNAVAILABLE`
 - `AUTH_PROTOCOL_INVALID`
 - `AUTH_EXPIRED`
 - `AUTH_LIMIT_EXCEEDED`
@@ -92,8 +93,11 @@ Stable fatal codes in v1 are:
 
 `AUTH_FAILED` remains accepted for older Engine builds. New authentication
 failures use the narrower codes: only a verified structured credential
-rejection emits `AUTH_REJECTED`; uncertain network/response outcomes emit
-`AUTH_INDETERMINATE`; schema violations emit `AUTH_PROTOCOL_INVALID`.
+rejection emits `AUTH_REJECTED`; Gateway DNS/connection/response failures before
+the password POST emit `GATEWAY_PRELOGIN_UNAVAILABLE`, which may be retried within
+the configured connection budget because no password was submitted. An uncertain
+password POST or response emits terminal `AUTH_INDETERMINATE`; schema violations
+emit `AUTH_PROTOCOL_INVALID`.
 `secondaryCode` is omitted unless it is `AUTH_CLEANUP_UNCONFIRMED`, which adds
 remote-cleanup status without replacing the primary failure.
 `DATA_PLANE_SHUTDOWN_FAILED` is a primary code used only when normal terminal
