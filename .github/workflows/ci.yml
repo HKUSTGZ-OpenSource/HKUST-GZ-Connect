@@ -246,6 +246,8 @@ jobs:
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
         run: npm ci
+      - name: Build native Windows private-file helper
+        run: npm run build:windows-private-file
       - name: Verify Windows private files, legacy upgrade, and packaged school discovery
         run: >-
           node --test
