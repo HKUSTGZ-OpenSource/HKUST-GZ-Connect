@@ -1,8 +1,8 @@
 # Integration Center Renderer lifetime
 
-- Status: Proposed behavior repair in PR #120; not merged, installed or released
+- Status: PR #120 behavior candidate based on merged #119; not installed or released
 - Owner: Desktop maintainers, #79 / #81
-- Last verified: 2026-09-11
+- Last verified locally: 2026-09-25
 - Runtime: `612a9dfb` (full SHA in Git); acceptance: `ea1620c4e9e7510bbe55abba18a251b28c27b424`
 - Prerequisite: [Main scoped cancellation](integration-export-intents.md)
 
@@ -119,3 +119,14 @@ on all three designated platforms for the code commit above, not full installer/
 Real export, campus MFA, long-soak and distribution-package checks remain outside these results.
 No installed application, repository protection or Organization ownership changed. The initial
 failure and successful retest logs remain on 5070; temporary transfer bundles were removed.
+
+## Current-main synchronization — 2026-09-25
+
+The published #119 tree and local parent tree were byte-identical. The squash-history merge,
+including removal of the obsolete Integration Center initializer, preserved the exact candidate
+source tree `fe26e104d59cb74e1ea55a316b62789761d0abec`. On that tree, local Node 25 focused
+export-intent, IPC and Renderer lifetime tests passed 58/58; the full Node suite, architecture,
+install-script, syntax (528 tracked files) and Git-index secret gates passed. Native macOS ASAR
+child retirement and control-shell layout also passed. No real clipboard/file export, user
+configuration, school account or installed application was touched. Fresh platform CI and package
+verification remain separate gates for the final PR head.

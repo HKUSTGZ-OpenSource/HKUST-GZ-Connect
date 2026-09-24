@@ -1,9 +1,9 @@
 # Integration export intents and effect-boundary validation
 
-- Status: Proposed Main repair; three-platform source acceptance passed; installers unverified; not deployed
+- Status: Main repair candidate based on merged #119; prior three-platform source acceptance passed, installers unverified, not deployed
 - Owner: Desktop / integration maintainers, issues #79 and #81
-- Last verified: 2026-09-11
-- Base: PR #119, `5b59c270ede8988e752d220b54ab3873a173b042`
+- Last verified locally: 2026-09-25
+- Base: `main@a4a188d` after PR #119
 - Initial intent repair: `e94c642539c99d1bdbf428c18d85cd45ed87453a`
 - Scoped-cancellation source: `65065b422044bb2a00a56264eec6c518a8b9f934`
 - Native path-fixture acceptance: `95902b015b1ac8a9d03e0c4813e2c670827d0532` (runtime unchanged)
