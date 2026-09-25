@@ -26,7 +26,7 @@ const {
   createMemoryRoutingPolicy,
   pacDataUrl,
 } = require('./browser-session-manager');
-const { DEFAULT_MAX_TABS, TabManager } = require('../tabs/tab-manager');
+const { DEFAULT_MAX_TABS, BrowserTabLifecycle } = require('../tabs/tab-manager');
 const { createT } = require('../../platform/i18n/i18n');
 const TOOLBAR_HEIGHT = 108;
 const FIND_BAR_HEIGHT = 34;
@@ -312,14 +312,34 @@ class CampusBrowser {
       onError: (message) => this.onError?.(message),
     });
     this.window = null;
-    this.view = null;
     // Only the active tab is attached to the native View hierarchy. Hiding a
     // WebContentsView stops painting, but Electron can still expose its page
     // through the platform accessibility tree. Detached views retain their
     // WebContents, history, cookies, and scroll state without being reachable
     // by VoiceOver/UI Automation until the tab is selected again.
-    this.attachedView = null;
-    this.tabManager = new TabManager({ maxTabs: MAX_TABS });
+    this.tabManager = new BrowserTabLifecycle({
+      maxTabs: MAX_TABS, WebContentsView, campusPreload, blankUrl: BLANK_CAMPUS_HOME,
+      getWindow: () => this.window,
+      getToolbarHeight: () => TOOLBAR_HEIGHT + (this.findOpen ? FIND_BAR_HEIGHT : 0),
+      getWorkspace: () => this.workspaceController,
+      effects: {
+        linkPopup: (reservation, tab) => this.credentialController.linkPopup(reservation, tab),
+        closeTabState: tab => this.credentialController.closeTab(tab),
+        releasePopup: reservation => this.credentialController.releasePopup(reservation),
+        attachPageEvents: tab => this.attachPageEvents(tab),
+        navigate: (url, tab, route) => this.navigate(url, tab, route),
+        scheduleToolbarUpdate: () => this.scheduleToolbarUpdate(),
+        updateToolbar: () => this.updateToolbar(),
+        beforeDeactivate: tab => this.beginNavigationIntent(tab),
+        layout: () => this.layout(),
+        cancelScheduledUpdates: () => this.cancelScheduledUpdates(),
+        cancelCertificatePrompts: () => this.certificateController.cancelAll(),
+        clearSlowTimer: tab => this.clearSlowTimer(tab),
+        clearCredentialCandidate: tab => this.clearCredentialCandidate(tab),
+        openNewTab: () => this.openNewTab(),
+        reportCreateFailure: () => this.onError?.(this.t('tab.createFailed')),
+      },
+    });
     this.browserSessionManager = new BrowserSessionManager({
       session,
       partition,
@@ -360,6 +380,10 @@ class CampusBrowser {
   // mutations flow through the dedicated managers.
   get downloadSessions() { return this.downloadController.downloadSessions; }
   get downloadState() { return this.downloadController.downloadState; }
+  get view() { return this.tabManager.view; }
+  set view(value) { this.tabManager.view = value; }
+  get attachedView() { return this.tabManager.attachedView; }
+  set attachedView(value) { this.tabManager.attachedView = value; }
   get tabs() { return this.tabManager.tabs; }
   get activeTabId() { return this.tabManager.activeTabId; }
   get nextTabId() { return this.tabManager.nextTabId; }
@@ -1338,79 +1362,7 @@ class CampusBrowser {
     const routeSession = this.browserSessionManager.sessionForRoute(ROUTE_CAMPUS);
     if (!routeSession) return null;
     const resolution = this.resolveRoute(url, null, route);
-    const previousActiveId = this.tabManager.activeTabId;
-    let view = null;
-    let tab = null;
-    let added = false;
-    try {
-      view = new this.WebContentsView({
-        webPreferences: {
-          session: routeSession,
-          preload: this.campusPreload,
-          devTools: false,
-          nodeIntegration: false,
-          contextIsolation: true,
-          sandbox: true,
-          webSecurity: true,
-          safeDialogs: true,
-          backgroundThrottling: true,
-        },
-      });
-      view.setBackgroundColor?.('#f4f6f9');
-      tab = {
-        ...(options.blankPage === true ? { kind: 'blank' } : {}),
-        view,
-        failedUrl: '',
-        loading: url !== BLANK_CAMPUS_HOME,
-        loadingLabel: typeof options.displayName === 'string' && options.displayName.trim()
-          ? options.displayName.trim().slice(0, 96)
-          : (() => { try { return new URL(url).hostname; } catch { return ''; } })(),
-        slow: false,
-        slowTimer: null,
-        renderingError: false,
-        crashed: false,
-        pendingCredential: null,
-        pendingCredentialTimer: null,
-        sharedCredentialAttemptedOrigin: '',
-        route: resolution.route,
-        routeSource: resolution.source,
-        matchedRule: resolution.matchedRule,
-      };
-      this.credentialController.linkPopup(options.credentialReservation, tab);
-      this.tabManager.add(tab);
-      added = true;
-      // Keep the new renderer detached until switchTab has applied its bounds.
-      // This prevents both a paint flash and an inactive page entering the
-      // native accessibility tree.
-      view.setVisible(false);
-      if (this.window !== targetWindow || targetWindow.isDestroyed()) {
-        throw new Error('campus browser window closed during tab creation');
-      }
-      this.attachPageEvents(tab);
-      if (!this.switchTab(tab.id) || !this.navigate(url, tab, route)) {
-        throw new Error('campus browser tab activation failed');
-      }
-      return tab;
-    } catch {
-      if (tab) this.credentialController.closeTab(tab);
-      else this.credentialController.releasePopup(options.credentialReservation);
-      if (added) this.tabManager.remove(tab.id);
-      if (this.attachedView === view) {
-        try { targetWindow.contentView.removeChildView(view); } catch {}
-        this.attachedView = null;
-      }
-      try {
-        if (view?.webContents && !view.webContents.isDestroyed()) view.webContents.close();
-      } catch {}
-      const previous = previousActiveId === null ? null : this.tabManager.select(previousActiveId);
-      this.view = previous?.view || null;
-      if (previous && this.window === targetWindow && !targetWindow.isDestroyed()) {
-        try { this.switchTab(previous.id); } catch {}
-        this.scheduleToolbarUpdate();
-      }
-      if (this.onError) this.onError(this.t('tab.createFailed'));
-      return null;
-    }
+    return this.tabManager.createPage({ url, routeSession, resolution, route, options, targetWindow });
   }
 
   createWorkspaceTab() {
@@ -1423,54 +1375,7 @@ class CampusBrowser {
     }
     const routeSession = this.browserSessionManager.sessionForRoute(ROUTE_CAMPUS);
     if (!routeSession) return null;
-    const previousActiveId = this.tabManager.activeTabId;
-    let view;
-    let tab;
-    try {
-      view = this.workspaceController.createView(this.WebContentsView, routeSession);
-      tab = {
-        kind: 'workspace', view, failedUrl: '', loading: true, slow: false,
-        slowTimer: null, renderingError: false, crashed: false,
-        pendingCredential: null, pendingCredentialTimer: null,
-        route: ROUTE_DIRECT, routeSource: 'local-workspace', matchedRule: null,
-        pendingWorkspaceFocus: null,
-      };
-      this.tabManager.add(tab);
-      view.setVisible(false);
-      if (!this.switchTab(tab.id)) throw new Error('workspace activation failed');
-      this.workspaceController.load(view).then(() => {
-        tab.loading = false;
-        this.workspaceController.sendState(view.webContents);
-        if (tab.pendingWorkspaceFocus) {
-          const { target, query } = tab.pendingWorkspaceFocus;
-          tab.pendingWorkspaceFocus = null;
-          if (typeof this.workspaceController.focus === 'function') {
-            this.workspaceController.focus(view.webContents, target, query);
-          } else if (target === 'search') {
-            this.workspaceController.focusSearch?.(view.webContents);
-          }
-        }
-        this.updateToolbar();
-      }).catch(() => this.onError?.(this.t('tab.createFailed')));
-      view.webContents.on('render-process-gone', () => {
-        if (!view.webContents.isDestroyed()) this.workspaceController.load(view).catch(() => {});
-      });
-      return tab;
-    } catch {
-      if (tab) this.tabManager.remove(tab.id);
-      if (this.attachedView === view) {
-        try { this.window.contentView.removeChildView(view); } catch {}
-        this.attachedView = null;
-      }
-      try { if (view?.webContents && !view.webContents.isDestroyed()) view.webContents.close(); } catch {}
-      const previous = previousActiveId === null ? null : this.tabManager.select(previousActiveId);
-      this.view = previous?.view || null;
-      if (previous && this.window && !this.window.isDestroyed()) {
-        try { this.switchTab(previous.id); } catch {}
-      }
-      this.onError?.(this.t('tab.createFailed'));
-      return null;
-    }
+    return this.tabManager.createWorkspace(routeSession);
   }
 
   async setTabRoute(id, route) {
@@ -1517,84 +1422,9 @@ class CampusBrowser {
     return true;
   }
 
-  switchTab(id) {
-    const selected = this.tabManager.find(id);
-    if (!selected) return false;
-    const previous = this.activeTab();
-    const previousView = this.attachedView;
-    if (!this.window || this.window.isDestroyed() || selected.view.webContents.isDestroyed()) {
-      return false;
-    }
-    try {
-      if (previous && previous.id !== selected.id) this.beginNavigationIntent(previous);
-      if (previousView && previousView !== selected.view) {
-        previousView.setVisible(false);
-        this.window.contentView.removeChildView(previousView);
-        this.attachedView = null;
-      }
-      const [width, height] = this.window.getContentSize();
-      const toolbarHeight = TOOLBAR_HEIGHT + (this.findOpen ? FIND_BAR_HEIGHT : 0);
-      selected.view.setVisible(false);
-      selected.view.setBounds({
-        x: 0,
-        y: toolbarHeight,
-        width: Math.max(1, width),
-        height: Math.max(1, height - toolbarHeight),
-      });
-      if (this.attachedView !== selected.view) {
-        this.window.contentView.addChildView(selected.view);
-        this.attachedView = selected.view;
-      }
-      selected.view.setVisible(true);
-      this.tabManager.select(selected.id);
-      this.view = selected.view;
-      this.scheduleToolbarUpdate();
-      return true;
-    } catch {
-      if (this.attachedView === selected.view) {
-        try { this.window.contentView.removeChildView(selected.view); } catch {}
-        this.attachedView = null;
-      }
-      try { selected.view.setVisible(false); } catch {}
-      if (previous && !previous.view.webContents.isDestroyed()) {
-        try {
-          this.window.contentView.addChildView(previous.view);
-          this.attachedView = previous.view;
-          previous.view.setVisible(true);
-          this.tabManager.select(previous.id);
-          this.view = previous.view;
-          this.layout();
-        } catch {}
-      }
-      return false;
-    }
-  }
+  switchTab(id) { return this.tabManager.activate(id); }
 
-  closeTab(id) {
-    const removal = this.tabManager.remove(id);
-    if (!removal) return false;
-    this.cancelScheduledUpdates();
-    this.certificateController.cancelAll();
-    const { tab, replacement, empty } = removal;
-    this.clearSlowTimer(tab);
-    this.credentialController.closeTab(tab);
-    if (this.attachedView === tab.view) {
-      this.window.contentView.removeChildView(tab.view);
-      this.attachedView = null;
-    }
-    if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close();
-
-    if (empty) {
-      this.view = null;
-      Promise.resolve(this.openNewTab())
-        .catch(() => this.onError?.(this.t('tab.createFailed')));
-    } else if (replacement) {
-      this.switchTab(replacement.id);
-    } else {
-      this.scheduleToolbarUpdate();
-    }
-    return true;
-  }
+  closeTab(id) { return this.tabManager.close(id); }
 
   async createWindow() {
     this.cancelScheduledUpdates();
@@ -1634,11 +1464,7 @@ class CampusBrowser {
     this.window.on('closed', () => {
       this.cancelScheduledUpdates();
       this.certificateController.cancelAll();
-      for (const tab of this.tabs) {
-        this.clearSlowTimer(tab);
-        this.clearCredentialCandidate(tab);
-        if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close();
-      }
+      this.tabManager.closeViews();
       for (const popup of [...this.managedCredentialPopups]) {
         this.credentialController.closeTab(popup);
         try {
@@ -1736,10 +1562,7 @@ class CampusBrowser {
       this.window.close();
       return;
     }
-    for (const tab of this.tabs) {
-      this.clearSlowTimer(tab);
-      this.clearCredentialCandidate(tab);
-    }
+    this.tabManager.clearTransientState();
     this.window = null;
     this.view = null;
     this.attachedView = null;
