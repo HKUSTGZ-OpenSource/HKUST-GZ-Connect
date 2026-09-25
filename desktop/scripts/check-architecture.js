@@ -29,6 +29,8 @@ const BASELINE = Object.freeze({
   // instead of growing Main again.
   mainLines: 1720,
   rendererLines: 562,
+  campusBrowserLines: 1627,
+  browserTabOwnerLines: 600,
   // Production-only fan-in. Test, E2E, build and maintenance imports are
   // reported separately and must not make the runtime graph look denser.
   libMaxFanIn: 33,
@@ -427,6 +429,8 @@ function architectureSnapshot(root = path.resolve(__dirname, '..')) {
     mainTransitiveDependencies: transitiveDependencies(productionGraph, mainFile).size,
     mainLines: lineCount(mainFile),
     rendererLines: lineCount(rendererFile),
+    campusBrowserLines: lineCount(path.join(root, 'lib/browser/session/campus-browser.js')),
+    browserTabOwnerLines: lineCount(path.join(root, 'lib/browser/tabs/tab-manager.js')),
     runtimeCompositionExports: moduleExportNames(
       runtimeCompositionSource,
     ).length,
@@ -454,6 +458,7 @@ function architectureErrors(snapshot) {
   errors.push(...(snapshot.rootLibraryDebtErrors || []));
   for (const key of [
     'mainDirectDependencies', 'mainTransitiveDependencies', 'mainLines', 'rendererLines',
+    'campusBrowserLines', 'browserTabOwnerLines',
     'libMaxFanIn', 'libMaxFanOut', 'runtimeCompositionExports',
     'runtimeCompositionMembers', 'mainCompositionBindings',
     'mainEffectiveDirectDependencies',
@@ -488,7 +493,8 @@ function run() {
     `libFan=${snapshot.libMaxFanOut}/${snapshot.libMaxFanIn}, rootDebt=${snapshot.rootLibraryFileCount}, ` +
     `composition=${snapshot.runtimeCompositionExports}/${snapshot.runtimeCompositionMembers}, ` +
     `mainLines=${snapshot.mainLines}, ` +
-    `rendererLines=${snapshot.rendererLines})\n`,
+    `rendererLines=${snapshot.rendererLines}, browserLines=${snapshot.campusBrowserLines}, ` +
+    `tabOwnerLines=${snapshot.browserTabOwnerLines})\n`,
   );
 }
 

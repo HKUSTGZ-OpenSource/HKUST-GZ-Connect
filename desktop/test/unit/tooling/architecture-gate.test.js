@@ -32,6 +32,15 @@ test('dependency parser accepts only static relative CommonJS imports', () => {
   `), ['./local', '../shared.js']);
 });
 
+test('Browser orchestration cannot regrow and the native tab owner stays below 600 lines', () => {
+  assert.equal(BASELINE.campusBrowserLines, 1627);
+  assert.equal(BASELINE.browserTabOwnerLines, 600);
+  for (const key of ['campusBrowserLines', 'browserTabOwnerLines']) {
+    assert.ok(architectureErrors({ cycles: [], [key]: BASELINE[key] + 1 })
+      .some(error => error.includes(key)));
+  }
+});
+
 test('transitive dependency and barrel metrics expose hidden facade complexity', () => {
   const graph = new Map([
     ['main', ['facade']],

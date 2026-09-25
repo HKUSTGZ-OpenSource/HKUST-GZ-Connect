@@ -394,7 +394,6 @@ test('CampusBrowser delegates candidate state and keeps all lifecycle clear call
     'const handleLoadFailure',
     '\n  handleRendererCrash(tab, details = {})',
     '\n  async setTabRoute',
-    "this.window.on('closed'",
   ]) {
     const start = source.indexOf(fragment);
     assert.notEqual(start, -1, `missing lifecycle boundary: ${fragment}`);
@@ -403,7 +402,21 @@ test('CampusBrowser delegates candidate state and keeps all lifecycle clear call
   }
   const closeStart = source.indexOf('\n  closeTab(id)');
   assert.notEqual(closeStart, -1);
-  assert.match(source.slice(closeStart, closeStart + 900),
-    /credentialController\.closeTab\(tab\)/,
+  const owner = fs.readFileSync(path.join(desktopRoot, 'lib', 'browser', 'tabs', 'tab-manager.js'), 'utf8');
+  assert.match(source.slice(closeStart, closeStart + 100), /this\.tabManager\.close\(id\)/);
+  assert.match(source, /closeTabState: tab => this\.credentialController\.closeTab\(tab\)/);
+  assert.match(owner.slice(owner.indexOf('\n  close(id)'), owner.indexOf('\n  clearTransientState()')),
+    /this\.effects\.closeTabState\(tab\)/,
     'closing a popup must unlink it without copying or prematurely consuming the owner secret');
+  const windowClose = source.indexOf("this.window.on('closed'");
+  assert.notEqual(windowClose, -1);
+  assert.match(source.slice(windowClose, windowClose + 350), /this\.tabManager\.closeViews\(\)/);
+  assert.match(source, /clearCredentialCandidate: tab => this\.clearCredentialCandidate\(tab\)/);
+  for (const method of ['clearTransientState', 'closeViews']) {
+    const start = owner.indexOf(`\n  ${method}()`);
+    assert.notEqual(start, -1);
+    assert.match(owner.slice(start, start + 350), /this\.effects\.clearCredentialCandidate\(tab\)/);
+  }
+  const noWindowClose = source.indexOf('\n  close()');
+  assert.match(source.slice(noWindowClose, noWindowClose + 500), /this\.tabManager\.clearTransientState\(\)/);
 });

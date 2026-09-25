@@ -1,5 +1,7 @@
 'use strict';
 
+const { ROUTE_DIRECT } = require('../../routing/policy/campus-route');
+
 const DEFAULT_MAX_TABS = 24;
 
 class TabLimitError extends Error {
@@ -130,7 +132,265 @@ class TabManager {
   }
 }
 
+class BrowserTabLifecycle extends TabManager {
+  constructor({ maxTabs = DEFAULT_MAX_TABS, WebContentsView, campusPreload,
+    getWindow, getToolbarHeight, getWorkspace, blankUrl = 'about:blank', effects } = {}) {
+    super({ maxTabs });
+    // View construction stays lazy, as it was in CampusBrowser. A download or
+    // certificate-only host does not need a page constructor/preload yet.
+    if (![getWindow, getToolbarHeight, getWorkspace].every(value => typeof value === 'function') ||
+        typeof blankUrl !== 'string' || !effects || [
+          'linkPopup', 'closeTabState', 'releasePopup', 'attachPageEvents', 'navigate',
+          'scheduleToolbarUpdate', 'updateToolbar', 'beforeDeactivate', 'layout',
+          'cancelScheduledUpdates', 'cancelCertificatePrompts', 'clearSlowTimer',
+          'clearCredentialCandidate', 'openNewTab', 'reportCreateFailure',
+        ].some(name => typeof effects[name] !== 'function')) {
+      throw new TypeError('Browser tab lifecycle dependencies are incomplete');
+    }
+    Object.assign(this, { WebContentsView, campusPreload, getWindow, getToolbarHeight, getWorkspace, blankUrl });
+    this.effects = Object.freeze({ ...effects });
+    this.view = null;
+    this.attachedView = null;
+  }
+
+  get window() { return this.getWindow(); }
+  get workspaceController() { return this.getWorkspace(); }
+
+  createPage({ url, routeSession, resolution, route, options, targetWindow }) {
+    const previousActiveId = this.activeTabId;
+    let view = null;
+    let tab = null;
+    let added = false;
+    try {
+      view = new this.WebContentsView({
+        webPreferences: {
+          session: routeSession,
+          preload: this.campusPreload,
+          devTools: false,
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: true,
+          webSecurity: true,
+          safeDialogs: true,
+          backgroundThrottling: true,
+        },
+      });
+      view.setBackgroundColor?.('#f4f6f9');
+      tab = {
+        ...(options.blankPage === true ? { kind: 'blank' } : {}),
+        view,
+        failedUrl: '',
+        loading: url !== this.blankUrl,
+        loadingLabel: typeof options.displayName === 'string' && options.displayName.trim()
+          ? options.displayName.trim().slice(0, 96)
+          : (() => { try { return new URL(url).hostname; } catch { return ''; } })(),
+        slow: false,
+        slowTimer: null,
+        renderingError: false,
+        crashed: false,
+        pendingCredential: null,
+        pendingCredentialTimer: null,
+        sharedCredentialAttemptedOrigin: '',
+        route: resolution.route,
+        routeSource: resolution.source,
+        matchedRule: resolution.matchedRule,
+      };
+      this.effects.linkPopup(options.credentialReservation, tab);
+      this.add(tab);
+      added = true;
+      // Keep the new renderer detached until switchTab has applied its bounds.
+      // This prevents both a paint flash and an inactive page entering the
+      // native accessibility tree.
+      view.setVisible(false);
+      if (this.window !== targetWindow || targetWindow.isDestroyed()) {
+        throw new Error('campus browser window closed during tab creation');
+      }
+      this.effects.attachPageEvents(tab);
+      if (!this.activate(tab.id) || !this.effects.navigate(url, tab, route)) {
+        throw new Error('campus browser tab activation failed');
+      }
+      return tab;
+    } catch {
+      if (tab) this.effects.closeTabState(tab);
+      else this.effects.releasePopup(options.credentialReservation);
+      if (added) this.remove(tab.id);
+      if (this.attachedView === view) {
+        try { targetWindow.contentView.removeChildView(view); } catch {}
+        this.attachedView = null;
+      }
+      try {
+        if (view?.webContents && !view.webContents.isDestroyed()) view.webContents.close();
+      } catch {}
+      const previous = previousActiveId === null ? null : this.select(previousActiveId);
+      this.view = previous?.view || null;
+      if (previous && this.window === targetWindow && !targetWindow.isDestroyed()) {
+        try { this.activate(previous.id); } catch {}
+        this.effects.scheduleToolbarUpdate();
+      }
+      if (targetWindow && this.window === targetWindow && !targetWindow.isDestroyed()) this.effects.reportCreateFailure();
+      return null;
+    }
+  }
+
+  createWorkspace(routeSession) {
+    const targetWindow = this.window;
+    const workspace = this.workspaceController;
+    const previousActiveId = this.activeTabId;
+    let view;
+    let tab;
+    const isCurrent = () => Boolean(targetWindow && this.window === targetWindow && this.workspaceController === workspace &&
+      !targetWindow.isDestroyed() && tab && this.contains(tab) && tab.view === view &&
+      !view.webContents.isDestroyed());
+    try {
+      view = workspace.createView(this.WebContentsView, routeSession);
+      tab = {
+        kind: 'workspace', view, failedUrl: '', loading: true, slow: false,
+        slowTimer: null, renderingError: false, crashed: false,
+        pendingCredential: null, pendingCredentialTimer: null,
+        route: ROUTE_DIRECT, routeSource: 'local-workspace', matchedRule: null,
+        pendingWorkspaceFocus: null,
+      };
+      this.add(tab);
+      view.setVisible(false);
+      if (!isCurrent() || !this.activate(tab.id)) throw new Error('workspace activation failed');
+      workspace.load(view).then(() => {
+        if (!isCurrent()) return;
+        tab.loading = false;
+        workspace.sendState(view.webContents);
+        if (!isCurrent()) return;
+        if (tab.pendingWorkspaceFocus) {
+          const { target, query } = tab.pendingWorkspaceFocus;
+          tab.pendingWorkspaceFocus = null;
+          if (this.active() === tab) {
+            if (typeof workspace.focus === 'function') {
+              workspace.focus(view.webContents, target, query);
+            } else if (target === 'search') {
+              workspace.focusSearch?.(view.webContents);
+            }
+          }
+        }
+        if (isCurrent()) this.effects.updateToolbar();
+      }).catch(() => { if (isCurrent()) this.effects.reportCreateFailure(); });
+      view.webContents.on('render-process-gone', () => {
+        if (isCurrent()) workspace.load(view).catch(() => {});
+      });
+      return tab;
+    } catch {
+      if (tab) this.remove(tab.id);
+      if (this.attachedView === view) {
+        try { this.window.contentView.removeChildView(view); } catch {}
+        this.attachedView = null;
+      }
+      try { if (view?.webContents && !view.webContents.isDestroyed()) view.webContents.close(); } catch {}
+      const previous = previousActiveId === null ? null : this.select(previousActiveId);
+      this.view = previous?.view || null;
+      if (previous && this.window === targetWindow && !targetWindow.isDestroyed()) {
+        try { this.activate(previous.id); } catch {}
+      }
+      if (targetWindow && this.window === targetWindow && !targetWindow.isDestroyed()) {
+        this.effects.reportCreateFailure();
+      }
+      return null;
+    }
+  }
+
+  activate(id) {
+    const selected = this.find(id);
+    if (!selected) return false;
+    const previous = this.active();
+    const previousView = this.attachedView;
+    if (!this.window || this.window.isDestroyed() || selected.view.webContents.isDestroyed()) {
+      return false;
+    }
+    try {
+      if (previous && previous.id !== selected.id) this.effects.beforeDeactivate(previous);
+      if (previousView && previousView !== selected.view) {
+        previousView.setVisible(false);
+        this.window.contentView.removeChildView(previousView);
+        this.attachedView = null;
+      }
+      const [width, height] = this.window.getContentSize();
+      const toolbarHeight = this.getToolbarHeight();
+      selected.view.setVisible(false);
+      selected.view.setBounds({
+        x: 0,
+        y: toolbarHeight,
+        width: Math.max(1, width),
+        height: Math.max(1, height - toolbarHeight),
+      });
+      if (this.attachedView !== selected.view) {
+        this.window.contentView.addChildView(selected.view);
+        this.attachedView = selected.view;
+      }
+      selected.view.setVisible(true);
+      this.select(selected.id);
+      this.view = selected.view;
+      this.effects.scheduleToolbarUpdate();
+      return true;
+    } catch {
+      if (this.attachedView === selected.view) {
+        try { this.window.contentView.removeChildView(selected.view); } catch {}
+        this.attachedView = null;
+      }
+      try { selected.view.setVisible(false); } catch {}
+      if (previous && !previous.view.webContents.isDestroyed()) {
+        try {
+          this.window.contentView.addChildView(previous.view);
+          this.attachedView = previous.view;
+          previous.view.setVisible(true);
+          this.select(previous.id);
+          this.view = previous.view;
+          this.effects.layout();
+        } catch {}
+      }
+      return false;
+    }
+  }
+
+  close(id) {
+    const removal = this.remove(id);
+    if (!removal) return false;
+    this.effects.cancelScheduledUpdates();
+    this.effects.cancelCertificatePrompts();
+    const { tab, replacement, empty } = removal;
+    this.effects.clearSlowTimer(tab);
+    this.effects.closeTabState(tab);
+    if (this.attachedView === tab.view) {
+      this.window.contentView.removeChildView(tab.view);
+      this.attachedView = null;
+    }
+    if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close();
+
+    if (empty) {
+      this.view = null;
+      Promise.resolve(this.effects.openNewTab())
+        .catch(() => this.effects.reportCreateFailure());
+    } else if (replacement) {
+      this.activate(replacement.id);
+    } else {
+      this.effects.scheduleToolbarUpdate();
+    }
+    return true;
+  }
+
+  clearTransientState() {
+    for (const tab of this.tabs) {
+      this.effects.clearSlowTimer(tab);
+      this.effects.clearCredentialCandidate(tab);
+    }
+  }
+
+  closeViews() {
+    for (const tab of this.tabs) {
+      this.effects.clearSlowTimer(tab);
+      this.effects.clearCredentialCandidate(tab);
+      if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close();
+    }
+  }
+}
+
 module.exports = {
+  BrowserTabLifecycle,
   DEFAULT_MAX_TABS,
   TabLimitError,
   TabManager,

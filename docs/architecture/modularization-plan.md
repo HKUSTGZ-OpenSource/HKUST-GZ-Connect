@@ -76,8 +76,13 @@ Exit:
 The [download owner](browser-download-owner.md) from #112 and its
 [native timing/context retirement](../engineering/native-browser-downloads.md) from #113 are
 merged source; #111 hardened the popup MFA fixture. This is not a released or live-school Browser
-acceptance result. The remaining Browser runtime is still 1,804 lines and does not yet compose all
-owners listed below, so M2 remains open.
+acceptance result.
+
+The first tab-view ownership boundary is documented in
+[Browser tab lifecycle owner](browser-tab-lifecycle.md). It is a separately reviewable extraction,
+not a completion claim for all Browser owners. The current-base candidate reduces the remaining
+Browser orchestrator from 1,804 to 1,627 lines; its tab owner is 397 lines, below the 600-line
+per-owner ceiling.
 
 Extract tested owners for:
 
