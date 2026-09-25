@@ -75,4 +75,5 @@ durable contract. Release receipts may use exact tags, commits, workflow runs an
 - Machine-readable GitHub settings: `governance/repository-governance-contract.json`
 - Organization transfer procedure: `governance/repository-transfer-playbook.md`
 - Data classification: `security/data-classification.md`
+- Desktop test placement: [ownership and legacy exceptions](engineering/test-placement.md)
 - ADR index: `adr/README.md`
