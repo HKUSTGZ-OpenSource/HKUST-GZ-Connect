@@ -22,12 +22,49 @@ fn rust_sources(directory: PathBuf) -> Vec<PathBuf> {
 #[test]
 fn production_engine_never_imports_probe_workflows() {
     let engine = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/engine");
-    for path in rust_sources(engine) {
+    let binary = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/bin/ec-engine.rs");
+    let application = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/bin/engine_app");
+    let mut sources = rust_sources(engine);
+    sources.extend(rust_sources(application));
+    sources.push(binary);
+    for path in sources {
         let contents = fs::read_to_string(&path).expect("engine source");
         assert!(
-            !contents.contains("crate::probe"),
+            !contents.contains("crate::probe") && !contents.contains("ec_compat::probe"),
             "production engine depends on probe workflow: {}",
             path.display()
+        );
+    }
+}
+
+#[test]
+fn argument_owner_is_binary_private_pure_and_keeps_the_reduced_composition_budget() {
+    let main = source("src/bin/ec-engine.rs");
+    let arguments = source("src/bin/engine_app/arguments.rs");
+    assert!(
+        main.lines().count() <= 2140,
+        "ec-engine composition regrew after extraction"
+    );
+    assert!(
+        arguments.lines().count() <= 600,
+        "argument owner exceeds its module budget"
+    );
+    assert!(main.contains("mod engine_arguments;"));
+    assert!(!main.contains("fn parse_arguments("));
+    assert!(arguments.contains("pub(super) fn parse_arguments("));
+    assert!(arguments.contains("pub(super) struct EngineArguments"));
+    assert!(!source("src/lib.rs").contains("engine_arguments"));
+    for forbidden in [
+        "std::env",
+        "std::fs",
+        "TcpStream",
+        "TcpListener",
+        "reqwest",
+        "read_engine_credentials",
+    ] {
+        assert!(
+            !arguments.contains(forbidden),
+            "argument owner acquired an effect: {forbidden}"
         );
     }
 }

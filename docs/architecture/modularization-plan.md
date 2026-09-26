@@ -128,6 +128,10 @@ Ratchet stages:
 
 ## Wave M4 — Rust Engine composition
 
+The first binary-private startup seam is documented in
+[Engine argument ownership](engine-argument-owner.md). It does not export a new library API or
+complete the runtime orchestration work below.
+
 First reorganize inside the current crate:
 
 ```text
