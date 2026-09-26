@@ -2,7 +2,7 @@
 
 - Status: Active execution plan; M4 completed, M1/M2/M3/M5 open
 - Owner: architecture maintainers
-- Last verified: 2026-09-27 (`main@5cec683c4bdcb3e6663572943d8799f6eccb79b3`)
+- Last verified: 2026-09-27 (`main@4b095e9beb6dd8d26f657afa3888c9768c5bc4b9`)
 - Applies to: development `main` after published 2.0.3; merged source is not a new release
 - Supersedes: ad-hoc file-by-file extraction without an ownership receipt
 
@@ -20,8 +20,9 @@ exhausted: Main has 36 direct dependencies, 170 transitive dependencies and 1,71
 Renderer has 563 lines. At that baseline, the gate could not see the main Renderer page's ordered
 global-script graph; #110 later added a static boundary policy for new changes.
 
-At the verification commit, Renderer `app.js` is 562 lines, Campus Browser 1,502,
-Desktop Main 1,604 and `ec-engine.rs` 498. M4/#82 is closed through #148; the other
+At the verification commit, Renderer `app.js` is 562 lines, Campus Browser 1,476,
+Desktop Main 1,084 (33 direct / 47 effective / 170 transitive dependencies) and
+`ec-engine.rs` 498. M4/#82 is closed through #148; the other
 four waves remain open. Counts are debt evidence, not a substitute for ownership/lifecycle gates.
 
 Primary concurrency hot spots:
