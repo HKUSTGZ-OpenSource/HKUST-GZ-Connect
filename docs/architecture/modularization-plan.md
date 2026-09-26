@@ -88,6 +88,10 @@ per-owner ceiling.
 [Workspace ownership](browser-workspace-owner.md) moves Browser-facing workspace and favorite
 projection/effects into the existing Workspace module, keeping its sandbox protocol unchanged.
 
+The proposed [Campus Browser window owner](browser-window-owner.md) isolates the chrome window's
+creation, toolbar event binding and close confirmation in the existing Browser manager module,
+without adding a production dependency node or changing credential-popup ownership.
+
 Extract tested owners for:
 
 ```text

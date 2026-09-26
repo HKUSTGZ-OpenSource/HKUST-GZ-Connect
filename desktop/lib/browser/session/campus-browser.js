@@ -174,6 +174,7 @@ class CampusBrowser {
   constructor({
     BrowserWindow,
     WebContentsView,
+    createWindowOwner = null,
     session,
     dialog,
     certificateTrust,
@@ -274,7 +275,32 @@ class CampusBrowser {
       t: (key, vars) => this.t(key, vars),
       onError: (message) => this.onError?.(message),
     });
-    this.window = null;
+    if (createWindowOwner != null && typeof createWindowOwner !== 'function') {
+      throw new TypeError('Campus Browser window owner factory is invalid');
+    }
+    this.windowOwner = typeof createWindowOwner === 'function'
+      ? createWindowOwner({
+        BrowserWindow,
+        toolbarFile: this.toolbarFile,
+        toolbarPreload: this.toolbarPreload,
+        getProfilePresentation: () => this.profilePresentation,
+        getLocale: () => this.locale,
+        getTranslator: () => this.t,
+        parentWindow: this.parentWindow,
+        platform: process.platform,
+        windowChrome: campusWindowChrome,
+        onToolbarCommand: payload => this.handleToolbarCommand(payload),
+        onResize: () => this.scheduleLayout(),
+        onClosed: () => this.handleWindowClosed(),
+        onMissingWindow: () => this.close(),
+      })
+      : null;
+    if (this.windowOwner && (typeof this.windowOwner.createWindow !== 'function' ||
+        typeof this.windowOwner.requestClose !== 'function' ||
+        typeof this.windowOwner.closeForContextSwitch !== 'function' ||
+        typeof this.windowOwner.clear !== 'function' || !('window' in this.windowOwner))) {
+      throw new TypeError('Campus Browser window owner is invalid');
+    }
     // Only the active tab is attached to the native View hierarchy. Hiding a
     // WebContentsView stops painting, but Electron can still expose its page
     // through the platform accessibility tree. Detached views retain their
@@ -354,6 +380,7 @@ class CampusBrowser {
 
   // Keep the existing CampusBrowser diagnostics/test surface while all state
   // mutations flow through the dedicated managers.
+  get window() { return this.windowOwner?.window || null; }
   get downloadSessions() { return this.downloadController.downloadSessions; }
   get downloadState() { return this.downloadController.downloadState; }
   get view() { return this.tabManager.view; }
@@ -1304,57 +1331,27 @@ class CampusBrowser {
   async createWindow() {
     this.cancelScheduledUpdates();
     this.lastToolbarState = null;
-    this.window = new this.BrowserWindow({
-      width: 1040,
-      height: 740,
-      minWidth: 660,
-      minHeight: 460,
-      title: this.t('browser.windowTitleForSchool', {
-        school: this.profilePresentation.schoolName,
-        trust: this.profilePresentation.unverified ? this.t('browser.unverifiedSuffix') : '',
-      }),
-      backgroundColor: '#f7f9fc',
-      autoHideMenuBar: true,
-      ...campusWindowChrome(process.platform),
-      parent: process.platform === 'darwin' ? undefined : this.parentWindow(),
-      webPreferences: {
-        preload: this.toolbarPreload,
-        devTools: false,
-        nodeIntegration: false,
-        contextIsolation: true,
-        sandbox: true,
-        webSecurity: true,
-        safeDialogs: true,
-      },
-    });
-    await this.window.loadFile(this.toolbarFile, { query: {
-      lang: this.locale,
-      school: this.profilePresentation.schoolName,
-      unverified: this.profilePresentation.unverified ? '1' : '0',
-    } });
-    this.window.webContents.on('ipc-message', (_event, channel, payload) => {
-      if (channel === 'campus-toolbar-command') this.handleToolbarCommand(payload);
-    });
-    this.window.on('resize', () => this.scheduleLayout());
-    this.window.on('closed', () => {
-      this.cancelScheduledUpdates();
-      this.certificateController.cancelAll();
-      this.tabManager.closeViews();
-      for (const popup of [...this.managedCredentialPopups]) {
-        this.credentialController.closeTab(popup);
-        try {
-          if (!popup.window.isDestroyed()) popup.window.close();
-        } catch {}
-      }
-      this.managedCredentialPopups.clear();
-      this.tabManager.clear();
-      this.view = null;
-      this.attachedView = null;
-      this.routingActivationInFlight = null;
-      this.window = null;
-      this.findOpen = false;
-      this.lastToolbarState = null;
-    });
+    if (!this.windowOwner) throw new Error('Campus Browser window owner is unavailable');
+    return this.windowOwner.createWindow();
+  }
+
+  handleWindowClosed() {
+    this.cancelScheduledUpdates();
+    this.certificateController.cancelAll();
+    this.tabManager.closeViews();
+    for (const popup of [...this.managedCredentialPopups]) {
+      this.credentialController.closeTab(popup);
+      try {
+        if (!popup.window.isDestroyed()) popup.window.close();
+      } catch {}
+    }
+    this.managedCredentialPopups.clear();
+    this.tabManager.clear();
+    this.view = null;
+    this.attachedView = null;
+    this.routingActivationInFlight = null;
+    this.findOpen = false;
+    this.lastToolbarState = null;
   }
 
   navigate(rawUrl, tab = this.activeTab(), requestedRoute = null) {
@@ -1433,12 +1430,9 @@ class CampusBrowser {
   close() {
     this.cancelScheduledUpdates();
     this.certificateController.cancelAll();
-    if (this.window && !this.window.isDestroyed()) {
-      this.window.close();
-      return;
-    }
+    if (this.windowOwner?.requestClose() === true) return;
     this.tabManager.clearTransientState();
-    this.window = null;
+    this.windowOwner?.clear();
     this.view = null;
     this.attachedView = null;
     this.routingActivationInFlight = null;
@@ -1447,32 +1441,12 @@ class CampusBrowser {
     this.lastToolbarState = null;
   }
 
-  closeForContextSwitch({ timeoutMs = 5_000, setTimeoutFn = setTimeout,
-    clearTimeoutFn = clearTimeout } = {}) {
-    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30_000 ||
-        typeof setTimeoutFn !== 'function' || typeof clearTimeoutFn !== 'function') {
-      return Promise.reject(new TypeError('Campus Browser close deadline is invalid'));
-    }
-    const window = this.window;
-    if (!window || window.isDestroyed()) {
+  closeForContextSwitch(options = {}) {
+    if (!this.windowOwner) {
       this.close();
       return Promise.resolve(true);
     }
-    return new Promise((resolve) => {
-      let settled = false;
-      let timer = null;
-      const finish = (closed) => {
-        if (settled) return;
-        settled = true;
-        clearTimeoutFn(timer);
-        resolve(closed);
-      };
-      window.once('closed', () => finish(true));
-      timer = setTimeoutFn(() => finish(false), timeoutMs);
-      timer?.unref?.();
-      try { window.close(); }
-      catch { finish(false); }
-    });
+    return this.windowOwner.closeForContextSwitch(options);
   }
 }
 

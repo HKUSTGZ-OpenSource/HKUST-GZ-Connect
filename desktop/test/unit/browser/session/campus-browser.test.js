@@ -23,6 +23,8 @@ const {
   safePopupUrl,
   workspaceSearchQuery,
 } = require('../../../../lib/browser/session/campus-browser');
+const { createCampusBrowserWindowOwner } = require('../../../../lib/browser/session/campus-browser-manager');
+const createWindowOwner = createCampusBrowserWindowOwner;
 const {
   DIRECT_PARTITION,
   ROUTE_CAMPUS,
@@ -438,6 +440,7 @@ test('campus browser keeps one persistent session and routes each domain through
 
   const browser = new CampusBrowser({
     BrowserWindow: FakeBrowserWindow,
+    createWindowOwner,
     WebContentsView: FakeWebContentsView,
     session: fakeSession,
     parentWindow: () => null,
@@ -604,6 +607,7 @@ test('a provisional load failure keeps the failed URL and shows an error page', 
 
   const browser = new CampusBrowser({
     BrowserWindow: FakeBrowserWindow,
+    createWindowOwner,
     WebContentsView: FakeWebContentsView,
     session: { fromPartition: (partition) => sessions.get(partition) },
     parentWindow: () => null,
@@ -765,6 +769,7 @@ function createFakeBrowser(extra = {}) {
   };
   const browser = new CampusBrowser({
     BrowserWindow: FakeBrowserWindow,
+    createWindowOwner,
     WebContentsView: FakeWebContentsView,
     session: { fromPartition: (partition) => sessions.get(partition) },
     parentWindow: () => null,

@@ -15,6 +15,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { app, BrowserWindow, WebContentsView, session } = require('electron');
 const { CampusBrowser } = require('../lib/browser/session/campus-browser');
+const { createCampusBrowserWindowOwner } = require('../lib/browser/session/campus-browser-manager');
 const { buildDomainRoutePac } = require('../lib/routing/policy/domain-route-policy');
 const { pacDataUrl } = require('../lib/browser/session/browser-session-manager');
 const { EphemeralProxyCredential } = require('../lib/persistence/credentials/proxy-credential');
@@ -282,6 +283,7 @@ async function run() {
   const errors = [];
   const browser = new CampusBrowser({
     BrowserWindow,
+    createWindowOwner: createCampusBrowserWindowOwner,
     WebContentsView,
     session,
     dialog: {
