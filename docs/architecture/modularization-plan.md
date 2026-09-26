@@ -49,6 +49,11 @@ Primary concurrency hot spots:
 
 ## Wave M1 — Renderer dependency authority
 
+[Connection overview ownership](renderer-connection-overview-owner.md) migrates the
+existing metrics/underlay presentation into the native host with terminal listener,
+timer and asynchronous-result cleanup. It removes one legacy global/script exception
+without changing connection authority or completing the remaining M1 bootstrap work.
+
 The [feature host](renderer-feature-host.md) and separate lifecycle slices now mount campus-data,
 official-favorites, interactive-auth and Integration Center from explicit entrypoints (#108–#120).
 The [static Renderer policy](renderer-boundaries.md) in #110 rejects new legacy exports and invalid

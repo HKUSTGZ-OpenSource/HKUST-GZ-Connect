@@ -218,7 +218,10 @@ function create({ document, translate = key => key, copy, save, refresh, getEnvi
       return environmentRequest || Promise.resolve(null);
     }
     const generation = ++environmentGeneration;
-    environmentRequest = Promise.resolve().then(() => getEnvironment()).then(environment => {
+    environmentRequest = Promise.resolve().then(() => {
+      if (disposed || generation !== environmentGeneration) return null;
+      return getEnvironment();
+    }).then(environment => {
       if (disposed || generation !== environmentGeneration) return null;
       if (environment && typeof environment === 'object') renderEnvironment(environment);
       return environment;

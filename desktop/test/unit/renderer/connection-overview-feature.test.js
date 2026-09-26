@@ -163,6 +163,17 @@ test('a network environment read completing after dispose cannot render or publi
   assert.equal(f.ids.get('underlayTreeOptions').replaceChildrenCount, replaceCount);
 });
 
+test('dispose before a queued environment read starts prevents the Main API call', async () => {
+  const f = documentFixture();
+  let calls = 0;
+  const { owner } = ownerFor(f.document, { getEnvironment: () => { calls += 1; return environmentFixture(); } });
+  owner.start();
+  const request = owner.refreshEnvironment();
+  owner.dispose();
+  assert.equal(await request, null);
+  assert.equal(calls, 0);
+});
+
 test('underlay save completing after dispose cannot mutate DOM or refresh Main state', async () => {
   const f = documentFixture();
   const pending = deferred();
