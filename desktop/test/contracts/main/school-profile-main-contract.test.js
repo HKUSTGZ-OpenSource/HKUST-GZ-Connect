@@ -45,12 +45,12 @@ test('profile drives resources, routes and a Main-resolved official portal home'
 test('reviewed profile and config binding is validated before credential decryption', () => {
   const connect = section('async function connectOnce(', '\nfunction ensureEngineStopped(');
   const profileConfig = connect.indexOf('engineConfigBinding = activeSchoolProfile.verifyEngineLaunchBinding();');
-  const credential = connect.indexOf('const credentialOwner = persistenceRuntime.openCredential()');
+  const credential = connect.indexOf('const credentialOwner = openVpnCredential(');
   const spawn = connect.indexOf('const started = engineSupervisor.start(');
   assert.ok(profileConfig >= 0 && credential > profileConfig && spawn > credential);
   assert.match(main, /engineConfigBinding = activeSchoolProfile\.verifyEngineLaunchBinding\(\)/u);
   assert.match(connect,
-    /oneShotVpnCredential\.open\(\{[\s\S]*profileId: activeSchoolProfile\.activeContextBinding\(\)\.profileId/u);
+    /profileId: activeSchoolProfile\.activeContextBinding\(\)\.profileId,[\s\S]*memoryBroker: oneShotVpnCredential/u);
   assert.match(connect, /--profile-binding-v1-stdin/u);
   const bindingWrite = connect.indexOf('${engineConfigBinding.stdinFrame}\\n${username}\\n${pw}');
   assert.ok(bindingWrite > profileConfig && bindingWrite > credential && bindingWrite > spawn);

@@ -18,7 +18,7 @@ const {
   savePassword: writePassword,
 } = require('./lib/persistence/credentials/credential-store');
 const {
-  OneShotVpnCredentialBroker,
+  OneShotVpnCredentialBroker, openVpnCredential,
 } = require('./lib/persistence/credentials/one-shot-vpn-credential');
 const {
   recoverCredentialSettingsTransaction,
@@ -827,9 +827,9 @@ async function connectOnce(isRetry, intent) {
   const engineConfig = engineConfigBinding.path;
   try {
     s = loadSettings();
-    const credentialOwner = persistenceRuntime.openCredential() || oneShotVpnCredential.open({
-      profileId: activeSchoolProfile.activeContextBinding().profileId,
-    });
+    const credentialOwner = openVpnCredential({
+      profileId: activeSchoolProfile.activeContextBinding().profileId, memoryBroker: oneShotVpnCredential,
+      openPersistent: () => persistenceRuntime.openCredential() });
     if (credentialOwner) {
       try {
         credentialOwner.withStrings((account, password) => {

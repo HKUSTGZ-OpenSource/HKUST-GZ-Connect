@@ -4,14 +4,39 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const vm = require('node:vm');
+const { OneShotVpnCredentialBroker, openVpnCredential } =
+  require('../../../lib/persistence/credentials/one-shot-vpn-credential');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
+
+test('the actual final snapshot can select explicit memory credentials when protected storage is unavailable', () => {
+  const oneShotVpnCredential = new OneShotVpnCredentialBroker();
+  oneShotVpnCredential.stage({ profileId: 'hkustgz', username: 'synthetic-memory-user',
+    password: 'synthetic-memory-value' });
+  const expression = source.match(/const credentialOwner = ([\s\S]+?);\n\s*if \(credentialOwner\)/u)?.[1];
+  assert.ok(expression, 'final credential selection seam is present');
+  let owner;
+  assert.doesNotThrow(() => {
+    owner = vm.runInNewContext(expression, { oneShotVpnCredential, openVpnCredential,
+      activeSchoolProfile: { activeContextBinding: () => ({ profileId: 'hkustgz' }) },
+      persistenceRuntime: { openCredential: () => {
+        throw Object.assign(new Error('synthetic protected storage unavailable'), { credentialStatus: 'unavailable' });
+      } } });
+  });
+  owner.withStrings((username, password) => {
+    assert.equal(username, 'synthetic-memory-user');
+    assert.equal(password, 'synthetic-memory-value');
+  });
+  owner.destroy();
+  oneShotVpnCredential.clear();
+});
 
 test('Linux memory-only credentials stay Main-owned and profile-bound', () => {
   assert.match(source, /const oneShotVpnCredential = new OneShotVpnCredentialBroker\(\)/u);
   assert.match(source,
-    /persistenceRuntime\.openCredential\(\) \|\| oneShotVpnCredential\.open\(\{[\s\S]*profileId: activeSchoolProfile\.activeContextBinding\(\)\.profileId/u,
-    'persistent protected storage must win before the one-shot fallback');
+    /openVpnCredential\(\{[\s\S]*profileId: activeSchoolProfile\.activeContextBinding\(\)\.profileId,[\s\S]*memoryBroker: oneShotVpnCredential,[\s\S]*openPersistent: \(\) => persistenceRuntime\.openCredential\(\)/u,
+    'the final snapshot injects protected storage and the profile-bound memory fallback');
   assert.match(source,
     /credentialStorageAvailable: \(\) => protectedStorageAvailable\(safeStorage, process\.platform\)/u);
   assert.match(source, /stageOneShotCredential: \(request\) => oneShotVpnCredential\.stage\(request\)/u);
