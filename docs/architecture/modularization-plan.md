@@ -150,6 +150,14 @@ feedback into that same Runtime. At the candidate tree Main falls to 1,008 lines
 32 direct / 46 effective dependencies, with 170 transitive dependencies unchanged.
 The first-stage direct dependency target and remaining M3 composition work stay open.
 
+The follow-on connectivity-operation seam extends the existing
+[Connection operation owner](desktop-connection-operation-owner.md) with recovery
+admission, invalidation and restart; `ConnectivityRecovery` retains outage epochs
+and scheduling. After the storage-effects rebase, Main is 950 lines and the
+existing state entrypoint is 541; 32 direct / 46 effective / 170 transitive
+dependencies are unchanged. M3 remains open: this does not reach the below-800/24
+intermediate or 500–700/20 final target.
+
 Move remaining settings-surface coordination, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 

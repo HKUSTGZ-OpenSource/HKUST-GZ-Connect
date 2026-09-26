@@ -393,78 +393,14 @@ function clearConnectionPresentation() {
   state.dnsMode = 'unknown'; activeSchoolProfile.clearCapabilitySnapshot();
   telemetryCoordinator?.stop();
 }
-function invalidateForConnectivity(reason, intent) {
-  if (!connectionState.pauseForConnectivity(intent, {
-    isQuitting: desktopShell?.isQuitting === true,
-  })) return;
-  // Keep the lifecycle intent stable: resume/online is allowed to recover
-  // this exact user-requested connection, while generation invalidation makes
-  // every old engine event, retry, and health probe inert immediately.
-  engineSupervisor.invalidate();
-  clearConnectionPresentation();
-  state.lastError = t(reason === 'suspend'
-    ? 'error.connectionSuspended'
-    : 'error.networkUnavailable');
-  emit();
-  ensureEngineStopped().then((result) => {
-    if (!connectionState.canContinue(intent) || result.ok) return;
-    state.lastError = t('error.engineStuck');
-    emit();
-  }).catch(() => {});
-}
-async function recoverConnectivity(intent, reason) {
-  let autoReconnect;
-  try {
-    autoReconnect = reason === 'initial-network-online' || loadSettingsOrReport().autoReconnect !== false;
-  } catch {
-    connectionState.failIntent(intent);
-    emit();
-    return false;
-  }
-  if (!connectionState.canRecover(intent, {
-    isQuitting: desktopShell?.isQuitting === true,
-    autoReconnect,
-  })) return false;
-  const stopped = await ensureEngineStopped();
-  if (!stopped.ok || stopped.cleanExit === false || !connectionState.canContinue(intent, {
-    isQuitting: desktopShell?.isQuitting === true,
-  })) {
-    if ((!stopped.ok || stopped.cleanExit === false) &&
-        connectionState.isCurrentIntent(intent)) {
-      connectionState.failIntent(intent);
-      state.lastError = t(stopped.cleanExit === false
-        ? 'error.engineCleanupUnconfirmed'
-        : 'error.engineStuck');
-      emit();
-    }
-    return false;
-  }
-  if (!connectionState.resumeConnectivity(intent, {
-    isQuitting: desktopShell?.isQuitting === true,
-    autoReconnect,
-  })) return false;
-  const result = await connect(false, intent);
-  return result.ok === true;
-}
-
+// ConnectivityRecovery stores these callbacks; app-ready starts the monitor
+// only after the operation owner below has been constructed.
 const connectivityRecovery = new ConnectivityRecovery({
-  invalidate: invalidateForConnectivity,
-  getLifecycleIntent: () => connectionState.currentRecoveryIntent({
-    isQuitting: desktopShell?.isQuitting === true,
-  }),
-  shouldReconnect: async (intent, reason) => {
-    try {
-      return connectionState.canRecover(intent, {
-        isQuitting: desktopShell?.isQuitting === true,
-        autoReconnect: reason === 'initial-network-online' || loadSettingsOrReport().autoReconnect !== false,
-      });
-    } catch {
-      connectionState.failIntent(intent);
-      emit();
-      return false;
-    }
-  },
-  reconnect: recoverConnectivity, onRecoveryDeclined: (intent, reason) => { if (reason !== 'initial-network-online' && connectionState.failIntent(intent)) emit(); },
+  invalidate: (reason, intent) => connectionOperations.invalidateForConnectivity(reason, intent),
+  getLifecycleIntent: () => connectionOperations.currentRecoveryIntent(),
+  shouldReconnect: (intent, reason) => connectionOperations.shouldReconnectForConnectivity(intent, reason),
+  reconnect: (intent, reason) => connectionOperations.recoverConnectivity(intent, reason),
+  onRecoveryDeclined: (intent, reason) => connectionOperations.onConnectivityRecoveryDeclined(intent, reason),
 });
 const { monitor: networkStatusMonitor, startup: networkStartupCoordinator, environment: networkEnvironmentService } = createNetworkStartupSystem({
   appIsPackaged: app.isPackaged, environment: process.env, dataDirectory: DATA, fileSystem: fs,
@@ -475,6 +411,7 @@ const { monitor: networkStatusMonitor, startup: networkStartupCoordinator, envir
 });
 const connectionOperations = new ConnectionOperationCoordinator({
   connectionState, engineSupervisor, isQuitting: () => desktopShell?.isQuitting === true,
+  loadSettingsOrReport,
   cancelRecovery: () => { networkStartupCoordinator?.cancel(); connectivityRecovery.cancel(); },
   clearProxyCredential: clearActiveProxyCredential, clearPresentation: clearConnectionPresentation,
   removeSidecar: removeExternalProxySidecar, getPresentation: () => state, getTranslator: () => t, emit,

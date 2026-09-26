@@ -338,6 +338,84 @@ class ConnectionOperationCoordinator {
     this.reconnectInFlight = null;
   }
 
+  currentRecoveryIntent() {
+    return this.connectionState.currentRecoveryIntent({ isQuitting: this.isQuitting() === true });
+  }
+
+  invalidateForConnectivity(reason, intent) {
+    if (!this.connectionState.pauseForConnectivity(intent, {
+      isQuitting: this.isQuitting() === true,
+    })) return false;
+    // Keep the lifecycle intent stable: resume/online is allowed to recover
+    // this exact user-requested connection, while generation invalidation makes
+    // every old engine event, retry, and health probe inert immediately.
+    this.engineSupervisor.invalidate();
+    this.clearPresentation();
+    this.getPresentation().lastError = this.getTranslator()(reason === 'suspend'
+      ? 'error.connectionSuspended'
+      : 'error.networkUnavailable');
+    this.emit();
+    return this.ensureEngineStopped().then((result) => {
+      if (!this.connectionState.canContinue(intent) || result.ok) return;
+      this.getPresentation().lastError = this.getTranslator()('error.engineStuck');
+      this.emit();
+    }).catch(() => {});
+  }
+
+  shouldReconnectForConnectivity(intent, reason) {
+    try {
+      return this.connectionState.canRecover(intent, {
+        isQuitting: this.isQuitting() === true,
+        autoReconnect: reason === 'initial-network-online' ||
+          (this.loadSettingsOrReport().autoReconnect !== false),
+      });
+    } catch {
+      this.connectionState.failIntent(intent);
+      this.emit();
+      return false;
+    }
+  }
+
+  async recoverConnectivity(intent, reason) {
+    let autoReconnect;
+    try {
+      autoReconnect = reason === 'initial-network-online' ||
+        (this.loadSettingsOrReport().autoReconnect !== false);
+    } catch {
+      this.connectionState.failIntent(intent);
+      this.emit();
+      return false;
+    }
+    if (!this.connectionState.canRecover(intent, {
+      isQuitting: this.isQuitting() === true,
+      autoReconnect,
+    })) return false;
+    const stopped = await this.ensureEngineStopped();
+    if (!stopped.ok || stopped.cleanExit === false || !this.connectionState.canContinue(intent, {
+      isQuitting: this.isQuitting() === true,
+    })) {
+      if ((!stopped.ok || stopped.cleanExit === false) &&
+          this.connectionState.isCurrentIntent(intent)) {
+        this.connectionState.failIntent(intent);
+        this.getPresentation().lastError = this.getTranslator()(stopped.cleanExit === false
+          ? 'error.engineCleanupUnconfirmed'
+          : 'error.engineStuck');
+        this.emit();
+      }
+      return false;
+    }
+    if (!this.connectionState.resumeConnectivity(intent, {
+      isQuitting: this.isQuitting() === true,
+      autoReconnect,
+    })) return false;
+    const result = await this.connect(false, intent);
+    return result.ok === true;
+  }
+
+  onConnectivityRecoveryDeclined(intent, reason) {
+    if (reason !== 'initial-network-online' && this.connectionState.failIntent(intent)) this.emit();
+  }
+
   rejectConnectionWhileQuitting(intent = this.connectionState.snapshot().intent) {
     if (this.isQuitting() !== true) return null;
     this.connectionState.failIntent(intent); this.emit();
