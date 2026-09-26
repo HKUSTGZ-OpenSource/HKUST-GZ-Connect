@@ -4,8 +4,8 @@
 - Authority: project maintainer
 - Baseline: `main@15738338ff2a280300b66e98a1823659f24630a4`
 - Started: 2026-09-04
-- Last verified: 2026-09-25 (before this documentation PR)
-- Development main at verification: `dc9113df96da92830091edb0c6a0860219d1dfbe`
+- Last verified: 2026-09-26 (before this documentation PR)
+- Development main at verification: `71dc05e55964226604d62bfaee87ffdacbc64435`
 - Scope: repository governance, documentation truth, agent instructions, module boundaries,
   contributor workflow, GitHub protections and organization migration
 
@@ -40,16 +40,20 @@ high-risk rules. No instruction file is treated as a substitute for review or te
    and `independent/src/bin/ec-engine.rs` are concurrency hot spots.
 3. Legacy Renderer globals and HTML script order remain migration debt. The merged static policy
    and feature host enforce new boundaries, but `app.js` is not yet only a composition root.
-4. Stable `v2.0.2` is published from `main@39850415c901aeaa77ecb86cd3ce49a2e75290a8`.
-   PRs #88, #95, #106 and #107 are merged. Four platform installers, a build receipt and SHA-256
+4. Stable `v2.0.3` is published from `main@b57c394c73e0b07a0076e26f58e1666e29f00135`.
+   Four platform installers, a build receipt and SHA-256
    manifest are uploaded. The repository-ID updater is shipped; the historical 2.0.1 bridge
    requirement is satisfied. Published packages and the currently installed Mac candidate are
    distinct evidence, not interchangeable versions.
+   The post-tag crypto migration #146 closes #105 at `71dc05e` without rewriting release artifacts.
 5. Repository Rulesets, CODEOWNERS, templates, Dependabot, release Environment and immutable Action
    policies are active. Two Organization owners are present. Protected `main` still requires one
    approval and seven strict checks; the maintainer authorized one-time administrator squash merges
    for the current convergence queue after its exact-head checks, without changing that protection.
    Team ownership and post-transfer security settings remain incomplete.
+   Security/Release team membership is explicitly deferred by heeh02 on 2026-09-26; revisit before
+   enabling role-specific ownership/review/release qualification. No placeholder team or approval
+   is invented, and existing protections remain unchanged.
 6. The original repository transferred to `HKUSTGZ-OpenSource` on 2026-09-12 with explicit maintainer
    authorization. Organization default permission is now `read`. Repository ID, main, tags,
    releases/assets and PR heads/bases are preserved. Existing Organization Owner `HernanJiang`

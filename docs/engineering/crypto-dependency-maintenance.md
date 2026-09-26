@@ -1,6 +1,6 @@
 # Crypto dependency maintenance
 
-- Status: Proposed maintenance slice, pending exact-head and native acceptance
+- Status: Current merged maintenance slice; not included in stable 2.0.3
 - Owner: Rust Engine maintainers
 - Last verified: 2026-09-26
 - Applies to: post-2.0.3 development source; not the frozen 2.0.3 artifacts
@@ -39,6 +39,12 @@ zero failed, two performance tests ignored; lifecycle-feature tests are 310 pass
 two ignored, including the 100-round real subprocess post-Transport soak. Native platform and
 exact-head checks remain separate gates. No live Gateway, student credential or school MFA result
 is inferred from these tests.
+
+Merged through #146 at `71dc05e55964226604d62bfaee87ffdacbc64435`, after ten actual exact-head
+checks passed. Native Windows 5070 Rust 1.97.1 fmt/Clippy/default tests passed (305 passed, zero
+failed, two ignored). Linux 5070 default tests passed (308/0/2); fixture Clippy and the 100-round
+process soak also passed. Mac release-profile offline SOCKS/netstack matrices passed all 18/27
+cells. These are offline/native contracts, not real Gateway or separately tested Rust 1.88 claims.
 
 ## Earlier backlog and deferral
 
