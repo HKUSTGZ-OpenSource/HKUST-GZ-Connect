@@ -20,6 +20,19 @@ const MARKER_SCAN_CHUNK_BYTES = 64 * 1024;
 const MAC_SYSTEM_DYLIB_PREFIXES = ['/usr/lib/', '/System/Library/'];
 const MAX_PACKAGED_PROFILE_BYTES = 256 * 1024;
 const MAX_PACKAGED_PROFILE_ASSET_BYTES = 4 * 1024 * 1024;
+const REQUIRED_CONNECTION_OVERVIEW_ENTRIES = Object.freeze([
+  '/renderer/features/connection-overview/index.mjs',
+  '/renderer/features/connection-overview/view.css',
+]);
+
+function assertConnectionOverviewPackageEntries(entries) {
+  for (const entry of REQUIRED_CONNECTION_OVERVIEW_ENTRIES) {
+    if (!entries.has(entry)) throw new Error(`missing required packaged file: ${entry}`);
+  }
+  if (entries.has('/renderer/connection-overview.js')) {
+    throw new Error('legacy Renderer connection-overview script entered the package');
+  }
+}
 
 function sha256(data) {
   return crypto.createHash('sha256').update(data).digest('hex');
@@ -466,7 +479,6 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     '/renderer/campus-workspace-model.js',
     '/renderer/campus-workspace.css',
     '/renderer/campus-category-stacks.js',
-    '/renderer/connection-overview.js',
     '/renderer/notification-drawer.js',
     '/renderer/styles.css',
     '/lib/browser/workspace/campus-workspace-controller.js',
@@ -480,6 +492,7 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
   for (const entry of requiredEntries) {
     if (!entries.has(entry)) throw new Error(`missing required packaged file: ${entry}`);
   }
+  assertConnectionOverviewPackageEntries(entries);
   if (entries.has('/assets/campus-resources.json')) {
     throw new Error('legacy duplicate campus resource asset entered the package');
   }
@@ -641,7 +654,9 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
 
 module.exports = {
   TEST_ONLY_ENGINE_MARKER,
+  REQUIRED_CONNECTION_OVERVIEW_ENTRIES,
   archiveEntryPath,
+  assertConnectionOverviewPackageEntries,
   assertPrivateEngineProfileBinding,
   assertMacDylibDependenciesAllowed,
   assertMacAppIcon,

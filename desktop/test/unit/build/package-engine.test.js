@@ -15,6 +15,7 @@ const {
 } = require('../../../build/afterPack');
 const {
   TEST_ONLY_ENGINE_MARKER,
+  REQUIRED_CONNECTION_OVERVIEW_ENTRIES,
   archiveEntryPath,
   assertPrivateEngineProfileBinding,
   assertMacDylibDependenciesAllowed,
@@ -25,9 +26,29 @@ const {
   assertNoTestOnlyEngineMarker,
   assertNoTestOnlyNativeResources,
   assertNoTestOnlyPackageEntries,
+  assertConnectionOverviewPackageEntries,
   parseMachODylibDependencies,
   resolveResourcesDirectory,
 } = require('../../../build/verify-package');
+
+test('package verifier requires both native Connection Overview assets and rejects the legacy script', () => {
+  const verifierSource = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'build', 'verify-package.js'), 'utf8');
+  assert.match(verifierSource, /assertConnectionOverviewPackageEntries\(entries\)/u);
+  assert.deepEqual(REQUIRED_CONNECTION_OVERVIEW_ENTRIES, [
+    '/renderer/features/connection-overview/index.mjs',
+    '/renderer/features/connection-overview/view.css',
+  ]);
+  assert.doesNotThrow(() => assertConnectionOverviewPackageEntries(new Set(REQUIRED_CONNECTION_OVERVIEW_ENTRIES)));
+  for (const missing of REQUIRED_CONNECTION_OVERVIEW_ENTRIES) {
+    const entries = new Set(REQUIRED_CONNECTION_OVERVIEW_ENTRIES.filter(entry => entry !== missing));
+    entries.add('/renderer/connection-overview.js');
+    assert.throws(() => assertConnectionOverviewPackageEntries(entries), /missing required packaged file:/u, missing);
+  }
+  assert.throws(() => assertConnectionOverviewPackageEntries(new Set([
+    ...REQUIRED_CONNECTION_OVERVIEW_ENTRIES,
+    '/renderer/connection-overview.js',
+  ])), /legacy Renderer connection-overview script entered the package/u);
+});
 
 test('ASAR entry paths use the packaging host separator at every nesting level', () => {
   const entry = 'assets/profiles/hkustgz/school-profile.json';
