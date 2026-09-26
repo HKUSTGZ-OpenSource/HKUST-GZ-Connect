@@ -26,6 +26,7 @@ const {
   assertNoTestOnlyEngineMarker,
   assertNoTestOnlyNativeResources,
   assertNoTestOnlyPackageEntries,
+  assertRequiredPackageEntries,
   assertConnectionOverviewPackageEntries,
   assertConnectionOverviewNativeFeature,
   parseMachODylibDependencies,
@@ -69,6 +70,17 @@ test('package verifier checks Connection Overview native host registration and a
   for (const [app, host] of rejectedSources) {
     assert.throws(() => assertConnectionOverviewNativeFeature(app, host), /native Connection Overview feature/u);
   }
+});
+
+test('package verifier requires the update notice ESM entry in the ASAR', () => {
+  const verifierSource = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'build', 'verify-package.js'), 'utf8');
+  assert.match(verifierSource,
+    /const requiredEntries = \[[\s\S]*?'\/renderer\/features\/update-notices\/index\.mjs'/u);
+  assert.match(verifierSource, /assertRequiredPackageEntries\(entries, requiredEntries\)/u);
+  const required = ['/renderer/features/update-notices/index.mjs'];
+  assert.doesNotThrow(() => assertRequiredPackageEntries(new Set(required), required));
+  assert.throws(() => assertRequiredPackageEntries(new Set(), required),
+    /missing required packaged file: \/renderer\/features\/update-notices\/index\.mjs/u);
 });
 
 test('ASAR entry paths use the packaging host separator at every nesting level', () => {

@@ -14,6 +14,9 @@ const scriptIndex = file => scriptEntries.findIndex(entry =>
 const css = fs.readFileSync(path.join(rendererDir, 'styles.css'), 'utf8')
   + fs.readFileSync(path.join(rendererDir, 'features/campus-data/view.css'), 'utf8');
 const appJs = fs.readFileSync(path.join(rendererDir, 'app.js'), 'utf8');
+const updateNoticesJs = fs.readFileSync(
+  path.join(rendererDir, 'features/update-notices/index.mjs'), 'utf8',
+);
 const categoryStacksJs = fs.readFileSync(path.join(rendererDir, 'campus-category-stacks.js'), 'utf8');
 const serviceWorkspaceJs = fs.readFileSync(path.join(rendererDir, 'campus-service-workspace.js'), 'utf8');
 const campusDataModulesJs = fs.readFileSync(path.join(rendererDir, 'features/campus-data/controller.mjs'), 'utf8')
@@ -306,7 +309,12 @@ test('connected status remains static instead of continuously repainting Electro
 });
 
 test('update download uses one stable delegated listener', () => {
-  assert.match(appJs, /\$\('updateHint'\)\.addEventListener\('click'/);
-  assert.match(appJs, /event\.target\?\.closest\?\.\('#updateDownload'\)/);
-  assert.doesNotMatch(appJs, /\$\('updateDownload'\)\.addEventListener/);
+  assert.match(appJs, /rendererFeatures\.mount\('update-notices'/u);
+  assert.match(appJs, /if \(page === 'settings'\) updateNoticesFeature\.runCheck\(false\)/u);
+  assert.match(appJs, /updateNoticesFeature\.renderResult\(s\.update\)/u);
+  assert.match(updateNoticesJs, /listen\(hint, onHintClick\)/u);
+  assert.match(updateNoticesJs, /event\.target\?\.closest\?\.\('#updateDownload'\)/u);
+  assert.match(updateNoticesJs, /openExternal\(updateDownloadUrl\)/u);
+  assert.doesNotMatch(appJs, /updateHintTimer|updateDownloadUrl|function renderUpdateResult/u);
+  assert.doesNotMatch(appJs, /\$\('updateDownload'\)\.addEventListener/u);
 });

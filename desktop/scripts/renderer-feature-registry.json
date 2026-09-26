@@ -191,13 +191,20 @@
       "root": "renderer/features/feature-host",
       "entrypoint": "renderer/features/feature-host/index.mjs",
       "exports": ["FEATURE_DEFINITIONS", "createRendererFeatures"],
-      "allowedDependencies": ["campus-data", "official-favorites", "auth-challenge", "integration-center", "connection-overview"]
+      "allowedDependencies": ["campus-data", "official-favorites", "auth-challenge", "integration-center", "connection-overview", "update-notices"]
     },
     {
       "id": "connection-overview",
       "root": "renderer/features/connection-overview",
       "entrypoint": "renderer/features/connection-overview/index.mjs",
       "exports": ["buildUnderlayOptions", "create", "networkPathSummary", "sparkline"],
+      "allowedDependencies": []
+    },
+    {
+      "id": "update-notices",
+      "root": "renderer/features/update-notices",
+      "entrypoint": "renderer/features/update-notices/index.mjs",
+      "exports": ["create"],
       "allowedDependencies": []
     },
     {

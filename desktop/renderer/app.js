@@ -24,6 +24,17 @@ let loginPending = false;
 let usabilityFeature = null, serviceWorkspace = null, groupDialogFeature = null, favoriteDialogFeature = null, campusDataFeature = null;
 let proxyAuthFeature = null, browserNewTabSettings = null, addWebsiteFeature = null, connectionOverviewFeature = null;
 ['auth-challenge', 'integration-center'].forEach(id => rendererFeatures.mount(id, { api: window.api, document, i18n: window.I18N, target: window }));
+const updateNoticesFeature = rendererFeatures.mount('update-notices', {
+  document,
+  translate: (key, vars) => t(key, vars),
+  escapeHtml: esc,
+  checkUpdate: (manual) => window.api.checkUpdate(manual),
+  openExternal: (url) => window.api.openExternal(url),
+  timers: {
+    setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+    clearTimeout: (timer) => window.clearTimeout(timer),
+  },
+});
 function activeLoginProfileId() {
   return window.schoolProfileSelectorFeature?.credentialProfileId?.() || null;
 }
@@ -53,7 +64,7 @@ function setPage(page) {
     renderResources();
     void campusDataFeature?.ensureLoaded();
   }
-  if (page === 'settings') runUpdateCheck(false);
+  if (page === 'settings') updateNoticesFeature.runCheck(false);
   if (page === 'connect') connectionOverviewFeature?.refreshEnvironment(st.loggedIn === true);
 }
 window.api.onOpenSettings?.(() => { show('dash'); setPage('settings'); refreshState(); });
@@ -179,49 +190,12 @@ async function refreshState({ preserveTower = false } = {}) {
   if (!preserveTower || !towerDirty) populateTowerForm();
   $('acct').textContent = settings.username || '—';
   $('ver').textContent = s.version ? `v${s.version}` : '—';
-  if (s.update) renderUpdateResult(s.update);
+  if (s.update) updateNoticesFeature.renderResult(s.update);
   $('closeAction').value = ['ask', 'minimize', 'quit'].includes(settings.closeAction) ? settings.closeAction : 'ask';
   $('language').value = ['auto', 'zh', 'en'].includes(settings.language) ? settings.language : 'auto';
   browserNewTabSettings?.render(settings);
   if (document.querySelector('.page.active')?.dataset.page === 'connect') connectionOverviewFeature?.refreshEnvironment(s.loggedIn === true);
   return s;
-}
-
-// update check (notify only — the app never downloads updates itself)
-let updateHintTimer = null;
-let updateDownloadUrl = '';
-function setUpdateHint(html, { sticky = false } = {}) {
-  const el = $('updateHint');
-  if (updateHintTimer) { clearTimeout(updateHintTimer); updateHintTimer = null; }
-  el.innerHTML = html || '';
-  el.hidden = !html;
-  if (html && !sticky) updateHintTimer = setTimeout(() => { el.hidden = true; }, 3500);
-}
-$('updateHint').addEventListener('click', (event) => {
-  if (!event.target?.closest?.('#updateDownload') || !updateDownloadUrl) return;
-  window.api.openExternal(updateDownloadUrl);
-});
-function renderUpdateResult(result, { manual = false } = {}) {
-  if (result && result.updateAvailable) {
-    updateDownloadUrl = String(result.url || '');
-    setUpdateHint(
-      t('settings.updateAvailable', {
-        version: esc(result.latestVersion),
-        button: t('settings.updateDownload'),
-      }),
-      { sticky: true },
-    );
-  } else if (manual) {
-    updateDownloadUrl = '';
-    setUpdateHint(result ? t('settings.updateLatest') : t('settings.updateFailed'));
-  }
-}
-async function runUpdateCheck(manual) {
-  try {
-    renderUpdateResult(await window.api.checkUpdate(manual === true), { manual });
-  } catch {
-    if (manual) setUpdateHint(t('settings.updateFailed'));
-  }
 }
 
 async function loadLogs() {
@@ -475,15 +449,9 @@ $('logoutBtn').addEventListener('click', async () => {
   show('login');
 });
 $('openLogLink').addEventListener('click', (e) => { e.preventDefault(); window.api.openLog(); });
-$('checkUpdateBtn').addEventListener('click', async () => {
-  $('checkUpdateBtn').disabled = true;
-  try { await runUpdateCheck(true); }
-  finally { $('checkUpdateBtn').disabled = false; }
-});
-
 window.api.onStatus((s) => {
   renderConnect(s);
-  if (s.update) renderUpdateResult(s.update);
+  if (s.update) updateNoticesFeature.renderResult(s.update);
 });
 window.api.onTelemetry(renderTelemetry);
 proxyAuthFeature = window.proxyAuthMigration.createProxyAuthMigration({
