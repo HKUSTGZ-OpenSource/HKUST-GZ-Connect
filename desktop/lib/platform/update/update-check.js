@@ -24,6 +24,13 @@ function isAllowedReleaseUrl(url, releasesUrlPrefix) {
     && (url === releasesUrlPrefix || url.startsWith(`${releasesUrlPrefix}/`));
 }
 
+// Issuance check, not a general URL validator: the result is owned by Main and
+// already checked against the immutable repository ID and current release prefix.
+function isCurrentUpdateUrl(url, verifiedUpdate) {
+  return typeof url === 'string' && url.length > 0 &&
+    verifiedUpdate?.updateAvailable === true && url === verifiedUpdate.url;
+}
+
 function repositoryReleaseEndpoints(repository) {
   if (!repository || repository.id !== REPOSITORY_ID || repository.name !== REPOSITORY_NAME ||
       typeof repository.owner?.login !== 'string' ||
@@ -231,6 +238,7 @@ module.exports = {
   compareVersions,
   isBetaFinalPromotion,
   isAllowedReleaseUrl,
+  isCurrentUpdateUrl,
   repositoryReleaseEndpoints,
   shouldAutoCheck,
 };

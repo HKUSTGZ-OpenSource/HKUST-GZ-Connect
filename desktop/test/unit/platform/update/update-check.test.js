@@ -11,6 +11,7 @@ const {
   compareVersions,
   isBetaFinalPromotion,
   isAllowedReleaseUrl,
+  isCurrentUpdateUrl,
   repositoryReleaseEndpoints,
   shouldAutoCheck,
 } = require('../../../../lib/platform/update/update-check');
@@ -20,6 +21,24 @@ const INITIAL_API = `https://api.github.com/repos/${INITIAL_OWNER}/${REPOSITORY_
 const RELEASES_API_URL = `${INITIAL_API}/releases/latest`;
 const PRERELEASES_API_URL = `${INITIAL_API}/releases?per_page=30`;
 const RELEASES_URL_PREFIX = `https://github.com/${INITIAL_OWNER}/${REPOSITORY_NAME}/releases`;
+
+test('Main release opening accepts only its exact identity-checked issued update', async () => {
+  const original = await checkForUpdate('2.0.0', repositoryFetcher({
+    tag_name: 'v2.0.3', html_url: `${RELEASES_URL_PREFIX}/tag/v2.0.3`,
+  }));
+  assert.equal(isCurrentUpdateUrl(original.url, original), true);
+  for (const url of ['', null, undefined, original.url + '/extra', original.url + '?x=1',
+    original.url.replace('v2.0.3', 'v2.0.4'), 'file:///tmp/test', 'https://example.invalid']) {
+    assert.equal(isCurrentUpdateUrl(url, original), false);
+  }
+  assert.equal(isCurrentUpdateUrl(original.url, null), false);
+  assert.equal(isCurrentUpdateUrl(original.url, { ...original, updateAvailable: false }), false);
+  const transferred = await checkForUpdate('2.0.0', repositoryFetcher({ tag_name: 'v2.0.3',
+    html_url: 'https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/tag/v2.0.3',
+  }, 'HKUSTGZ-OpenSource'));
+  assert.equal(isCurrentUpdateUrl(transferred.url, transferred), true);
+  assert.equal(isCurrentUpdateUrl(original.url, transferred), false);
+});
 
 function repositoryMetadata(owner = INITIAL_OWNER) {
   const api = `https://api.github.com/repos/${owner}/${REPOSITORY_NAME}`;

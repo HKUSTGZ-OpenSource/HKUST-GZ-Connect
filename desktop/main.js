@@ -60,7 +60,7 @@ const {
 const { ensureOwnerOnly } = require('./lib/platform/storage/private-file');
 const { BufferedLogWriter, readLogTail } = require('./lib/diagnostics/logging/log-writer');
 const { STOP_GRACE_MS, STOP_FORCE_WAIT_MS } = require('./lib/connection/state/stop-policy');
-const { AUTO_CHECK_INTERVAL_MS, checkForUpdate, isAllowedReleaseUrl, shouldAutoCheck } = require('./lib/platform/update/update-check');
+const { AUTO_CHECK_INTERVAL_MS, checkForUpdate, isCurrentUpdateUrl, shouldAutoCheck } = require('./lib/platform/update/update-check');
 const { ConnectivityRecovery } = require('./lib/connection/recovery/connectivity-recovery');
 const { createNetworkStartupSystem } = require('./lib/connection/telemetry/network-status-monitor');
 const { EphemeralProxyCredential, cleanupProxyAccessForEngineClose } = require('./lib/persistence/credentials/proxy-credential');
@@ -1532,7 +1532,7 @@ registerCoreControlIpc({
   openResource: (request) => openCampusResourceById(request),
   checkUpdate: (force) => force ? runUpdateCheck() : runAutomaticUpdateCheck(),
   openExternal: (url) => {
-    if (!isAllowedReleaseUrl(url)) return { ok: false };
+    if (!isCurrentUpdateUrl(url, updateInfo)) return { ok: false };
     shell.openExternal(url).catch(() => {});
     return { ok: true };
   },
