@@ -10,6 +10,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { app, BrowserWindow, WebContentsView, session } = require('electron');
 const { CampusBrowser } = require('../lib/browser/session/campus-browser');
+const { createCampusBrowserWindowOwner } = require('../lib/browser/session/campus-browser-manager');
 const { CAMPUS_PARTITION } = require('../lib/routing/policy/campus-route');
 
 const WAIT_TIMEOUT_MS = 5_000;
@@ -104,6 +105,7 @@ async function run() {
   const errors = [];
   browser = new CampusBrowser({
     BrowserWindow,
+    createWindowOwner: createCampusBrowserWindowOwner,
     WebContentsView,
     session,
     dialog: {

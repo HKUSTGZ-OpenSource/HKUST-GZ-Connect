@@ -29,7 +29,7 @@ const BASELINE = Object.freeze({
   // instead of growing Main again.
   mainLines: 1084,
   rendererLines: 562,
-  campusBrowserLines: 1502,
+  campusBrowserLines: 1476,
   browserTabOwnerLines: 600,
   // Production-only fan-in. Test, E2E, build and maintenance imports are
   // reported separately and must not make the runtime graph look denser.

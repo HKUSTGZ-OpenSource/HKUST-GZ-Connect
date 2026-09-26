@@ -13,6 +13,7 @@ const {
   FIND_BAR_HEIGHT,
   TOOLBAR_HEIGHT,
 } = require('../lib/browser/session/campus-browser');
+const { createCampusBrowserWindowOwner } = require('../lib/browser/session/campus-browser-manager');
 const { CampusWorkspaceController } = require('../lib/browser/workspace/campus-workspace-controller');
 const { createDefaultCardBoardLayout } = require('../lib/card-board/runtime/card-board-migration');
 const { applyCardBoardOperations } = require('../lib/card-board/runtime/card-board-runtime');
@@ -442,6 +443,7 @@ async function main() {
   });
   browser = new CampusBrowser({
     BrowserWindow,
+    createWindowOwner: createCampusBrowserWindowOwner,
     WebContentsView,
     session,
     dialog: {

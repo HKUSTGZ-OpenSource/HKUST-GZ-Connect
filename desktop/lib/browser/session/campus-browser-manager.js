@@ -56,6 +56,151 @@ function officialPortalHomeUrl(profile, resources) {
   return portal.url;
 }
 
+class CampusBrowserWindowOwner {
+  constructor({
+    BrowserWindow,
+    toolbarFile,
+    toolbarPreload,
+    getProfilePresentation,
+    getLocale,
+    getTranslator,
+    parentWindow,
+    platform,
+    windowChrome,
+    onToolbarCommand,
+    onResize,
+    onClosed,
+    onMissingWindow,
+  } = {}) {
+    if (typeof BrowserWindow !== 'function' || typeof toolbarFile !== 'string' || !toolbarFile ||
+        (toolbarPreload != null && typeof toolbarPreload !== 'string') ||
+        typeof getProfilePresentation !== 'function' || typeof getLocale !== 'function' ||
+        typeof getTranslator !== 'function' || typeof parentWindow !== 'function' ||
+        typeof platform !== 'string' || typeof windowChrome !== 'function' ||
+        typeof onToolbarCommand !== 'function' || typeof onResize !== 'function' ||
+        typeof onClosed !== 'function' || typeof onMissingWindow !== 'function') {
+      throw new TypeError('Campus Browser window owner dependencies are incomplete');
+    }
+    Object.assign(this, {
+      BrowserWindow, toolbarFile, toolbarPreload, getProfilePresentation, getLocale,
+      getTranslator, parentWindow, platform, windowChrome,
+      onToolbarCommand, onResize, onClosed, onMissingWindow,
+    });
+    this.current = null;
+  }
+
+  get window() { return this.current?.window || null; }
+
+  windowOptions() {
+    const presentation = this.getProfilePresentation();
+    const t = this.getTranslator();
+    return {
+      width: 1040,
+      height: 740,
+      minWidth: 660,
+      minHeight: 460,
+      title: t('browser.windowTitleForSchool', {
+        school: presentation.schoolName,
+        trust: presentation.unverified ? t('browser.unverifiedSuffix') : '',
+      }),
+      backgroundColor: '#f7f9fc',
+      autoHideMenuBar: true,
+      ...this.windowChrome(this.platform),
+      parent: this.platform === 'darwin' ? undefined : this.parentWindow(),
+      webPreferences: {
+        preload: this.toolbarPreload,
+        devTools: false,
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+        webSecurity: true,
+        safeDialogs: true,
+      },
+    };
+  }
+
+  toolbarQuery() {
+    const presentation = this.getProfilePresentation();
+    return {
+      lang: this.getLocale(),
+      school: presentation.schoolName,
+      unverified: presentation.unverified ? '1' : '0',
+    };
+  }
+
+  async createWindow() {
+    const window = new this.BrowserWindow(this.windowOptions());
+    const record = { window, retired: false };
+    this.current = record;
+    await window.loadFile(this.toolbarFile, { query: this.toolbarQuery() });
+    window.webContents.on('ipc-message', (_event, channel, payload) => {
+      if (this.current === record && !record.retired && channel === 'campus-toolbar-command') {
+        this.onToolbarCommand(payload);
+      }
+    });
+    window.on('resize', () => {
+      if (this.current === record && !record.retired) this.onResize(window);
+    });
+    window.on('closed', () => this.retire(record));
+    return window;
+  }
+
+  requestClose() {
+    const window = this.window;
+    if (!window || window.isDestroyed()) return false;
+    window.close();
+    return true;
+  }
+
+  retire(record) {
+    if (!record || record.retired) return false;
+    record.retired = true;
+    if (this.current !== record) return false;
+    // Keep the BrowserWindow visible to domain cleanup while views and popups
+    // detach, matching Electron's closed-event ownership ordering.
+    this.onClosed(record.window);
+    if (this.current === record) this.current = null;
+    return true;
+  }
+
+  clear() {
+    if (this.current) this.current.retired = true;
+    this.current = null;
+  }
+
+  closeForContextSwitch({ timeoutMs = 5_000, setTimeoutFn = setTimeout,
+    clearTimeoutFn = clearTimeout } = {}) {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30_000 ||
+        typeof setTimeoutFn !== 'function' || typeof clearTimeoutFn !== 'function') {
+      return Promise.reject(new TypeError('Campus Browser close deadline is invalid'));
+    }
+    const window = this.window;
+    if (!window || window.isDestroyed()) {
+      this.onMissingWindow();
+      return Promise.resolve(true);
+    }
+    return new Promise((resolve) => {
+      let settled = false;
+      let timer = null;
+      const finish = (closed) => {
+        if (settled) return;
+        settled = true;
+        clearTimeoutFn(timer);
+        resolve(closed);
+      };
+      window.once('closed', () => finish(true));
+      timer = setTimeoutFn(() => finish(false), timeoutMs);
+      timer?.unref?.();
+      try { window.close(); }
+      catch { finish(false); }
+    });
+  }
+}
+
+function createCampusBrowserWindowOwner(options) {
+  return new CampusBrowserWindowOwner(options);
+}
+
 class CampusBrowserManager {
   constructor({
     BrowserWindow,
@@ -180,6 +325,7 @@ class CampusBrowserManager {
       toolbarFile: this.toolbarFile,
       toolbarPreload: this.toolbarPreload,
       campusPreload: this.campusPreload,
+      createWindowOwner: createCampusBrowserWindowOwner,
       profilePresentation: browserProfilePresentation(this.getProfilePresentation()),
       getWorkspaceResources: () => this.getWorkspaceResources(),
       getWorkspaceGroups: () => this.getWorkspaceGroups(),
@@ -355,4 +501,12 @@ class CampusBrowserManager {
   }
 }
 
-module.exports = { CampusBrowserManager, browserProfilePresentation, officialPortalHomeUrl, normalizeOpenRequest, requiresCampusTunnel };
+module.exports = {
+  CampusBrowserManager,
+  CampusBrowserWindowOwner,
+  createCampusBrowserWindowOwner,
+  browserProfilePresentation,
+  officialPortalHomeUrl,
+  normalizeOpenRequest,
+  requiresCampusTunnel,
+};

@@ -21,6 +21,7 @@ const {
   MAX_TABS,
   SLOW_LOADING_HINT_MS,
 } = require('../lib/browser/session/campus-browser');
+const { createCampusBrowserWindowOwner } = require('../lib/browser/session/campus-browser-manager');
 const { CAMPUS_PARTITION } = require('../lib/routing/policy/campus-route');
 const {
   PERFORMANCE_REPORT_SCHEMA,
@@ -364,6 +365,7 @@ async function run() {
   const errors = [];
   const browser = new CampusBrowser({
     BrowserWindow,
+    createWindowOwner: createCampusBrowserWindowOwner,
     WebContentsView: viewTracker.WebContentsView,
     session,
     dialog: {

@@ -100,12 +100,14 @@ async function runParent() {
 function electronDependencies() {
   const electron = require('electron');
   const { CampusBrowser } = require('../lib/browser/session/campus-browser');
+  const { createCampusBrowserWindowOwner } = require('../lib/browser/session/campus-browser-manager');
   const { CAMPUS_PARTITION, ROUTE_CAMPUS, ROUTE_DIRECT } = require('../lib/routing/policy/campus-route');
   const { DomainRoutePolicyStore } = require('../lib/routing/policy/domain-route-policy');
   const { pacDataUrl } = require('../lib/browser/session/browser-session-manager');
   return {
     ...electron,
     CampusBrowser,
+    createCampusBrowserWindowOwner,
     CAMPUS_PARTITION,
     ROUTE_CAMPUS,
     ROUTE_DIRECT,
@@ -170,6 +172,7 @@ function assertPersistedResolution(store, routes) {
 function createBrowser(dependencies, routingPolicy, errors) {
   return new dependencies.CampusBrowser({
     BrowserWindow: dependencies.BrowserWindow,
+    createWindowOwner: dependencies.createCampusBrowserWindowOwner,
     WebContentsView: dependencies.WebContentsView,
     session: dependencies.session,
     dialog: {
