@@ -45,7 +45,8 @@ test('settings credential IPC and connect use the immutable persistence adapter'
   assert.match(source, /persistenceRuntime\.saveCredential\(pw, username\)/u);
   assert.match(source, /removePassword: \(\) => persistenceRuntime\.clearCredential\(\)/u);
   assert.match(source, /hasAccountIdentity: \(\) => persistenceRuntime\.hasAccountIdentity\(\)/u);
-  assert.match(connect, /const credentialOwner = persistenceRuntime\.openCredential\(\)/u);
+  assert.match(connect, /const credentialOwner = openVpnCredential\(\{/u);
+  assert.match(connect, /openPersistent: \(\) => persistenceRuntime\.openCredential\(\)/u);
   assert.match(connect, /finally \{ credentialOwner\.destroy\(\); \}/u);
   assert.match(connect, /\$\{engineConfigBinding\.stdinFrame\}\\n\$\{username\}\\n\$\{pw\}/u);
   assert.doesNotMatch(connect, /loadPasswordResult\(\)/u);

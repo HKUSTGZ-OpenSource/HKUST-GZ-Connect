@@ -177,7 +177,26 @@ class OneShotVpnCredentialBroker {
   [util.inspect.custom]() { return '[redacted one-shot vpn credential broker]'; }
 }
 
+// Preserve valid protected storage precedence. Only its typed unavailable
+// outcome may use an explicit, current profile-bound memory entry. Corrupt,
+// stale-context and failed-decryption outcomes must still fail closed.
+function openVpnCredential({ memoryBroker, profileId, openPersistent } = {}) {
+  if (typeof memoryBroker?.open !== 'function' || typeof openPersistent !== 'function') {
+    throw new TypeError('VPN credential selection dependencies are incomplete');
+  }
+  let persistent;
+  try { persistent = openPersistent(); }
+  catch (error) {
+    if (error?.credentialStatus !== 'unavailable') throw error;
+    const memory = memoryBroker.open({ profileId });
+    if (!memory) throw error;
+    return memory;
+  }
+  return persistent || memoryBroker.open({ profileId });
+}
+
 module.exports = {
+  openVpnCredential,
   OneShotVpnCredentialBroker,
   OneShotVpnCredentialOwner,
 };
