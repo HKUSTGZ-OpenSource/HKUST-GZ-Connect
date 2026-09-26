@@ -170,10 +170,10 @@ impl BoundSocksServer {
                     }
                     let server = Arc::clone(&self.server);
                     connections.spawn(async move {
-                        if let Err(error) = server.handle(client).await {
-                            if should_report_request_error(&error) {
-                                eprintln!("local proxy request failed: {error}");
-                            }
+                        if let Err(error) = server.handle(client).await
+                            && should_report_request_error(&error)
+                        {
+                            eprintln!("local proxy request failed: {error}");
                         }
                     });
                 }
