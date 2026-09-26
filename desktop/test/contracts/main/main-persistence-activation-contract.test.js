@@ -15,15 +15,17 @@ function section(start, end) {
   return source.slice(from, to);
 }
 
-test('pre-ready selection binds every service path before recovery or construction', () => {
+test('pre-ready selection constructs the persistence owner before ordered recovery and validation', () => {
   const legacyCleanup = source.indexOf('fs.unlinkSync(legacyRuntimeStoragePaths.proxyHelperCredential)');
   const profile = source.indexOf('const activeSchoolProfile = createPreReadySchoolProfileController(');
   const selection = source.indexOf('selectProfileWorkspacePreReadyStorage({ userData: DATA, profile })');
   const paths = source.indexOf('const runtimeStoragePaths = preReadyStorage.paths;');
-  const recovery = source.indexOf('recoverCredentialSettingsTransaction(CREDENTIAL_TRANSACTION');
+  const owner = source.indexOf('const persistenceRuntime = new DesktopPersistenceRuntime(');
+  const prepare = source.indexOf('persistenceRuntime.prepareBeforeOwnerOnlyValidation(');
+  const validation = source.indexOf('ensureOwnerOnly(privateFile)', prepare);
   assert.ok(legacyCleanup >= 0 && profile > legacyCleanup && selection > profile &&
-    paths > selection && recovery > paths);
-  assert.match(source, /preReadyStorage\.mode === 'legacy-flat'[\s\S]*recoverCredentialSettingsTransaction/);
+    paths > selection && owner > paths && prepare > owner && validation > prepare);
+  assert.doesNotMatch(source, /recoverCredentialSettingsTransaction|runCredentialSettingsMutation/u);
 });
 
 test('after-ready migration uses the bounded relaunch owner before services can start', () => {

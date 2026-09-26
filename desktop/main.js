@@ -15,10 +15,6 @@ const {
 const {
   OneShotVpnCredentialBroker, openVpnCredential,
 } = require('./lib/persistence/credentials/one-shot-vpn-credential');
-const {
-  recoverCredentialSettingsTransaction,
-  runCredentialSettingsMutation,
-} = require('./lib/persistence/credentials/credential-settings-transaction');
 const { desktopRuntimeComposition } = require('./lib/app/desktop-runtime-composition');
 const { ActiveContextLease, assertActiveContextSwitchStartupClear, createLegacyRuntimeStoragePaths, createMainProfileSwitchComposition, createMultiSchoolStartupInitializer, createPageFavoriteController, customGatewayProductAvailability, DesktopPersistenceRuntime, ProfileWorkspaceStartupRuntime, relaunchAfterPersistenceMigration, ResourceLibraryRuntime, resolveUserDataOverride, selectProfileWorkspacePreReadyStorage, writePersistenceE2EMarker, writeProfileSwitchE2EMarker } = desktopRuntimeComposition;
 const { AuthChallengeCoordinator, EngineControlRegistry } = require('./lib/connection/engine/engine-control-suite');
@@ -119,7 +115,6 @@ const CAMPUS_CERTIFICATE_TRUST = runtimeStoragePaths.certificateTrust;
 const RESOURCE_FAVORITES = runtimeStoragePaths.resourceFavorites;
 const RESOURCE_RECENTS = runtimeStoragePaths.resourceRecents;
 const ENGINE_OWNER = runtimeStoragePaths.engineOwner;
-const CREDENTIAL_TRANSACTION = runtimeStoragePaths.credentialTransaction;
 const ACTIVE_CONTEXT_SWITCH = runtimeStoragePaths.activeContextSwitch;
 const PROXY_CREDENTIAL = runtimeStoragePaths.proxyCredential;
 const PROXY_HELPER_CREDENTIAL = runtimeStoragePaths.proxyHelperCredential;
@@ -135,26 +130,35 @@ try { fs.unlinkSync(PROXY_HELPER_CREDENTIAL); } catch (error) {
 }
 const GATEWAY_HOST = syntheticEngineE2e ? '127.0.0.1' : activeSchoolProfile.gatewayHost;
 const GATEWAY_PORT = activeSchoolProfile.gatewayPort;
-const credentialTransactionPaths = Object.freeze({
-  settings: SETTINGS,
-  settingsBackup: `${SETTINGS}.bak`,
-  credential: CRED,
+const persistenceRuntime = new DesktopPersistenceRuntime({
+  preReadySelection: preReadyStorage,
+  initializeAfterReady: () => activeSchoolProfile.withProfileDocument((profile) => (
+    new ProfileWorkspaceStartupRuntime({
+      userData: DATA, profile, safeStorage, platform: process.platform,
+    }).initialize()
+  )),
+  legacy: DesktopPersistenceRuntime.createLegacyAdapter({
+    settingsFile: SETTINGS, credentialFile: CRED, safeStorage, platform: process.platform,
+    getDefaultRouteDomains: () => activeSchoolProfile.defaultRouteDomains,
+    onRecovery: (notice) => { settingsRecoveryNotice = notice; },
+  }),
+  settingsPresentation: {
+    getState: () => state,
+    translate: (key) => t(key),
+    emit,
+    getAdditionalNotice: () => settingsRecoveryNoticeText,
+  },
 });
-// This must run before any loadSettings(), credential read, or blanket chmod.
-// In particular, chmodding an attacker-replaced broad-permission journal
-// first would erase the evidence that makes recovery fail closed.
-let credentialTransactionRecovery = preReadyStorage.mode === 'legacy-flat'
-  ? recoverCredentialSettingsTransaction(CREDENTIAL_TRANSACTION, credentialTransactionPaths)
-  : { ok: true, status: 'none' };
-let credentialTransactionBlocked = credentialTransactionRecovery.status === 'blocked';
-for (const privateFile of [
-  SETTINGS, CRED, LOG, PAC_FILE, CAMPUS_BROWSER_PAC_FILE, ROUTING_RULES,
-  CAMPUS_CREDENTIALS, CAMPUS_CERTIFICATE_TRUST, ENGINE_OWNER,
-  RESOURCE_FAVORITES, RESOURCE_RECENTS,
-  PROXY_CREDENTIAL, PROXY_HELPER_CREDENTIAL,
-]) {
-  ensureOwnerOnly(privateFile);
-}
+persistenceRuntime.prepareBeforeOwnerOnlyValidation(() => {
+  for (const privateFile of [
+    SETTINGS, CRED, LOG, PAC_FILE, CAMPUS_BROWSER_PAC_FILE, ROUTING_RULES,
+    CAMPUS_CREDENTIALS, CAMPUS_CERTIFICATE_TRUST, ENGINE_OWNER,
+    RESOURCE_FAVORITES, RESOURCE_RECENTS,
+    PROXY_CREDENTIAL, PROXY_HELPER_CREDENTIAL,
+  ]) {
+    ensureOwnerOnly(privateFile);
+  }
+});
 
 let desktopShell = null;
 let campusBrowserManager = null;
@@ -223,24 +227,8 @@ let locale = 'zh';
 let t = createT(locale);
 let settingsRecoveryNotice = null;
 let settingsRecoveryNoticeText = null;
-let credentialRecoveryNoticeText = null;
-let credentialRecoveryErrorText = null;
 
 // ---------- settings & credentials ----------
-const persistenceRuntime = new DesktopPersistenceRuntime({
-  preReadySelection: preReadyStorage,
-  initializeAfterReady: () => activeSchoolProfile.withProfileDocument((profile) => (
-    new ProfileWorkspaceStartupRuntime({
-      userData: DATA, profile, safeStorage, platform: process.platform,
-    }).initialize()
-  )),
-  legacy: DesktopPersistenceRuntime.createLegacyAdapter({
-    settingsFile: SETTINGS, credentialFile: CRED, safeStorage, platform: process.platform,
-    getDefaultRouteDomains: () => activeSchoolProfile.defaultRouteDomains,
-    onRecovery: (notice) => { settingsRecoveryNotice = notice; },
-  }),
-  settingsPresentation: { getState: () => state, translate: (key) => t(key), emit },
-});
 const initializeMultiSchoolStartup = createMultiSchoolStartupInitializer({ userData: DATA, packageRoot: __dirname, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, desktopDir: __dirname }); const customProfileDeletion = createCustomProfileDeletionRuntime({ userData: DATA, withCandidateDirectory: (callback) => initializeMultiSchoolStartup.withDirectory(callback), electronSession: session });
 const schoolProfileOnboarding = createSchoolProfileOnboardingRuntime({ userData: DATA, probeLaunch: resolveGatewayProbeLaunch({ appIsPackaged: app.isPackaged, baseDirectory: __dirname, nativeProbe: gatewayProbePath(), execPath: process.execPath }), spawnProcess: spawn,
   getActiveContext: () => activeSchoolProfile.activeContextBinding(), listProfiles: (options) => initializeMultiSchoolStartup.listViews(options),
@@ -258,20 +246,7 @@ function currentLocale() {
   return effectiveLocale(loadSettings().language, app.getLocale());
 }
 function assertSettingsPersistenceAvailable() {
-  // Never overwrite a settings snapshot that the credential transaction must
-  // still restore. All settings/resource/routing writers pass this boundary,
-  // so a blocked startup recovery is fail-closed for persistence as well as
-  // for connection attempts.
-  if (credentialTransactionBlocked) {
-    const recovery = retryCredentialTransactionRecovery();
-    if (recovery.status === 'blocked') {
-      const message = t('error.credentialRecoveryBlocked');
-      const error = new Error(message);
-      error.code = 'CREDENTIAL_RECOVERY_BLOCKED';
-      error.userMessage = message;
-      throw error;
-    }
-  }
+  persistenceRuntime.assertCredentialTransactionAvailable();
 }
 let routingSettingsSnapshot = null;
 function routingSettings() {
@@ -286,7 +261,7 @@ function saveSettings(settings) {
 }
 function savePassword(pw, username) { return persistenceRuntime.saveCredential(pw, username); }
 function hasPersistentCredential() {
-  return !credentialTransactionBlocked && persistenceRuntime.hasCredential();
+  return persistenceRuntime.hasCredential();
 }
 function hasOneShotCredential() {
   try {
@@ -302,55 +277,6 @@ function hasStoredCredential() {
 }
 function hasCredentialForCurrentSession() {
   return hasStoredCredential() || engineSupervisor.hasActive;
-}
-function syncRecoveryNotice(emitState = true) {
-  state.notice = [settingsRecoveryNoticeText, credentialRecoveryNoticeText]
-    .filter(Boolean)
-    .join('\n') || null;
-  if (emitState) emit();
-}
-function applyCredentialRecoveryOutcome(recovery, {
-  emitState = true,
-  clearedNoticeKey = 'error.credentialRecoveryCleared',
-  clearNotice = false,
-} = {}) {
-  credentialTransactionRecovery = recovery;
-  const recoverySafe = recovery?.status === 'credential-cleared' || (
-    recovery?.ok === true && ['none', 'recovered', 'committed'].includes(recovery.status)
-  );
-  credentialTransactionBlocked = !recoverySafe;
-
-  if (credentialRecoveryErrorText && state.recoveryError === credentialRecoveryErrorText) {
-    state.recoveryError = null;
-  }
-  credentialRecoveryErrorText = null;
-  if (credentialTransactionBlocked) {
-    credentialRecoveryNoticeText = null;
-    credentialRecoveryErrorText = t('error.credentialRecoveryBlocked');
-    state.recoveryError = credentialRecoveryErrorText;
-  } else if (recovery?.status === 'recovered') {
-    credentialRecoveryNoticeText = t('error.credentialRecoveryRecovered');
-  } else if (recovery?.status === 'credential-cleared') {
-    credentialRecoveryNoticeText = t(clearedNoticeKey);
-  } else if (clearNotice) {
-    credentialRecoveryNoticeText = null;
-  }
-  syncRecoveryNotice(emitState);
-  return recovery;
-}
-function retryCredentialTransactionRecovery() {
-  if (preReadyStorage.mode === 'profile-workspace') {
-    return applyCredentialRecoveryOutcome({ ok: true, status: 'none' });
-  }
-  return applyCredentialRecoveryOutcome(recoverCredentialSettingsTransaction(
-    CREDENTIAL_TRANSACTION,
-    credentialTransactionPaths,
-  ));
-}
-function runPersistenceCredentialMutation(options) {
-  if (preReadyStorage.mode === 'legacy-flat') return runCredentialSettingsMutation(options);
-  try { return { ok: true, value: options.mutate() }; }
-  catch (error) { return { ok: false, phase: 'mutation', error, recovery: { ok: true, status: 'none' } }; }
 }
 function socksPort() { return Number(loadSettingsOrReport().port) || 1080; }
 function clearActiveProxyCredential(expectedGeneration = null) {
@@ -582,7 +508,8 @@ function handleEngineExitBoundary(...args) { return engineTermination.exit(...ar
 const engineAttempts = new EngineAttemptCoordinator({
   engineSupervisor, connectionState, appIsPackaged: app.isPackaged, baseDirectory: __dirname,
   getState: () => state, getTranslator: () => t, getLogWriter: () => logWriter,
-  isCredentialTransactionBlocked: () => credentialTransactionBlocked, retryCredentialTransactionRecovery,
+  isCredentialTransactionBlocked: () => persistenceRuntime.isCredentialTransactionBlocked(),
+  retryCredentialTransactionRecovery: () => persistenceRuntime.retryCredentialTransactionRecovery(),
   loadSettingsOrReport, loadSettings, reportSettingsReadFailure, reportLogFailure, emit,
   networkEnvironment: {
     refresh: (...args) => networkEnvironmentService.refresh(...args),
@@ -855,12 +782,7 @@ registerSettingsCredentialIpc({
   saveSettings,
   savePassword,
   removePassword: () => persistenceRuntime.clearCredential(),
-  runCredentialMutation: runPersistenceCredentialMutation,
-  credentialJournalPath: CREDENTIAL_TRANSACTION,
-  credentialPaths: credentialTransactionPaths,
-  applyCredentialRecovery: applyCredentialRecoveryOutcome,
-  isCredentialBlocked: () => credentialTransactionBlocked,
-  retryCredentialRecovery: retryCredentialTransactionRecovery,
+  credentialTransactions: persistenceRuntime,
   runPolicyTransaction: runDomainPolicyTransaction,
   runSerialTransaction: runActiveContextTransaction,
   assertPersistence: assertSettingsPersistenceAvailable,
@@ -1049,8 +971,10 @@ app.whenReady().then(() => {
       ? 'error.settingsRestored'
       : 'error.settingsDefaults');
   }
-  applyCredentialRecoveryOutcome(credentialTransactionRecovery, { emitState: false });
-  syncRecoveryNotice(false);
+  persistenceRuntime.applyCredentialRecoveryOutcome(
+    persistenceRuntime.getCredentialTransactionRecovery(),
+    { emitState: false },
+  );
   desktopShell.installApplicationMenu();
   // A PAC write can fail on a read-only or full user-data directory. That must
   // not leave the user with no window and no tray, so it is reported through the

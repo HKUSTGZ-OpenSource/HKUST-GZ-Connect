@@ -5,6 +5,10 @@ const { projectRuntimeSettings } = require('../settings/profile-workspace-settin
 const { loadSettings: readSettings, saveSettings: writeSettings } = require('../settings/settings-store');
 const { hasStoredPassword, loadPasswordResult: readPasswordResult,
   restorePasswordSnapshot, savePassword: writePassword } = require('../credentials/credential-store');
+const {
+  recoverCredentialSettingsTransaction,
+  runCredentialSettingsMutation,
+} = require('../credentials/credential-settings-transaction');
 const { LegacyMigrationCredentialOwner } = require('../migration/legacy-hkust/legacy-migration-inputs');
 
 class ObservedCredentialOwner {
@@ -42,6 +46,10 @@ class ObservedCredentialOwner {
 }
 
 class DesktopPersistenceRuntime {
+  #credentialTransactionRecovery = Object.freeze({ ok: true, status: 'none' });
+  #credentialRecoveryNoticeText = null;
+  #credentialRecoveryErrorText = null;
+
   static createLegacyAdapter({ settingsFile, credentialFile, safeStorage, platform,
     getDefaultRouteDomains, onRecovery, stores = {} }) {
     const io = { readSettings, writeSettings, readPasswordResult, writePassword,
@@ -71,7 +79,8 @@ class DesktopPersistenceRuntime {
     });
   }
 
-  constructor({ preReadySelection, initializeAfterReady, legacy, settingsPresentation = null } = {}) {
+  constructor({ preReadySelection, initializeAfterReady, legacy, settingsPresentation = null,
+    credentialTransactionFileSystem } = {}) {
     if (!preReadySelection || !['legacy-flat', 'profile-workspace'].includes(preReadySelection.mode) ||
         !preReadySelection.paths || typeof initializeAfterReady !== 'function' || !legacy ||
         ['loadSettings', 'saveSettings', 'saveCredential', 'clearCredential',
@@ -92,10 +101,107 @@ class DesktopPersistenceRuntime {
     this.accountLabel = '';
     this.settingsPresentation = settingsPresentation;
     this.settingsReadErrorText = null;
+    this.credentialTransactionFileSystem = credentialTransactionFileSystem;
   }
 
   get mode() { return this.preReadySelection.mode; }
   get paths() { return this.preReadySelection.paths; }
+
+  prepareBeforeOwnerOnlyValidation(validatePrivateFiles) {
+    if (typeof validatePrivateFiles !== 'function') {
+      throw new TypeError('private-file validation effect is required');
+    }
+    const recoveryResult = this.mode === 'legacy-flat'
+      ? recoverCredentialSettingsTransaction(this.paths.credentialTransaction, {
+        settings: this.paths.settings,
+        settingsBackup: this.paths.settingsBackup,
+        credential: this.paths.vpnCredential,
+      }, this.credentialTransactionFileSystem)
+      : { ok: true, status: 'none' };
+    const recovery = this.#recordCredentialTransactionRecovery(recoveryResult);
+    // The old startup sequence always continued through owner-only checks after
+    // a blocked recovery; the retained block prevents writes and connection.
+    validatePrivateFiles();
+    return recovery;
+  }
+
+  getCredentialTransactionRecovery() {
+    return this.#credentialTransactionRecovery;
+  }
+
+  isCredentialTransactionBlocked() { return !this.#credentialRecoverySafe(); }
+
+  applyCredentialRecoveryOutcome(recovery, {
+    emitState = true,
+    clearedNoticeKey = 'error.credentialRecoveryCleared',
+    clearNotice = false,
+  } = {}) {
+    recovery = this.#recordCredentialTransactionRecovery(recovery);
+    const recoverySafe = this.#credentialRecoverySafe(recovery);
+
+    const state = this.settingsPresentation.getState();
+    if (this.#credentialRecoveryErrorText && state.recoveryError === this.#credentialRecoveryErrorText) {
+      state.recoveryError = null;
+    }
+    this.#credentialRecoveryErrorText = null;
+    if (!recoverySafe) {
+      this.#credentialRecoveryNoticeText = null;
+      this.#credentialRecoveryErrorText = this.settingsPresentation.translate('error.credentialRecoveryBlocked');
+      state.recoveryError = this.#credentialRecoveryErrorText;
+    } else if (recovery?.status === 'recovered') {
+      this.#credentialRecoveryNoticeText = this.settingsPresentation.translate('error.credentialRecoveryRecovered');
+    } else if (recovery?.status === 'credential-cleared') {
+      this.#credentialRecoveryNoticeText = this.settingsPresentation.translate(clearedNoticeKey);
+    } else if (clearNotice) {
+      this.#credentialRecoveryNoticeText = null;
+    }
+    this.#syncRecoveryNotice(emitState);
+    return recovery;
+  }
+
+  retryCredentialTransactionRecovery() {
+    if (this.mode === 'profile-workspace') {
+      return this.applyCredentialRecoveryOutcome({ ok: true, status: 'none' });
+    }
+    return this.applyCredentialRecoveryOutcome(recoverCredentialSettingsTransaction(
+      this.paths.credentialTransaction,
+      {
+        settings: this.paths.settings,
+        settingsBackup: this.paths.settingsBackup,
+        credential: this.paths.vpnCredential,
+      },
+      this.credentialTransactionFileSystem,
+    ));
+  }
+
+  assertCredentialTransactionAvailable() {
+    if (!this.isCredentialTransactionBlocked()) return;
+    const recovery = this.retryCredentialTransactionRecovery();
+    if (recovery.status === 'blocked') {
+      const message = this.settingsPresentation.translate('error.credentialRecoveryBlocked');
+      const error = new Error(message);
+      error.code = 'CREDENTIAL_RECOVERY_BLOCKED';
+      error.userMessage = message;
+      throw error;
+    }
+  }
+
+  runCredentialMutation({ mutate, fileSystem = this.credentialTransactionFileSystem } = {}) {
+    if (this.mode === 'legacy-flat') {
+      return runCredentialSettingsMutation({
+        journalPath: this.paths.credentialTransaction,
+        paths: {
+          settings: this.paths.settings,
+          settingsBackup: this.paths.settingsBackup,
+          credential: this.paths.vpnCredential,
+        },
+        mutate,
+        fileSystem,
+      });
+    }
+    try { return { ok: true, value: mutate() }; }
+    catch (error) { return { ok: false, phase: 'mutation', error, recovery: { ok: true, status: 'none' } }; }
+  }
 
   initialize() {
     if (this.ready) return Object.freeze({ ready: true, relaunchRequired: false, mode: this.mode });
@@ -212,6 +318,7 @@ class DesktopPersistenceRuntime {
 
   hasCredential() {
     this.#requireReady();
+    if (this.isCredentialTransactionBlocked()) return false;
     if (this.mode === 'legacy-flat') return this.legacy.hasCredential();
     // This is a display hint; openCredential still validates current storage.
     return this.authority.hasCredential;
@@ -229,6 +336,29 @@ class DesktopPersistenceRuntime {
     if (this.mode !== 'profile-workspace') return null;
     this.authority = this.runtime.reloadAuthority();
     return this.authority;
+  }
+
+  #syncRecoveryNotice(emitState = true) {
+    const additionalNotice = this.settingsPresentation.getAdditionalNotice?.() || null;
+    const state = this.settingsPresentation.getState();
+    state.notice = [additionalNotice, this.#credentialRecoveryNoticeText]
+      .filter(Boolean)
+      .join('\n') || null;
+    if (emitState) this.settingsPresentation.emit();
+  }
+
+  #credentialRecoverySafe(recovery = this.#credentialTransactionRecovery) {
+    return recovery?.status === 'credential-cleared' || (
+      recovery?.ok === true && ['none', 'recovered', 'committed'].includes(recovery.status)
+    );
+  }
+
+  #recordCredentialTransactionRecovery(recovery) {
+    const record = recovery && typeof recovery === 'object' && !Array.isArray(recovery)
+      ? { ...recovery }
+      : {};
+    this.#credentialTransactionRecovery = Object.freeze(record);
+    return this.#credentialTransactionRecovery;
   }
 
   #requireReady() {
