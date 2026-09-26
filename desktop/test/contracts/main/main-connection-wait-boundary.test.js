@@ -6,6 +6,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
+const operations = fs.readFileSync(require.resolve('../../../lib/connection/state/connection-state-machine'), 'utf8');
 
 test('Main connection waits are event-driven, intent-bound, and disposed on quit', () => {
   assert.match(source, /connectionWaitRegistry\.observe\(connectionState\.snapshot\(\)\)/);
@@ -45,22 +46,32 @@ test('settings failures publish terminal intent state to pending waiters', () =>
 
 test('connect and reconnect fail closed around quit and coalesce before creating an intent', () => {
   const quitGate = source.slice(
-    source.indexOf('function rejectConnectionWhileQuitting('),
-    source.indexOf('async function connect('),
+    source.indexOf('const connectionOperations ='),
+    source.indexOf('const engineTermination ='),
   );
-  const connectBody = source.slice(
-    source.indexOf('async function connect('),
-    source.indexOf('\nfunction handleEngineClose('),
+  const connectBody = operations.slice(
+    operations.indexOf('  async connect('),
+    operations.indexOf('  ensureEngineStopped()'),
   );
-  const reconnectBody = source.slice(
-    source.indexOf('async function reconnect('),
-    source.indexOf('// ---------- PAC file'),
+  const reconnectBody = operations.slice(
+    operations.indexOf('  async reconnect('),
   );
-  assert.match(quitGate, /desktopShell\?\.isQuitting !== true/);
-  assert.match(quitGate, /connectionState\.failIntent\(intent\); emit\(\)/);
+  assert.match(quitGate, /isQuitting: \(\) => desktopShell\?\.isQuitting === true/);
+  assert.match(quitGate, /connectionOperations\.connect\(isRetry, expectedIntent\)/);
+  assert.match(operations, /if \(this\.isQuitting\(\) !== true\) return null/);
+  assert.match(operations, /this\.connectionState\.failIntent\(intent\); this\.emit\(\)/);
   assert.match(connectBody, /rejectConnectionWhileQuitting\(expectedIntent \?\? undefined\)/);
-  assert.match(connectBody, /if \(disconnectInFlight\) await disconnectInFlight;[\s\S]*rejectConnectionWhileQuitting/);
+  assert.match(connectBody, /if \(this\.disconnectInFlight\) await this\.disconnectInFlight;[\s\S]*rejectConnectionWhileQuitting/);
   assert.match(connectBody, /if \(current\.desiredConnected\)[\s\S]*current\.intent/);
   assert.match(reconnectBody, /rejectConnectionWhileQuitting\(\)/);
   assert.match(reconnectBody, /const stopResult = await stopped;[\s\S]*rejectConnectionWhileQuitting\(intent\)/);
+});
+
+test('operation stop effects retain the Browser-before-Engine barrier and Supervisor timeout authority', () => {
+  assert.match(source, /stopEngine: \(\) => stopEngineAfterBrowserSuspend\(\{/u);
+  assert.match(source, /browserBoundaryClosed: \(\) => campusBrowserManager\.routingRequestsBlocked !== false/u);
+  assert.match(source, /closeBrowser: \(\) => campusBrowserManager\.close\(\)/u);
+  assert.match(source, /stopEngine: \(\) => engineSupervisor\.stop\(\{ requestGracefulStop: requestActiveEngineControlShutdown \}\)/u);
+  const supervisor = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-supervisor'), 'utf8');
+  assert.match(supervisor, /graceMs = STOP_GRACE_MS,[\s\S]*forceWaitMs = STOP_FORCE_WAIT_MS/u);
 });
