@@ -138,9 +138,6 @@
     "renderer/components/card-board/card-board-view.js": [
       "cardBoardView"
     ],
-    "renderer/connection-overview.js": [
-      "connectionOverview"
-    ],
     "renderer/group-dialog.js": [
       "categoryGroupDialog"
     ],
@@ -194,7 +191,14 @@
       "root": "renderer/features/feature-host",
       "entrypoint": "renderer/features/feature-host/index.mjs",
       "exports": ["FEATURE_DEFINITIONS", "createRendererFeatures"],
-      "allowedDependencies": ["campus-data", "official-favorites", "auth-challenge", "integration-center"]
+      "allowedDependencies": ["campus-data", "official-favorites", "auth-challenge", "integration-center", "connection-overview"]
+    },
+    {
+      "id": "connection-overview",
+      "root": "renderer/features/connection-overview",
+      "entrypoint": "renderer/features/connection-overview/index.mjs",
+      "exports": ["buildUnderlayOptions", "create", "networkPathSummary", "sparkline"],
+      "allowedDependencies": []
     },
     {
       "id": "campus-data",

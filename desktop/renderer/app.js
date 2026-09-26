@@ -22,8 +22,7 @@ let towerDirty = false;
 let towerSaving = false;
 let loginPending = false;
 let usabilityFeature = null, serviceWorkspace = null, groupDialogFeature = null, favoriteDialogFeature = null, campusDataFeature = null;
-let proxyAuthFeature = null, browserNewTabSettings = null;
-let addWebsiteFeature = null;
+let proxyAuthFeature = null, browserNewTabSettings = null, addWebsiteFeature = null, connectionOverviewFeature = null;
 ['auth-challenge', 'integration-center'].forEach(id => rendererFeatures.mount(id, { api: window.api, document, i18n: window.I18N, target: window }));
 function activeLoginProfileId() {
   return window.schoolProfileSelectorFeature?.credentialProfileId?.() || null;
@@ -55,7 +54,7 @@ function setPage(page) {
     void campusDataFeature?.ensureLoaded();
   }
   if (page === 'settings') runUpdateCheck(false);
-  if (page === 'connect') window.connectionOverview.refreshEnvironment(st.loggedIn === true);
+  if (page === 'connect') connectionOverviewFeature?.refreshEnvironment(st.loggedIn === true);
 }
 window.api.onOpenSettings?.(() => { show('dash'); setPage('settings'); refreshState(); });
 function fmtDur(ms) { const s = Math.max(0, Math.floor(ms / 1000)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); }
@@ -105,7 +104,7 @@ function renderConnect(s) {
   $('connErr').textContent = (!s.connected && !s.connecting && s.lastError) ? s.lastError : '';
   $('settingsNotice').hidden = !s.notice;
   $('settingsNotice').textContent = s.notice || ''; window.notificationView.render({ card: $('notificationCard'), title: $('notificationTitle'), summary: $('notificationSummary'), action: $('notificationAction'), state: s, translate: t });
-  window.connectionOverview.renderStatus(s, t);
+  connectionOverviewFeature?.renderStatus(s, t);
   $('statGrid').hidden = false;
   $('appsCard').hidden = !s.connected;
   $('stIp').textContent = s.clientIp || '—';
@@ -118,7 +117,7 @@ function renderConnect(s) {
 }
 
 function renderTelemetry(tele) {
-  window.connectionOverview.renderTelemetry(tele, t);
+  connectionOverviewFeature?.renderTelemetry(tele, t);
   if (tele.connectedAt) connectedAt = tele.connectedAt;
   const latencyAvailable = tele.latencyMs != null;
   $('stPing').textContent = latencyAvailable ? Math.round(tele.latencyMs) + ' ms' : '—';
@@ -184,7 +183,7 @@ async function refreshState({ preserveTower = false } = {}) {
   $('closeAction').value = ['ask', 'minimize', 'quit'].includes(settings.closeAction) ? settings.closeAction : 'ask';
   $('language').value = ['auto', 'zh', 'en'].includes(settings.language) ? settings.language : 'auto';
   browserNewTabSettings?.render(settings);
-  if (document.querySelector('.page.active')?.dataset.page === 'connect') window.connectionOverview.refreshEnvironment(s.loggedIn === true);
+  if (document.querySelector('.page.active')?.dataset.page === 'connect') connectionOverviewFeature?.refreshEnvironment(s.loggedIn === true);
   return s;
 }
 
@@ -424,7 +423,7 @@ $('language').addEventListener('change', async () => {
   await refreshState();
 });
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) refreshState({ preserveTower: true }).then(() => window.connectionOverview.refreshEnvironment(st.loggedIn === true));
+  if (!document.hidden) refreshState({ preserveTower: true }).then(() => connectionOverviewFeature?.refreshEnvironment(st.loggedIn === true));
 });
 window.addEventListener('focus', () => {
   if (document.querySelector('.page.active')?.dataset.page === 'browser') {
@@ -554,7 +553,8 @@ window.campusCategoryStacks.start({
   document,
   onAddSite: () => addWebsiteFeature.open(),
   onRenameCard: ({ card }) => { if (card?.id) groupDialogFeature.open({ id: card.id, name: card.name }); },
-}); window.connectionOverview.start({ translate: (key, vars) => t(key, vars), copy: (value) => window.api.copy(value), save: (patch) => window.api.save(patch), refresh: () => refreshState({ preserveTower: true }), getEnvironment: () => window.api.getNetworkEnvironment(), subscribeEnvironment: (callback) => window.api.onNetworkEnvironment?.(callback) }); window.notificationDrawer.start({ document, loadLogs, runAction: (action) => window.notificationView.runAction(action, { openPage: setPage, reconnect: () => (!st.connected && !st.connecting ? window.api.connect() : null) }) });
+}); connectionOverviewFeature = rendererFeatures.mount('connection-overview', { document, translate: (key, vars) => t(key, vars), copy: (value) => window.api.copy(value), save: (patch) => window.api.save(patch), refresh: () => refreshState({ preserveTower: true }), getEnvironment: () => window.api.getNetworkEnvironment(), subscribeEnvironment: (callback) => window.api.onNetworkEnvironment?.(callback), timers: { setTimeout: (callback, delay) => window.setTimeout(callback, delay), clearTimeout: (handle) => window.clearTimeout(handle) } });
+window.notificationDrawer.start({ document, loadLogs, runAction: (action) => window.notificationView.runAction(action, { openPage: setPage, reconnect: () => (!st.connected && !st.connecting ? window.api.connect() : null) }) });
 usabilityFeature = window.usabilityController.create({ window, document, translate: (key) => t(key), openPage: setPage, clearResourceFilter: () => {
   if (window.campusCategoryStacks.isEditing()) { window.campusCategoryStacks.cancelEdit(); return; }
   serviceWorkspace?.clearSearch();

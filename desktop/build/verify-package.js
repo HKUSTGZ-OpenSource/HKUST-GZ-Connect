@@ -20,6 +20,35 @@ const MARKER_SCAN_CHUNK_BYTES = 64 * 1024;
 const MAC_SYSTEM_DYLIB_PREFIXES = ['/usr/lib/', '/System/Library/'];
 const MAX_PACKAGED_PROFILE_BYTES = 256 * 1024;
 const MAX_PACKAGED_PROFILE_ASSET_BYTES = 4 * 1024 * 1024;
+const REQUIRED_CONNECTION_OVERVIEW_ENTRIES = Object.freeze([
+  '/renderer/features/connection-overview/index.mjs',
+  '/renderer/features/connection-overview/view.css',
+]);
+
+function assertConnectionOverviewPackageEntries(entries) {
+  for (const entry of REQUIRED_CONNECTION_OVERVIEW_ENTRIES) {
+    if (!entries.has(entry)) throw new Error(`missing required packaged file: ${entry}`);
+  }
+  if (entries.has('/renderer/connection-overview.js')) {
+    throw new Error('legacy Renderer connection-overview script entered the package');
+  }
+}
+
+function assertConnectionOverviewNativeFeature(appSource, featureHostSource) {
+  const appImportsHost = appSource.includes(
+    "import { createRendererFeatures } from './features/feature-host/index.mjs';",
+  );
+  const appMountsFeature = appSource.includes("rendererFeatures.mount('connection-overview',");
+  const hostImportsFeature = featureHostSource.includes(
+    "import { create as createConnectionOverview } from '../connection-overview/index.mjs';",
+  );
+  const hostRegistersFeature = featureHostSource.includes(
+    "Object.freeze({ id: 'connection-overview', create: createConnectionOverview })",
+  );
+  if (!(appImportsHost && appMountsFeature && hostImportsFeature && hostRegistersFeature)) {
+    throw new Error('packaged Renderer does not load the native Connection Overview feature');
+  }
+}
 
 function sha256(data) {
   return crypto.createHash('sha256').update(data).digest('hex');
@@ -440,6 +469,7 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     '/lib/connection/recovery/tunnel-health.js',
     '/lib/platform/update/update-check.js',
     '/renderer/app.js',
+    '/renderer/features/feature-host/index.mjs',
     '/renderer/features/auth-challenge/index.mjs',
     '/renderer/features/auth-challenge/controller.mjs',
     '/renderer/features/auth-challenge/lifecycle.mjs',
@@ -466,7 +496,6 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     '/renderer/campus-workspace-model.js',
     '/renderer/campus-workspace.css',
     '/renderer/campus-category-stacks.js',
-    '/renderer/connection-overview.js',
     '/renderer/notification-drawer.js',
     '/renderer/styles.css',
     '/lib/browser/workspace/campus-workspace-controller.js',
@@ -480,6 +509,7 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
   for (const entry of requiredEntries) {
     if (!entries.has(entry)) throw new Error(`missing required packaged file: ${entry}`);
   }
+  assertConnectionOverviewPackageEntries(entries);
   if (entries.has('/assets/campus-resources.json')) {
     throw new Error('legacy duplicate campus resource asset entered the package');
   }
@@ -501,6 +531,9 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
 
   const packagedIndex = extractArchiveFile(archive, 'renderer/index.html').toString('utf8');
   const packagedRenderer = extractArchiveFile(archive, 'renderer/app.js').toString('utf8');
+  const packagedFeatureHost = extractArchiveFile(archive, 'renderer/features/feature-host/index.mjs')
+    .toString('utf8');
+  assertConnectionOverviewNativeFeature(packagedRenderer, packagedFeatureHost);
   const packagedPreload = extractArchiveFile(archive, 'preload.js').toString('utf8');
   const packagedMain = extractArchiveFile(archive, 'main.js').toString('utf8');
   const packagedControlDataIpc = extractArchiveFile(archive, 'lib/ipc/control-data-ipc.js')
@@ -536,7 +569,7 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
   for (const feature of [
     'routing-manager', 'certificate-manager', 'group-dialog',
     'proxy-auth-migration', 'notification-view', 'notification-drawer',
-    'connection-overview', 'campus-category-stacks', 'campus-service-workspace',
+    'campus-category-stacks', 'campus-service-workspace',
     'browser-data-settings',
   ]) {
     const featureScript = packagedIndex.indexOf(`src="${feature}.js"`);
@@ -641,7 +674,10 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
 
 module.exports = {
   TEST_ONLY_ENGINE_MARKER,
+  REQUIRED_CONNECTION_OVERVIEW_ENTRIES,
   archiveEntryPath,
+  assertConnectionOverviewPackageEntries,
+  assertConnectionOverviewNativeFeature,
   assertPrivateEngineProfileBinding,
   assertMacDylibDependenciesAllowed,
   assertMacAppIcon,

@@ -15,6 +15,7 @@ const {
 } = require('../../../build/afterPack');
 const {
   TEST_ONLY_ENGINE_MARKER,
+  REQUIRED_CONNECTION_OVERVIEW_ENTRIES,
   archiveEntryPath,
   assertPrivateEngineProfileBinding,
   assertMacDylibDependenciesAllowed,
@@ -25,9 +26,50 @@ const {
   assertNoTestOnlyEngineMarker,
   assertNoTestOnlyNativeResources,
   assertNoTestOnlyPackageEntries,
+  assertConnectionOverviewPackageEntries,
+  assertConnectionOverviewNativeFeature,
   parseMachODylibDependencies,
   resolveResourcesDirectory,
 } = require('../../../build/verify-package');
+
+test('package verifier requires both native Connection Overview assets and rejects the legacy script', () => {
+  const verifierSource = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'build', 'verify-package.js'), 'utf8');
+  assert.match(verifierSource, /assertConnectionOverviewPackageEntries\(entries\)/u);
+  assert.deepEqual(REQUIRED_CONNECTION_OVERVIEW_ENTRIES, [
+    '/renderer/features/connection-overview/index.mjs',
+    '/renderer/features/connection-overview/view.css',
+  ]);
+  assert.doesNotThrow(() => assertConnectionOverviewPackageEntries(new Set(REQUIRED_CONNECTION_OVERVIEW_ENTRIES)));
+  for (const missing of REQUIRED_CONNECTION_OVERVIEW_ENTRIES) {
+    const entries = new Set(REQUIRED_CONNECTION_OVERVIEW_ENTRIES.filter(entry => entry !== missing));
+    entries.add('/renderer/connection-overview.js');
+    assert.throws(() => assertConnectionOverviewPackageEntries(entries), /missing required packaged file:/u, missing);
+  }
+  assert.throws(() => assertConnectionOverviewPackageEntries(new Set([
+    ...REQUIRED_CONNECTION_OVERVIEW_ENTRIES,
+    '/renderer/connection-overview.js',
+  ])), /legacy Renderer connection-overview script entered the package/u);
+});
+
+test('package verifier checks Connection Overview native host registration and app mount', () => {
+  const rendererRoot = path.join(__dirname, '..', '..', '..', 'renderer');
+  const verifierSource = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'build', 'verify-package.js'), 'utf8');
+  const appSource = fs.readFileSync(path.join(rendererRoot, 'app.js'), 'utf8');
+  const hostSource = fs.readFileSync(path.join(rendererRoot, 'features', 'feature-host', 'index.mjs'), 'utf8');
+  assert.match(verifierSource, /assertConnectionOverviewNativeFeature\(packagedRenderer,\s*packagedFeatureHost\)/u);
+  assert.doesNotThrow(() => assertConnectionOverviewNativeFeature(appSource, hostSource));
+
+  const rejectedSources = [
+    [appSource.replace("import { createRendererFeatures } from './features/feature-host/index.mjs';", ''), hostSource],
+    [appSource.replace("rendererFeatures.mount('connection-overview',", "rendererFeatures.mount('other-feature',"), hostSource],
+    [appSource, hostSource.replace("import { create as createConnectionOverview } from '../connection-overview/index.mjs';", '')],
+    [appSource, hostSource.replace("Object.freeze({ id: 'connection-overview', create: createConnectionOverview })", "Object.freeze({ id: 'other-feature', create: createConnectionOverview })")],
+    [appSource, hostSource.replace("Object.freeze({ id: 'connection-overview', create: createConnectionOverview })", "Object.freeze({ id: 'connection-overview', create: createOtherFeature })")],
+  ];
+  for (const [app, host] of rejectedSources) {
+    assert.throws(() => assertConnectionOverviewNativeFeature(app, host), /native Connection Overview feature/u);
+  }
+});
 
 test('ASAR entry paths use the packaging host separator at every nesting level', () => {
   const entry = 'assets/profiles/hkustgz/school-profile.json';

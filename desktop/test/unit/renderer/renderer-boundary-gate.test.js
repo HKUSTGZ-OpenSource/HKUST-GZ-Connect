@@ -263,8 +263,8 @@ test('mutable member escapes are rejected and migrated DOM/network globals requi
 
 test('static feature ownership includes the bounded host and native entrypoints without retired globals', () => {
   const registry=require('../../../scripts/renderer-feature-registry.json');
-  assert.deepEqual(registry.features.map(({id})=>id).sort(),['auth-challenge','campus-data','feature-host','integration-center','localization','official-favorites']);
-  assert.deepEqual(registry.features.find(({id})=>id==='feature-host').allowedDependencies,['campus-data','official-favorites','auth-challenge','integration-center']);
+  assert.deepEqual(registry.features.map(({id})=>id).sort(),['auth-challenge','campus-data','connection-overview','feature-host','integration-center','localization','official-favorites']);
+  assert.deepEqual(registry.features.find(({id})=>id==='feature-host').allowedDependencies,['campus-data','official-favorites','auth-challenge','integration-center','connection-overview']);
   assert.equal(Object.hasOwn(registry.legacyGlobals, 'renderer/integration-center.js'), false);
   assert.equal(Object.hasOwn(registry.legacyGlobals,'renderer/auth-challenge.js'),false);
   for (const feature of registry.features) {
@@ -273,6 +273,7 @@ test('static feature ownership includes the bounded host and native entrypoints 
   }
   assert.equal(Object.hasOwn(registry.legacyGlobals,'renderer/campus-data-modules.js'),false);
   assert.equal(Object.hasOwn(registry.legacyGlobals,'renderer/official-favorite-dialog.js'),false);
+  assert.equal(Object.hasOwn(registry.legacyGlobals,'renderer/connection-overview.js'),false);
 });
 
 test('real architecture CLI fails on globals, private imports, HTML bypass and public API drift in an isolated copy', () => {

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
-const { buildUnderlayOptions, networkPathSummary, sparkline } = require('../../../renderer/connection-overview');
+const { buildUnderlayOptions, networkPathSummary, sparkline } = require('../../../renderer/features/connection-overview/index.mjs');
 
 test('latency sparkline is bounded and stable for empty and noisy samples', () => {
   assert.equal(sparkline([]), 'M2 24 L118 24');
@@ -72,8 +72,11 @@ test('connection overview exposes one compact adapter tree instead of duplicate 
   assert.match(html, /network-tree-compact/u);
   assert.doesNotMatch(html, /network-tree-branches/u);
   assert.match(html, /data-topology-node="tunnel"/u);
-  assert.match(app, /connectionOverview\.start\(\{[^\n]*save:\s*\(patch\)\s*=>\s*window\.api\.save/u);
+  assert.match(app, /rendererFeatures\.mount\('connection-overview',\s*\{/u);
+  assert.match(app, /save:\s*\(patch\)\s*=>\s*window\.api\.save/u);
   assert.match(app, /refresh:\s*\(\)\s*=>\s*refreshState/u);
+  assert.doesNotMatch(app, /window\.connectionOverview/u);
+  assert.doesNotMatch(html, /src="connection-overview\.js"/u);
 });
 
 test('connection summary speaks in adapter and public-exit terms', () => {
