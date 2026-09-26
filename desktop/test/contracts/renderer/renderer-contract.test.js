@@ -82,10 +82,12 @@ test('dashboard separates connection, personal Campus Workspace, advanced tower,
 test('Connection keeps student essentials visible and progressively discloses network diagnostics', () => {
   assert.match(html, /id="currentNetworkExit"/u);
   assert.match(html, /id="networkPathDetails"[^>]*class="network-path-details"/u);
+  assert.match(html, /class="connection-layout connection-overview"/u);
   assert.match(html, /data-i18n="connect\.networkPathAction"/u);
   assert.match(html, /data-i18n="stats\.connections">正在使用校园隧道的应用/u);
   assert.match(html, /id="latencyHint"[^>]*data-i18n="connect\.latencyEmpty"/u);
-  assert.match(css, /\.latency-metric\.is-empty \.latency-sparkline\s*\{[^}]*display:\s*none/u);
+  const overviewCss = fs.readFileSync(path.join(rendererDir, 'features/connection-overview/view.css'), 'utf8');
+  assert.match(overviewCss, /:where\(\.connection-overview\) \.latency-metric\.is-empty \.latency-sparkline\s*\{[^}]*display:\s*none/u);
 });
 
 test('Campus Workspace exposes plain-language actions without a nested surface shell', () => {
