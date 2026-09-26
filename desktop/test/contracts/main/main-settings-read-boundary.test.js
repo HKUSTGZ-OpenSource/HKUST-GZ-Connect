@@ -19,8 +19,10 @@ function section(startText, endText) {
 }
 
 test('engine close settles fail-closed when retry settings are temporarily unreadable', () => {
-  const body = section('function handleEngineClose(', '\nasync function connectOnce(');
-  assert.match(body, /try \{\s*cfg = loadSettings\(\);\s*\} catch \(error\)/);
+  assert.match(source, /loadSettings, reportSettingsReadFailure, emit/u);
+  assert.match(source, /engineTermination\.close\(\.\.\.args\)/u);
+  const body = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-connection-runtime'), 'utf8');
+  assert.match(body, /try \{\s*cfg = this\.loadSettings\(\);\s*\} catch \(error\)/);
   assert.match(body, /connectionState\.engineClosed\(\{[\s\S]*terminalFailure: true/);
   assert.doesNotMatch(source, /state\.(?:connected|connecting)\s*=/,
     'UI connection flags must be projected from the authoritative FSM');

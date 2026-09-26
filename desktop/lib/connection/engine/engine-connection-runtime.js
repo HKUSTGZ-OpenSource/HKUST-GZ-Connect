@@ -1,7 +1,8 @@
 'use strict';
 
 const { EngineEventParser } = require('./engine-protocol');
-const { classifyEngineCode, classifyEngineOutput, formatEngineEventDiagnostic } = require('./engine-output');
+const { classifyEngineCode, classifyEngineOutput, classifyEngineStopReason, resolveEngineFailureKind, formatEngineEventDiagnostic } = require('./engine-output');
+const MAX_ATTEMPTS = 3;
 const {
   ENGINE_HELLO_TIMEOUT_MS,
   EngineProtocolSession,
@@ -297,7 +298,121 @@ class EngineServingCoordinator {
   }
 }
 
+// Process termination uses the same connection state authority as serving.
+// Side effects stay injected; this coordinator owns neither credential files nor process handles.
+class EngineTerminationCoordinator {
+  constructor(ports) { Object.assign(this, ports); }
+  get presentation() { return this.getPresentation(); }
+  get connectedAt() { return this.getConnectedAt(); }
+  get t() { return this.getTranslator(); }
+
+  close({ code, generation }, diagnosticTail,
+    structuredFatalCode = null, structuredStopReason = null, stoppedSocksPort = 1080,
+    isCurrentContext = () => true) {
+    // A delayed close from an already invalidated generation must not suspend a
+    // newer listener that is now serving the browser.
+    const supervisorGenerationCurrent = this.isGenerationCurrent(generation) && isCurrentContext(generation);
+    this.clearControl(generation);
+    if (!this.cleanupProxyAccess({ generation, supervisorGenerationCurrent,
+      connectionGenerationCurrent: this.connectionState.isCurrentGeneration(generation),
+      clearCredential: this.clearCredential, removeSidecar: this.removeSidecar,
+    })) return;
+    // Unexpected process death releases the configured loopback port before the
+    // close event reaches JavaScript. Repoint the persistent browser Session at
+    // its fail-closed PAC immediately; a later generation may restore it only
+    // after reporting listener_ready.
+    this.suspendBrowser().catch((error) => {
+      this.presentation.browserNotice = this.t('error.browserRoutingAfterSave', { message: error.message });
+      this.emit();
+    });
+    const closeSnapshot = this.connectionState.snapshot(); const wasConnected = closeSnapshot.phase === 'connected' || closeSnapshot.wasConnectedBeforeStop;
+    const uptime = Math.max(this.connectedAt ? this.now() - this.connectedAt : 0, closeSnapshot.connectedUptimeBeforeStop);
+    this.clearPresentation();
+    const failureKind = resolveEngineFailureKind({
+      code: structuredFatalCode,
+      stopReason: structuredStopReason,
+      diagnosticText: diagnosticTail,
+    });
+    const terminalFailure = failureKind === 'terminal'; this.presentation.failureKind = failureKind; this.presentation.failureCode = structuredFatalCode || structuredStopReason || null;
+    if (!structuredFatalCode && !this.presentation.lastError) {
+      this.presentation.lastError = classifyEngineStopReason(structuredStopReason, stoppedSocksPort, this.t);
+    }
+    let cfg;
+    try {
+      cfg = this.loadSettings();
+    } catch (error) {
+      this.connectionState.engineClosed({
+        generation,
+        supervisorGenerationCurrent,
+        terminalFailure: true,
+      });
+      this.reportSettingsReadFailure(error, { emitState: false });
+      this.emit();
+      return;
+    }
+    const autoOn = cfg.autoReconnect !== false;
+    const maxA = Number.isInteger(cfg.maxAttempts) ? cfg.maxAttempts : MAX_ATTEMPTS;
+    const decision = this.connectionState.engineClosed({
+      generation,
+      supervisorGenerationCurrent,
+      terminalFailure,
+      autoReconnect: autoOn,
+      maxAttempts: maxA,
+      uptimeMs: uptime,
+      failureKind,
+    });
+    if (decision.action === 'settled' || decision.action === 'terminal') {
+      this.emit();
+      return;
+    }
+    // Only a genuinely stable session earns a fresh retry budget. Merely
+    // opening SOCKS and then losing the data plane must keep counting, or a
+    // rejecting gateway can drive the app into an infinite login loop.
+    if (decision.action === 'retry') {
+      this.presentation.lastError = wasConnected
+        ? this.t('error.reconnecting')
+        : (failureKind === 'gateway-transient'
+          ? this.t('error.gatewayRetrying')
+          : null);
+      this.emit();
+      const intent = this.connectionState.snapshot().intent;
+      this.scheduleRetry(generation, decision.delayMs, () => this.connect(true, intent));
+      return;
+    }
+
+    if (failureKind === 'gateway-transient') {
+      this.presentation.lastError = this.t('error.gatewayRejected');
+    } else if (!this.presentation.lastError) {
+      this.presentation.lastError = wasConnected
+        ? this.t('error.reconnectFailed')
+        : (code ? this.t('error.connectFailed') : null);
+    }
+    this.emit();
+  }
+  revokeServing(generation, isCurrentContext = () => true) {
+    const uptimeMs = this.connectedAt ? this.now() - this.connectedAt : 0;
+    if (!isCurrentContext(generation) || !this.isGenerationCurrent(generation) ||
+        !this.connectionState.markEngineStopping(generation, { uptimeMs })) return false;
+    // Its epoch and request gate synchronously defeat an awaiting activation.
+    this.suspendBrowser().catch((error) => {
+      this.presentation.browserNotice = this.t('error.browserRoutingAfterSave', { message: error.message });
+      this.emit();
+    });
+    this.clearPresentation(); return true;
+  }
+  exit({ generation }, isCurrentContext = () => true) {
+    // `exit` can precede stdio close; revoke serving synchronously but retain the
+    // generation so the terminal-only drain can classify fatal/stopped output.
+    if (!this.revokeServing(generation, isCurrentContext)) return;
+    this.clearControl(generation);
+    this.clearCredential(generation);
+    this.removeSidecar();
+    this.emit();
+  }
+}
+
 module.exports = {
   EngineConnectionRuntime,
   EngineServingCoordinator,
+  EngineTerminationCoordinator,
 };

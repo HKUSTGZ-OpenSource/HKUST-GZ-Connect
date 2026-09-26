@@ -17,8 +17,9 @@ test('main consumes generation-bound stopped reasons at process close', () => {
   assert.match(runtime, /this\.protocol\.accept\(event\)/);
   assert.match(source, /engineRuntime\?\.stoppedReason \|\| null/);
   assert.match(source, /engineRuntime\?\.dispose\(\)/);
-  assert.match(source, /resolveEngineFailureKind\(\{[\s\S]*stopReason: structuredStopReason/);
-  assert.match(source, /classifyEngineStopReason\(structuredStopReason, stoppedSocksPort, t\)/);
+  assert.match(source, /engineTermination\.close\(\.\.\.args\)/u);
+  assert.match(runtime, /resolveEngineFailureKind\(\{[\s\S]*stopReason: structuredStopReason/);
+  assert.match(runtime, /classifyEngineStopReason\(structuredStopReason, stoppedSocksPort, this\.t\)/);
   assert.match(source, /appendDiagnostic: chunk => logWriter\.append\(chunk\)/);
   assert.match(runtime, /onDiagnostic: \(event\) => this\.appendDiagnostic\(formatEngineEventDiagnostic\(event,/);
 });

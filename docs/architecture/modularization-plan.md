@@ -118,6 +118,10 @@ without increasing dependency caps. This is one bounded seam, not M3 completion.
 Browser activation in the existing runtime, lowering Main further to 1,604 lines
 without moving process creation, credentials or termination into this slice.
 
+[Engine termination ownership](desktop-engine-termination-owner.md) isolates exit/close,
+serving revocation and retry effects in the existing runtime; Main falls to 1,509 lines.
+Process creation, persistence and the final M3 dependency target remain separate work.
+
 Move remaining settings/credential transaction, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 
