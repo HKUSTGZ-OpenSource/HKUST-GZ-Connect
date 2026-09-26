@@ -126,6 +126,10 @@ Process creation, persistence and the final M3 dependency target remain separate
 attempt into the existing process module, retaining the current credential selector
 and callback fences. Main falls to 1,247 lines/35 direct dependencies; M3 remains open.
 
+[Connection operation ownership](desktop-connection-operation-owner.md) moves pending
+connect/stop/reconnect records and quit/post-stop admission to the existing state
+entrypoint. Main falls to 1,136 lines/34 dependencies; M3's dependency targets remain open.
+
 Move remaining settings/credential transaction, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 

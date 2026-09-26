@@ -47,7 +47,7 @@ test('Linux memory-only credentials stay Main-owned and profile-bound', () => {
 
 test('memory-only credentials never become a cross-launch auto-connect authority', () => {
   const startup = source.slice(source.indexOf('createNetworkStartupSystem({'),
-    source.indexOf('function rejectConnectionWhileQuitting('));
+    source.indexOf('const connectionOperations ='));
   assert.match(startup, /hasPersistentCredential\(\)/u);
   assert.doesNotMatch(startup, /hasStoredCredential\(\)/u);
   assert.match(source, /disposeLifecycle: \(\) => \{[\s\S]*oneShotVpnCredential\.clear\(\)/u);

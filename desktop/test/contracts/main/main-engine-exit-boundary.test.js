@@ -9,6 +9,7 @@ const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
 const servingSource = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-connection-runtime'), 'utf8');
 const termination = servingSource.slice(servingSource.indexOf('class EngineTerminationCoordinator'));
+const operations = fs.readFileSync(require.resolve('../../../lib/connection/state/connection-state-machine'), 'utf8');
 
 test('engine exit closes the browser request boundary before stdio close cleanup', () => {
   assert.match(source, /engineTermination\.exit\(\.\.\.args\)/u);
@@ -60,9 +61,8 @@ test('an unclean stop releases the local process but blocks automatic reconnect'
   assert.match(recovery, /connectionState\.failIntent\(intent\)/);
   assert.match(recovery, /error\.engineCleanupUnconfirmed/);
 
-  const reconnectStart = source.indexOf('async function reconnect(');
-  const pacStart = source.indexOf('// ---------- PAC file', reconnectStart);
-  const reconnect = source.slice(reconnectStart, pacStart);
+  assert.match(source, /connectionOperations\.reconnect\(expectedGeneration\)/u);
+  const reconnect = operations.slice(operations.indexOf('  async reconnect('));
   assert.match(reconnect, /stopResult\.cleanExit === false/);
   assert.match(reconnect, /connectionState\.failIntent\(intent\)/);
   assert.match(reconnect, /error\.engineCleanupUnconfirmed/);

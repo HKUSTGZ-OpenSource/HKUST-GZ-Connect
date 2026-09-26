@@ -51,7 +51,6 @@ const {
 } = require('./lib/ipc/control-ipc-suite');
 const { ensureOwnerOnly } = require('./lib/platform/storage/private-file');
 const { BufferedLogWriter, readLogTail } = require('./lib/diagnostics/logging/log-writer');
-const { STOP_GRACE_MS, STOP_FORCE_WAIT_MS } = require('./lib/connection/state/stop-policy');
 const { UpdateNotificationRuntime, checkForUpdate } = require('./lib/platform/update/update-check');
 const { ConnectivityRecovery } = require('./lib/connection/recovery/connectivity-recovery');
 const { createNetworkStartupSystem } = require('./lib/connection/telemetry/network-status-monitor');
@@ -71,7 +70,7 @@ const { createT, effectiveLocale } = require('./lib/platform/i18n/i18n');
 const { registerTrustedIpcHandlers } = require('./lib/ipc/ipc-handlers');
 const { RoutingPolicyTransactionQueue } = require('./lib/routing/rules/routing-policy-transaction');
 const { stopEngineAfterBrowserSuspend } = require('./lib/switching/effects/browser-engine-barrier');
-const { ConnectionStateMachine, ConnectionWaitRegistry, projectConnectionStatus } = require('./lib/connection/state/connection-state-machine');
+const { ConnectionStateMachine, ConnectionWaitRegistry, ConnectionOperationCoordinator, projectConnectionStatus } = require('./lib/connection/state/connection-state-machine');
 // The campus browser is intentionally constrained to the application's
 // proxy/PAC boundary. WebRTC data channels do not require camera or microphone
 // permission and Chromium may otherwise send ICE/STUN UDP directly, bypassing
@@ -164,9 +163,6 @@ for (const privateFile of [
 
 let desktopShell = null;
 let campusBrowserManager = null;
-let connectInFlight = null;
-let disconnectInFlight = null;
-let reconnectInFlight = null;
 const connectionState = new ConnectionStateMachine();
 const connectionWaitRegistry = new ConnectionWaitRegistry();
 connectionWaitRegistry.observe(connectionState.snapshot());
@@ -515,13 +511,6 @@ function killStrayEngines(resolvedEnginePath) {
     executablePath: resolvedEnginePath, ownerFile: ENGINE_OWNER });
 }
 
-function beginLifecycleIntent() {
-  // A manual connect/disconnect/reconnect always supersedes any recovery that
-  // was queued for a previous sleep or network outage.
-  networkStartupCoordinator?.cancel();
-  connectivityRecovery.cancel();
-  return connectionState.beginConnectIntent();
-}
 function clearConnectionPresentation() {
   connectedAt = null;
   state.clientIp = null;
@@ -608,39 +597,26 @@ const { monitor: networkStatusMonitor, startup: networkStartupCoordinator, envir
   pauseOffline: () => { connectivityRecovery.cancel(); const intent = connectionState.beginConnectIntent(); return connectivityRecovery.networkOffline(intent) ? intent : null; },
   resumeInitialOffline: (intent) => connectivityRecovery.initialNetworkOnline(intent), connect: () => connect(), isQuitting: () => desktopShell?.isQuitting === true, onPublicEgress: (snapshot) => desktopShell?.send('network-environment', snapshot),
 });
-function rejectConnectionWhileQuitting(intent = connectionState.snapshot().intent) {
-  if (desktopShell?.isQuitting !== true) return null;
-  connectionState.failIntent(intent); emit();
-  return { ok: false, stale: true, quitting: true, intent };
-}
+const connectionOperations = new ConnectionOperationCoordinator({
+  connectionState, engineSupervisor, isQuitting: () => desktopShell?.isQuitting === true,
+  cancelRecovery: () => { networkStartupCoordinator?.cancel(); connectivityRecovery.cancel(); },
+  clearProxyCredential: clearActiveProxyCredential, clearPresentation: clearConnectionPresentation,
+  removeSidecar: removeExternalProxySidecar, getPresentation: () => state, getTranslator: () => t, emit,
+  runAttempt: (retry, intent) => connectOnce(retry, intent),
+  stopEngine: () => stopEngineAfterBrowserSuspend({
+    suspendBrowser: suspendOpenBrowserPolicy,
+    browserBoundaryClosed: () => campusBrowserManager.routingRequestsBlocked !== false,
+    closeBrowser: () => campusBrowserManager.close(),
+    onSuspendError: (error) => {
+      state.browserNotice = t('error.browserRoutingAfterSave', { message: error.message });
+      emit();
+    },
+    // Supervisor owns the unchanged reviewed grace/force timeout defaults.
+    stopEngine: () => engineSupervisor.stop({ requestGracefulStop: requestActiveEngineControlShutdown }),
+  }),
+});
 async function connect(isRetry = false, expectedIntent = null) {
-  let rejected = rejectConnectionWhileQuitting(expectedIntent ?? undefined); if (rejected) return rejected;
-  let intent = expectedIntent;
-  if (intent === null && !isRetry) {
-    if (disconnectInFlight) await disconnectInFlight;
-    rejected = rejectConnectionWhileQuitting(); if (rejected) return rejected;
-    const current = connectionState.snapshot();
-    if (current.desiredConnected) {
-      if (connectInFlight?.intent === current.intent) return connectInFlight.promise;
-      return { ok: true, existing: engineSupervisor.hasActive, pending: !engineSupervisor.hasActive, intent: current.intent };
-    }
-    intent = beginLifecycleIntent();
-  } else if (intent === null) intent = connectionState.snapshot().intent;
-  if (!connectionState.canContinue(intent)) return { ok: false, stale: true, intent };
-  // Wait for an earlier stop to drain; never start a process into its exit/close interval.
-  if (disconnectInFlight) await disconnectInFlight;
-  rejected = rejectConnectionWhileQuitting(intent); if (rejected) return rejected;
-  if (!connectionState.canContinue(intent)) return { ok: false, stale: true, intent };
-  if (engineSupervisor.hasActive) return { ok: true, existing: true, intent };
-  if (connectInFlight) {
-    await connectInFlight.promise; rejected = rejectConnectionWhileQuitting(intent);
-    if (rejected) return rejected;
-    if (!connectionState.canContinue(intent)) return { ok: false, stale: true, intent }; if (engineSupervisor.hasActive) return { ok: true, existing: true, intent };
-  }
-  const operation = (async () => ({ ...await connectOnce(isRetry, intent), intent }))();
-  const record = { intent, promise: operation }; connectInFlight = record;
-  try { return await operation; }
-  finally { if (connectInFlight === record) connectInFlight = null; }
+  return connectionOperations.connect(isRetry, expectedIntent);
 }
 const engineTermination = new EngineTerminationCoordinator({
   isGenerationCurrent: generation => engineSupervisor.isCurrent(generation), connectionState,
@@ -683,100 +659,13 @@ const engineAttempts = new EngineAttemptCoordinator({
 });
 async function connectOnce(isRetry, intent) { return engineAttempts.run(isRetry, intent); }
 
-function ensureEngineStopped() {
-  if (disconnectInFlight) return disconnectInFlight;
-  // Establish the browser barrier before the engine releases its listener;
-  // otherwise another local account/process can bind the now-free port and
-  // impersonate the expected proxy. The synchronous request gate is the hard
-  // boundary: PAC/drain failures are surfaced but do not strand the engine.
-  const operation = stopEngineAfterBrowserSuspend({
-    suspendBrowser: suspendOpenBrowserPolicy,
-    browserBoundaryClosed: () => campusBrowserManager.routingRequestsBlocked !== false,
-    closeBrowser: () => campusBrowserManager.close(),
-    onSuspendError: (error) => {
-      state.browserNotice = t('error.browserRoutingAfterSave', { message: error.message });
-      emit();
-    },
-    stopEngine: () => engineSupervisor.stop({
-      requestGracefulStop: requestActiveEngineControlShutdown,
-      graceMs: STOP_GRACE_MS,
-      forceWaitMs: STOP_FORCE_WAIT_MS,
-    }),
-  });
-  disconnectInFlight = operation;
-  operation.finally(() => {
-    // The encrypted master remains stable, but the plaintext helper projection
-    // must not outlive the listener. Reconnect/resume recreates it before the
-    // next engine starts, including after a port change.
-    removeExternalProxySidecar();
-    if (disconnectInFlight === operation) disconnectInFlight = null;
-  });
-  return operation;
-}
-
-function initiateStop(wantsConnectedAfterStop) {
-  networkStartupCoordinator?.cancel();
-  connectivityRecovery.cancel();
-  const intent = connectionState.beginStop(wantsConnectedAfterStop);
-  // Generation invalidation happens before waiting for close. Old probes,
-  // delayed retries, and output callbacks are stale from this exact point.
-  engineSupervisor.invalidate();
-  clearActiveProxyCredential();
-  clearConnectionPresentation();
-  emit();
-  return { intent, stopped: ensureEngineStopped() };
-}
-
-async function disconnect() {
-  const { intent, stopped } = initiateStop(false);
-  const result = await stopped;
-  removeExternalProxySidecar();
-  connectionState.stopCompleted(intent, result);
-  if (connectionState.isCurrentIntent(intent) && !result.ok) {
-    state.lastError = t('error.engineStuck');
-    emit();
-  } else if (connectionState.isCurrentIntent(intent) && result.cleanExit === false) {
-    state.lastError = t('error.engineCleanupUnconfirmed');
-    emit();
-  }
-  return { ok: result.ok };
-}
-
+function ensureEngineStopped() { return connectionOperations.ensureEngineStopped(); }
+async function disconnect() { return connectionOperations.disconnect(); }
 function waitForConnected(intent, timeoutMs = BROWSER_CONNECTION_READY_TIMEOUT_MS) {
   return connectionWaitRegistry.wait(intent, { timeoutMs });
 }
-
 async function reconnect(expectedGeneration = null) {
-  let rejected = rejectConnectionWhileQuitting(); if (rejected) return rejected;
-  if (expectedGeneration !== null && !engineSupervisor.isCurrent(expectedGeneration)) return { ok: false, stale: true };
-  if (reconnectInFlight && connectionState.isCurrentIntent(reconnectInFlight.intent) &&
-      connectionState.snapshot().desiredConnected) {
-    return reconnectInFlight.promise;
-  }
-  if (reconnectInFlight) await reconnectInFlight.promise;
-  rejected = rejectConnectionWhileQuitting(); if (rejected) return rejected;
-  if (expectedGeneration !== null && !engineSupervisor.isCurrent(expectedGeneration)) return { ok: false, stale: true };
-
-  const { intent, stopped } = initiateStop(true);
-  const operation = (async () => {
-    const stopResult = await stopped;
-    const quitResult = rejectConnectionWhileQuitting(intent); if (quitResult) return quitResult;
-    connectionState.stopCompleted(intent, stopResult);
-    if (!stopResult.ok || stopResult.cleanExit === false) {
-      connectionState.failIntent(intent);
-      state.lastError = t(stopResult.cleanExit === false
-        ? 'error.engineCleanupUnconfirmed'
-        : 'error.engineStuck');
-      emit();
-      return { ok: false };
-    }
-    if (!connectionState.resumeAfterStop(intent)) return { ok: false, stale: true };
-    return connect(false, intent);
-  })();
-  const record = { intent, promise: operation };
-  reconnectInFlight = record;
-  try { return await operation; }
-  finally { if (reconnectInFlight === record) reconnectInFlight = null; }
+  return connectionOperations.reconnect(expectedGeneration);
 }
 
 // ---------- PAC file (advanced app integration; no DNS probing) ----------

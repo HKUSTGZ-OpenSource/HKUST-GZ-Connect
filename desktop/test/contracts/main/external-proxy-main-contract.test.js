@@ -11,6 +11,7 @@ const integrationSuite = fs.readFileSync(
   path.join(__dirname, '..', '..', '..', 'lib', 'ipc', 'integration-center-suite.js'), 'utf8',
 );
 const connectOnce = attempt;
+const operations = fs.readFileSync(require.resolve('../../../lib/connection/state/connection-state-machine'), 'utf8');
 
 test('strict and compatibility generations share one stable credential with distinct policies', () => {
   assert.match(source, /engineAttempts\.run\(isRetry, intent\)/u);
@@ -39,7 +40,9 @@ test('VS Code snippet sidecar follows the connection and Profile lifecycle', () 
   assert.match(source, /ensureSidecar: \(\) => ensureExternalProxyAccess\(socksPort\(\)\)/u);
   const disconnectStart = source.indexOf('async function disconnect(');
   const reconnectStart = source.indexOf('\nfunction waitForConnected(', disconnectStart);
-  assert.match(source.slice(disconnectStart, reconnectStart), /removeExternalProxySidecar\(\)/);
+  assert.match(source.slice(disconnectStart, reconnectStart), /connectionOperations\.disconnect\(\)/);
+  const disconnect = operations.slice(operations.indexOf('  async disconnect('), operations.indexOf('  async reconnect('));
+  assert.match(disconnect, /this\.removeSidecar\(\)/);
   const exitStart = source.indexOf('function handleEngineExitBoundary');
   const exitEnd = source.indexOf('\nasync function connectOnce(', exitStart);
   assert.match(source.slice(exitStart, exitEnd), /engineTermination\.exit\(\.\.\.args\)/);
