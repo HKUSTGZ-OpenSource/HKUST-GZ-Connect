@@ -15,7 +15,7 @@ const BASELINE = Object.freeze({
   // One direct/transitive module was added for the reviewed one-shot Linux
   // credential boundary. Main simultaneously stopped consuming four facade
   // bindings, so the effective semantic dependency cap below still shrank.
-  mainDirectDependencies: 34,
+  mainDirectDependencies: 33,
   // The cross-platform network-environment domain now owns one additional
   // HTTPS-only public-egress leaf. Main gained no direct dependency or lines.
   // Card Board adds one isolated App composition and four bounded layout
@@ -27,7 +27,7 @@ const BASELINE = Object.freeze({
   // platform discovery, one-shot credential security closures and the reviewed
   // service-desk hand-off. Further feature work must extract responsibilities
   // instead of growing Main again.
-  mainLines: 1136,
+  mainLines: 1084,
   rendererLines: 562,
   campusBrowserLines: 1502,
   browserTabOwnerLines: 600,
@@ -38,7 +38,7 @@ const BASELINE = Object.freeze({
   runtimeCompositionExports: 1,
   runtimeCompositionMembers: 20,
   mainCompositionBindings: 16,
-  mainEffectiveDirectDependencies: 49,
+  mainEffectiveDirectDependencies: 47,
 });
 
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'release']);

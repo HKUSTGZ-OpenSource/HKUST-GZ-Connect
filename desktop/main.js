@@ -7,15 +7,10 @@ const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
-const { loadSettings: readSettings, saveSettings: writeSettings } = require('./lib/persistence/settings/settings-store');
 const { parseCredentialField } = require('./lib/persistence/settings/settings-update');
 const {
   credentialLoadErrorKey,
-  hasStoredPassword,
-  loadPasswordResult: readPasswordResult,
   protectedStorageAvailable,
-  restorePasswordSnapshot,
-  savePassword: writePassword,
 } = require('./lib/persistence/credentials/credential-store');
 const {
   OneShotVpnCredentialBroker, openVpnCredential,
@@ -25,7 +20,7 @@ const {
   runCredentialSettingsMutation,
 } = require('./lib/persistence/credentials/credential-settings-transaction');
 const { desktopRuntimeComposition } = require('./lib/app/desktop-runtime-composition');
-const { ActiveContextLease, assertActiveContextSwitchStartupClear, createLegacyRuntimeStoragePaths, createMainProfileSwitchComposition, createMultiSchoolStartupInitializer, createPageFavoriteController, customGatewayProductAvailability, DesktopPersistenceRuntime, LegacyMigrationCredentialOwner, ProfileWorkspaceStartupRuntime, relaunchAfterPersistenceMigration, ResourceLibraryRuntime, resolveUserDataOverride, selectProfileWorkspacePreReadyStorage, writePersistenceE2EMarker, writeProfileSwitchE2EMarker } = desktopRuntimeComposition;
+const { ActiveContextLease, assertActiveContextSwitchStartupClear, createLegacyRuntimeStoragePaths, createMainProfileSwitchComposition, createMultiSchoolStartupInitializer, createPageFavoriteController, customGatewayProductAvailability, DesktopPersistenceRuntime, ProfileWorkspaceStartupRuntime, relaunchAfterPersistenceMigration, ResourceLibraryRuntime, resolveUserDataOverride, selectProfileWorkspacePreReadyStorage, writePersistenceE2EMarker, writeProfileSwitchE2EMarker } = desktopRuntimeComposition;
 const { AuthChallengeCoordinator, EngineControlRegistry } = require('./lib/connection/engine/engine-control-suite');
 const { EngineTerminationCoordinator } = require('./lib/connection/engine/engine-connection-runtime');
 const { DesktopShell } = require('./lib/platform/shell/desktop-shell');
@@ -228,33 +223,10 @@ let locale = 'zh';
 let t = createT(locale);
 let settingsRecoveryNotice = null;
 let settingsRecoveryNoticeText = null;
-let settingsReadErrorText = null;
 let credentialRecoveryNoticeText = null;
 let credentialRecoveryErrorText = null;
 
 // ---------- settings & credentials ----------
-function loadLegacySettings() {
-  return readSettings(SETTINGS, {
-    onRecovery: (notice) => { settingsRecoveryNotice = notice; },
-    defaultRouteDomains: activeSchoolProfile.defaultRouteDomains,
-  });
-}
-function saveLegacySettings(settings) {
-  return writeSettings(SETTINGS, settings, {
-    defaultRouteDomains: activeSchoolProfile.defaultRouteDomains,
-  });
-}
-function openLegacyCredential() {
-  const settings = loadLegacySettings();
-  const result = readPasswordResult(CRED, safeStorage, process.platform);
-  if (result.status === 'missing') return null;
-  if (result.status !== 'decrypted') {
-    const error = new Error('legacy credential is unavailable');
-    error.credentialStatus = result.status;
-    throw error;
-  }
-  return new LegacyMigrationCredentialOwner(settings.username, result.password);
-}
 const persistenceRuntime = new DesktopPersistenceRuntime({
   preReadySelection: preReadyStorage,
   initializeAfterReady: () => activeSchoolProfile.withProfileDocument((profile) => (
@@ -262,14 +234,12 @@ const persistenceRuntime = new DesktopPersistenceRuntime({
       userData: DATA, profile, safeStorage, platform: process.platform,
     }).initialize()
   )),
-  legacy: {
-    loadSettings: loadLegacySettings,
-    saveSettings: saveLegacySettings,
-    saveCredential: (password) => writePassword(CRED, password, safeStorage, process.platform),
-    clearCredential: () => restorePasswordSnapshot(CRED, { existed: false, data: null }),
-    openCredential: openLegacyCredential,
-    hasCredential: () => hasStoredPassword(CRED, process.platform),
-  },
+  legacy: DesktopPersistenceRuntime.createLegacyAdapter({
+    settingsFile: SETTINGS, credentialFile: CRED, safeStorage, platform: process.platform,
+    getDefaultRouteDomains: () => activeSchoolProfile.defaultRouteDomains,
+    onRecovery: (notice) => { settingsRecoveryNotice = notice; },
+  }),
+  settingsPresentation: { getState: () => state, translate: (key) => t(key), emit },
 });
 const initializeMultiSchoolStartup = createMultiSchoolStartupInitializer({ userData: DATA, packageRoot: __dirname, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, desktopDir: __dirname }); const customProfileDeletion = createCustomProfileDeletionRuntime({ userData: DATA, withCandidateDirectory: (callback) => initializeMultiSchoolStartup.withDirectory(callback), electronSession: session });
 const schoolProfileOnboarding = createSchoolProfileOnboardingRuntime({ userData: DATA, probeLaunch: resolveGatewayProbeLaunch({ appIsPackaged: app.isPackaged, baseDirectory: __dirname, nativeProbe: gatewayProbePath(), execPath: process.execPath }), spawnProcess: spawn,
@@ -278,32 +248,10 @@ const schoolProfileOnboarding = createSchoolProfileOnboardingRuntime({ userData:
 });
 const customGatewayOnboardingEnabled = customGatewayProductAvailability();
 function loadSettings() { return persistenceRuntime.loadSettings(); }
-function reportSettingsReadFailure(cause, { emitState = true } = {}) {
-  if (cause?.code === 'SETTINGS_READ_FAILED') return cause;
-  const message = t('error.settingsReadFailed');
-  const error = new Error(message, { cause });
-  error.code = 'SETTINGS_READ_FAILED';
-  error.userMessage = message;
-  settingsReadErrorText = message;
-  if (state.settingsError !== message) {
-    state.settingsError = message;
-    if (emitState) emit();
-  }
-  return error;
+function reportSettingsReadFailure(cause, options) {
+  return persistenceRuntime.reportSettingsReadFailure(cause, options);
 }
-function loadSettingsOrReport(options) {
-  try {
-    const settings = loadSettings();
-    if (settingsReadErrorText) {
-      const shouldEmit = options?.emitState !== false && state.settingsError === settingsReadErrorText;
-      if (state.settingsError === settingsReadErrorText) state.settingsError = null;
-      settingsReadErrorText = null;
-      if (shouldEmit) emit();
-    }
-    return settings;
-  }
-  catch (error) { throw reportSettingsReadFailure(error, options); }
-}
+function loadSettingsOrReport(options) { return persistenceRuntime.loadSettingsOrReport(options); }
 // The saved language override ('zh'/'en') wins over the OS locale; 'auto'
 // follows the system, and Chinese remains the fallback when both are silent.
 function currentLocale() {

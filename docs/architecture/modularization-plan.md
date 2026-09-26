@@ -130,6 +130,10 @@ and callback fences. Main falls to 1,247 lines/35 direct dependencies; M3 remain
 connect/stop/reconnect records and quit/post-stop admission to the existing state
 entrypoint. Main falls to 1,136 lines/34 dependencies; M3's dependency targets remain open.
 
+[Persistence read ownership](desktop-persistence-read-owner.md) moves legacy file
+adaptation and settings-read feedback into the existing Runtime. Main falls to
+1,084 lines/33 dependencies; journal recovery and final M3 targets remain separate.
+
 Move remaining settings/credential transaction, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 

@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
+const persistence = fs.readFileSync(require.resolve('../../../lib/persistence/runtime/desktop-persistence-runtime'), 'utf8');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
 const shellSource = fs.readFileSync(
@@ -18,6 +19,18 @@ function section(startText, endText) {
   assert.ok(start >= 0 && end > start, `missing source section: ${startText}`);
   return source.slice(start, end);
 }
+
+test('Main injects persistence-read presentation and legacy files instead of owning their algorithms', () => {
+  assert.match(source, /legacy: DesktopPersistenceRuntime\.createLegacyAdapter\(\{/u);
+  assert.match(source, /settingsFile: SETTINGS, credentialFile: CRED, safeStorage, platform: process\.platform/u);
+  assert.match(source, /settingsPresentation: \{ getState: \(\) => state, translate: \(key\) => t\(key\), emit \}/u);
+  assert.match(source, /return persistenceRuntime\.reportSettingsReadFailure\(cause, options\)/u);
+  assert.match(source, /return persistenceRuntime\.loadSettingsOrReport\(options\)/u);
+  assert.doesNotMatch(source, /function (?:loadLegacySettings|saveLegacySettings|openLegacyCredential)\(/u);
+  assert.match(persistence, /const settings = loadSettings\(\);[\s\S]*io\.readPasswordResult\(credentialFile, safeStorage, platform\)/u);
+  assert.match(persistence, /new LegacyMigrationCredentialOwner\(settings\.username, result\.password\)/u);
+  assert.match(persistence, /state\.settingsError === this\.settingsReadErrorText/u);
+});
 
 test('engine close settles fail-closed when retry settings are temporarily unreadable', () => {
   assert.match(source, /loadSettings, reportSettingsReadFailure, emit/u);
