@@ -37,7 +37,9 @@ dependency is added. Direct native fixtures use the same factory.
 
 ## Verification and rollback
 
-The direct owner suite covers constrained window construction, command-channel filtering, resize
+The initial candidate was tested against `main@42d1495`; these counts describe that
+source, before integration with subsequent persistence ownership. The direct owner
+suite covers constrained window construction, command-channel filtering, resize
 binding, teardown ordering and idempotence, stale-window fencing, and context-switch close
 confirmation/deadline behavior. The full Node suite passed 1,610 tests (1,596 passed, 14
 platform-conditioned skips, no failures). Local macOS Electron toolbar, popup-MFA credential
@@ -47,12 +49,20 @@ offline performance fixture measured 100 tab-switch samples (p95 1.6 ms, max 14.
 used Chromium-blocked synthetic port 1, and the report explicitly says Gateway performance was
 not measured. None is a live-school test.
 
-The artifact package verifier was not run on this worktree because `desktop/engine` contains only
-`.gitkeep`, not the exact-platform Engine, proxy and probe binaries required by `afterPack`. No
-package or cross-platform acceptance is inferred from source or a different checkout.
+The initial candidate omitted artifact verification because its Engine staging directory
+contained only `.gitkeep`. Parent integration closed that gap: a locked production Rust
+build from this checkout reused the existing target cache, then its three native binaries
+and reviewed profile configuration were packaged with Electron 43.2.0 from the existing
+SDK. The actual arm64 Mac ASAR/package verifier, required Apple signature and deep strict
+codesign verification passed. No other checkout's App was substituted; the candidate was
+not installed or published. Integrated full Node results are 1,623 tests / 1,609 passed /
+14 platform skips / zero failed; integrated native toolbar and popup-MFA fixtures passed.
+Native Windows/Linux package acceptance remains the required exact-head CI matrix.
 
 The source-only candidate reduces `campus-browser.js` from the 1,502-line starting point to 1,476
-lines without changing Main's measured 34 direct / 170 transitive production dependencies. The
+lines without changing its baseline Main's 34 direct / 170 transitive dependencies.
+Integration with `main@a045cb8` preserves its 1,084-line Main, 33 direct and 170
+transitive dependencies and lowers the Browser growth cap to 1,476. The
 owner remains below the M2 600-line ceiling. Revert the Browser owner integration, its direct tests
 and fixture factory injection together; there is no schema migration, persistent-data change,
 network-policy change or package artifact to roll back.
