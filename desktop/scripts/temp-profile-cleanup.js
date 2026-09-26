@@ -17,8 +17,8 @@ function validateTemporaryProfile(target, prefix) {
 }
 
 // Chromium can recreate Local State after Electron's `quit` event. A detached
-// Node helper waits for this one test process to disappear and then removes the
-// validated, direct child of os.tmpdir(). It never accepts an arbitrary tree.
+// Node helper removes the validated, direct child of os.tmpdir() only after the
+// owning process is confirmed absent; uncertain or timed-out ownership preserves it.
 function scheduleTemporaryProfileCleanup(target, prefix, {
   nodeExecutable = process.env.npm_node_execpath || 'node',
   parentPid = process.pid,
@@ -38,14 +38,18 @@ function scheduleTemporaryProfileCleanup(target, prefix, {
         path.dirname(target) !== path.resolve(os.tmpdir()) ||
         !path.basename(target).startsWith(prefix + '-')) process.exit(2);
     let attempts = 0;
-    function parentAlive() {
-      try { process.kill(parentPid, 0); return true; } catch { return false; }
+    function parentState() {
+      try { process.kill(parentPid, 0); return 'alive'; }
+      catch (error) { return error?.code === 'ESRCH' ? 'absent' : 'unknown'; }
     }
     function poll() {
       attempts += 1;
-      if (parentAlive() && attempts < 600) return setTimeout(poll, 50);
-      try { fs.rmSync(target, { recursive: true, force: true }); }
-      catch { process.exitCode = 1; }
+      if (parentState() === 'absent') {
+        try { fs.rmSync(target, { recursive: true, force: true }); }
+        catch { process.exitCode = 1; }
+        return;
+      }
+      if (attempts < 600) setTimeout(poll, 50);
     }
     poll();
   `;
