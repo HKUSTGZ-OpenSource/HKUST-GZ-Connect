@@ -2,9 +2,16 @@
 
 const fs = require('fs');
 const {
+  protectWindowsFileOwnerOnly,
   tightenWindowsFileOwnerOnly,
   verifyWindowsFileOwnerOnly,
 } = require('./windows-private-file');
+const { atomicWritePrivateFile, fsyncDirectory } = require('./atomic-private-file');
+const {
+  ensurePrivateDirectoryChain,
+  fsyncPrivateDirectory,
+  verifyPrivateDirectoryChain,
+} = require('./private-directory');
 
 const MAX_PRIVATE_READ_BYTES = 64 * 1024 * 1024;
 
@@ -107,6 +114,54 @@ function readPrivateFileBounded(file, {
   }
 }
 
+function createPrivateStorageEffects({
+  fileSystem = fs,
+  platform = process.platform,
+  windowsAcl = {
+    protect: protectWindowsFileOwnerOnly,
+    verify: verifyWindowsFileOwnerOnly,
+  },
+} = {}) {
+  if (!fileSystem || typeof fileSystem.openSync !== 'function' ||
+      !['darwin', 'linux', 'win32'].includes(platform) ||
+      (platform === 'win32' && (typeof windowsAcl?.protect !== 'function' ||
+        typeof windowsAcl?.verify !== 'function'))) {
+    throw new TypeError('private storage effect dependencies are invalid');
+  }
+  const assertCompatible = ({ fileSystem: fileSystemOverride, platform: platformOverride,
+    windowsAcl: windowsAclOverride, verifyWindowsAcl } = {}) => {
+    if ((fileSystemOverride !== undefined && fileSystemOverride !== fileSystem) ||
+        (platformOverride !== undefined && platformOverride !== platform) ||
+        (windowsAclOverride !== undefined && windowsAclOverride !== windowsAcl) ||
+        (verifyWindowsAcl !== undefined && verifyWindowsAcl !== windowsAcl.verify)) {
+      throw new TypeError('private storage effect context does not match its overrides');
+    }
+    return true;
+  };
+  return Object.freeze({
+    fileSystem,
+    platform,
+    windowsAcl,
+    assertCompatible,
+    atomicWritePrivateFile: (file, contents, options) => (
+      atomicWritePrivateFile(file, contents, fileSystem, options)
+    ),
+    fsyncDirectory: (directory) => fsyncDirectory(directory, fileSystem),
+    ensurePrivateDirectoryChain: (root, directory) => ensurePrivateDirectoryChain(
+      root, directory, { fileSystem, platform },
+    ),
+    fsyncPrivateDirectory: (directory) => fsyncPrivateDirectory(
+      directory, fileSystem, platform,
+    ),
+    verifyPrivateDirectoryChain: (root, directory) => verifyPrivateDirectoryChain(
+      root, directory, { fileSystem, platform },
+    ),
+    readPrivateFileBounded: (file, { maxBytes, minBytes = 1 } = {}) => (
+      readPrivateFileBounded(file, { maxBytes, minBytes, platform, fileSystem })
+    ),
+  });
+}
+
 function sameFileIdentity(left, right) {
   return left.dev === right.dev && left.ino === right.ino && left.size === right.size &&
     left.mtimeNs === right.mtimeNs;
@@ -165,5 +220,6 @@ module.exports = {
   privateDescriptorStat,
   MAX_PRIVATE_READ_BYTES,
   ensureOwnerOnly,
+  createPrivateStorageEffects,
   readPrivateFileBounded,
 };

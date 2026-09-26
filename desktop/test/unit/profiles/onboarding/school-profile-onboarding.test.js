@@ -12,6 +12,9 @@ const {
   SchoolProfileOnboardingCoordinator,
 } = require('../../../../lib/profiles/onboarding/school-profile-onboarding');
 const { PROTOCOL_FAMILY } = require('../../../../lib/profiles/schema/school-profile-schema');
+const { createPrivateStorageEffects } = require('../../../../lib/platform/storage/private-file');
+
+const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
 
 function context(epoch = 7) {
   return {
@@ -197,6 +200,7 @@ test('confirmed onboarding materializes a restart-readable custom candidate', as
     desktopDir: desktop,
     resourcesPath: '/unused',
     isPackaged: false,
+    profileStorageEffects,
   });
   let confirmationSeed = 10;
   let provisioningSeed = 30;
@@ -209,6 +213,7 @@ test('confirmed onboarding materializes a restart-readable custom candidate', as
     }),
     provisioningRuntime: new CustomProfileProvisioningRuntime({
       userData,
+      profileStorageEffects,
       randomBytes: (length) => Buffer.alloc(length, ++provisioningSeed),
       now: () => 1_800_000_000_100,
     }),
@@ -227,6 +232,7 @@ test('confirmed onboarding materializes a restart-readable custom candidate', as
     desktopDir: desktop,
     resourcesPath: '/unused',
     isPackaged: false,
+    profileStorageEffects,
   }).withCandidate(confirmed.profileId, (value) => { record = value; });
   assert.equal(record.profile.gateway.origin.origin, 'https://vpn.example.edu');
   assert.equal(record.kind, 'custom-local');

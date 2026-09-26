@@ -116,6 +116,7 @@ class MainProfileSwitchRuntime {
 function createMainProfileSwitchRuntime({
   directory,
   directoryOptions,
+  profileStorageEffects,
   userData,
   journalFile,
   activeAuthority,
@@ -128,12 +129,16 @@ function createMainProfileSwitchRuntime({
   DirectoryClass = ProfileCandidateDirectory,
   SwitchRuntimeClass = ProfileSwitchRuntime,
 } = {}) {
-  const candidates = directory || new DirectoryClass(directoryOptions);
-  const journalStore = new JournalStoreClass({ filePath: journalFile });
+  const storageOptions = profileStorageEffects ? { profileStorageEffects } : {};
+  const candidates = directory || new DirectoryClass({
+    ...directoryOptions,
+    ...storageOptions,
+  });
+  const journalStore = new JournalStoreClass({ filePath: journalFile, ...storageOptions });
   return new MainProfileSwitchRuntime({
     directory: candidates,
     journalStore,
-    activationStore: new ActivationStoreClass({ userData }),
+    activationStore: new ActivationStoreClass({ userData, ...storageOptions }),
     startupBarrier: new BarrierClass(startupEffects),
     liveBarrier: new BarrierClass(liveEffects),
     getActivePersistentContext: () => persistentContextFromAuthority(activeAuthority),

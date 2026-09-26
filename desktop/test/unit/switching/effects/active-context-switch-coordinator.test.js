@@ -16,6 +16,9 @@ const {
 const {
   ActiveContextSwitchJournalStore,
 } = require('../../../../lib/switching/active-context/active-context-switch-store');
+const { createPrivateStorageEffects } = require('../../../../lib/platform/storage/private-file');
+
+const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
 
 function key(name, seed) { return `${name}-${String(seed).repeat(32)}`; }
 
@@ -78,6 +81,7 @@ function fixture(t, overrides = {}) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const store = new ActiveContextSwitchJournalStore({
     filePath: path.join(root, 'global', 'active-context-switch.json'),
+    profileStorageEffects,
   });
   let currentReceipt = overrides.currentReceipt || activationState(activation(1), 'before');
   const calls = [];

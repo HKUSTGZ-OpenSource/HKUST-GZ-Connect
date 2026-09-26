@@ -1,7 +1,6 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const fs = require('node:fs');
 const path = require('node:path');
 const {
   LEGACY_HKUST_BROWSER_PARTITION,
@@ -15,13 +14,7 @@ const {
 } = require('../../resources/runtime/campus-resources');
 const { createActiveSchoolProfileContext } = require('./school-profile-runtime');
 const { ProfileCandidateDirectory } = require('../registry/profile-candidate-directory');
-const { verifyPrivateDirectoryChain } = require('../../platform/storage/private-directory');
 const { validateGlobalSettingsDocument } = require('../../persistence/schema/profile-workspace-documents');
-const { readPrivateFileBounded } = require('../../platform/storage/private-file');
-const {
-  protectWindowsFileOwnerOnly,
-  verifyWindowsFileOwnerOnly,
-} = require('../../platform/storage/windows-private-file');
 const {
   createCapabilitySnapshot,
   createLegacyPrimaryAccountView,
@@ -97,31 +90,45 @@ function createSchoolProfileControllerFromCandidate({ directory, profileId, ...o
 
 function createPreReadySchoolProfileController({
   userData,
-  fileSystem = fs,
-  platform = process.platform,
-  windowsAcl = {
-    protect: protectWindowsFileOwnerOnly,
-    verify: verifyWindowsFileOwnerOnly,
-  },
+  profileStorageEffects,
+  fileSystem: fileSystemOverride,
+  platform: platformOverride,
+  windowsAcl: windowsAclOverride,
   ...options
 } = {}) {
+  if (typeof profileStorageEffects?.assertCompatible !== 'function') {
+    throw new TypeError('pre-ready Profile private storage effects are invalid');
+  }
+  profileStorageEffects.assertCompatible({
+    fileSystem: fileSystemOverride,
+    platform: platformOverride,
+    windowsAcl: windowsAclOverride,
+  });
+  const fileSystem = profileStorageEffects?.fileSystem;
+  const platform = profileStorageEffects?.platform;
+  const windowsAcl = profileStorageEffects?.windowsAcl;
+  if (!profileStorageEffects || typeof fileSystem?.openSync !== 'function' ||
+      typeof profileStorageEffects.verifyPrivateDirectoryChain !== 'function' ||
+      typeof profileStorageEffects.readPrivateFileBounded !== 'function' ||
+      !['darwin', 'linux', 'win32'].includes(platform) ||
+      (platform === 'win32' && typeof windowsAcl?.verify !== 'function')) {
+    throw new TypeError('pre-ready Profile private storage effects are invalid');
+  }
   const globalSettings = path.join(userData, 'global', 'settings.json');
   try { fileSystem.lstatSync(globalSettings); }
   catch (error) {
     if (error?.code === 'ENOENT') return createSchoolProfileController({ ...options, fsImpl: fileSystem });
     throw new Error('pre-ready active Profile authority is unreadable', { cause: error });
   }
-  verifyPrivateDirectoryChain(userData, path.dirname(globalSettings), { fileSystem, platform });
+  profileStorageEffects.verifyPrivateDirectoryChain(userData, path.dirname(globalSettings));
   if (platform === 'win32' && !windowsAcl.verify(globalSettings)) {
     throw new Error('pre-ready GlobalSettings ACL is invalid');
   }
   let data;
   try {
-    ({ data } = readPrivateFileBounded(globalSettings, {
+    ({ data } = profileStorageEffects.readPrivateFileBounded(globalSettings, {
       maxBytes: 512 * 1024,
       minBytes: 2,
-      platform,
-      fileSystem,
     }));
   } catch (error) {
     throw new Error('pre-ready active Profile authority is unreadable', { cause: error });
@@ -137,9 +144,9 @@ function createPreReadySchoolProfileController({
     isPackaged: options.isPackaged,
     resourcesPath: options.resourcesPath,
     desktopDir: options.desktopDir,
+    profileStorageEffects,
     fileSystem,
     platform,
-    windowsAcl,
   });
   const profileId = directory.resolveProfileIdByKey(settings.activeProfileKey);
   if (profileId === null) {

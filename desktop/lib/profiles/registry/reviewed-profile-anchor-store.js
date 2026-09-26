@@ -1,18 +1,10 @@
 'use strict';
 
-const fs = require('node:fs');
 const path = require('node:path');
-const { atomicWritePrivateFile } = require('../../platform/storage/atomic-private-file');
-const { ensurePrivateDirectoryChain } = require('../../platform/storage/private-directory');
-const { readPrivateFileBounded } = require('../../platform/storage/private-file');
 const {
   validateOpaqueKey,
   validateProfileId,
 } = require('../schema/school-profile-schema');
-const {
-  protectWindowsFileOwnerOnly,
-  verifyWindowsFileOwnerOnly,
-} = require('../../platform/storage/windows-private-file');
 
 const REVIEWED_PROFILE_ANCHOR_VERSION = 1;
 const MAX_REVIEWED_PROFILE_ANCHORS = 16;
@@ -82,21 +74,34 @@ function serialize(value) {
 class ReviewedProfileAnchorStore {
   constructor({
     userData,
-    fileSystem = fs,
-    platform = process.platform,
-    windowsAcl = {
-      protect: protectWindowsFileOwnerOnly,
-      verify: verifyWindowsFileOwnerOnly,
-    },
+    profileStorageEffects,
+    fileSystem: fileSystemOverride,
+    platform: platformOverride,
+    windowsAcl: windowsAclOverride,
   } = {}) {
+    if (typeof profileStorageEffects?.assertCompatible !== 'function') {
+      throw new TypeError('reviewed Profile anchor storage effects are required');
+    }
+    profileStorageEffects.assertCompatible({
+      fileSystem: fileSystemOverride,
+      platform: platformOverride,
+      windowsAcl: windowsAclOverride,
+    });
+    const fileSystem = profileStorageEffects?.fileSystem;
+    const platform = profileStorageEffects?.platform;
+    const windowsAcl = profileStorageEffects?.windowsAcl;
     if (typeof userData !== 'string' || !path.isAbsolute(userData) || path.resolve(userData) !== userData ||
         !fileSystem || typeof fileSystem.openSync !== 'function' ||
+        !profileStorageEffects ||
+        typeof profileStorageEffects.readPrivateFileBounded !== 'function' ||
+        typeof profileStorageEffects.atomicWritePrivateFile !== 'function' ||
         !['darwin', 'linux', 'win32'].includes(platform) ||
         (platform === 'win32' && (typeof windowsAcl?.protect !== 'function' ||
           typeof windowsAcl?.verify !== 'function'))) {
       throw new TypeError('reviewed Profile anchor store dependencies are invalid');
     }
     this.userData = userData;
+    this.profileStorageEffects = profileStorageEffects;
     this.filePath = path.join(userData, 'global', 'reviewed-profile-anchors.json');
     this.fileSystem = fileSystem;
     this.platform = platform;
@@ -114,11 +119,9 @@ class ReviewedProfileAnchorStore {
     if (this.platform === 'win32' && !this.windowsAcl.verify(this.filePath)) {
       throw new Error('reviewed Profile anchor ACL is invalid');
     }
-    const { data } = readPrivateFileBounded(this.filePath, {
+    const { data } = this.profileStorageEffects.readPrivateFileBounded(this.filePath, {
       maxBytes: MAX_REVIEWED_PROFILE_ANCHOR_BYTES,
       minBytes: 2,
-      platform: this.platform,
-      fileSystem: this.fileSystem,
     });
     try { return document(JSON.parse(data.toString('utf8'))); }
     catch (error) { throw new Error('reviewed Profile anchors are invalid', { cause: error }); }
@@ -147,16 +150,13 @@ class ReviewedProfileAnchorStore {
     });
     const data = serialize(updated);
     try {
-      ensurePrivateDirectoryChain(this.userData, path.dirname(this.filePath), {
-        fileSystem: this.fileSystem,
-        platform: this.platform,
-      });
+      this.profileStorageEffects.ensurePrivateDirectoryChain(this.userData, path.dirname(this.filePath));
       const options = this.platform === 'win32' ? {
         protectTemporary: (file) => this.windowsAcl.protect(file) === true,
         verifyCommitted: (file) => this.windowsAcl.verify(file) === true,
         removeCommittedOnFailure: true,
       } : {};
-      const written = atomicWritePrivateFile(this.filePath, data, this.fileSystem, options);
+      const written = this.profileStorageEffects.atomicWritePrivateFile(this.filePath, data, options);
       const observed = this.read();
       if (JSON.stringify(observed) !== JSON.stringify(updated)) {
         throw new Error('reviewed Profile anchor commit was not confirmed');

@@ -19,7 +19,10 @@ const {
   createCustomProfileProvisioningPlan,
 } = require('../../../../lib/profiles/provisioning/custom-profile-provisioning-plan');
 const { PROTOCOL_FAMILY } = require('../../../../lib/profiles/schema/school-profile-schema');
+const { createPrivateStorageEffects } = require('../../../../lib/platform/storage/private-file');
 const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../../../lib/platform/storage/windows-private-file');
+
+const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
 
 function assertPrivate(file) {
   if (process.platform === 'win32') assert.equal(verifyWindowsFileOwnerOnly(file), true);
@@ -82,7 +85,7 @@ function plan(userData, seed = 1) {
 test('materializer preflights then writes and verifies one exact idempotent plan', (t) => {
   const userData = root(t);
   const value = plan(userData);
-  const materializer = new CustomProfileMaterializer();
+  const materializer = new CustomProfileMaterializer({ profileStorageEffects });
   const expected = materializer.expected(value);
   assert.equal(materializer.verify(value, expected), false);
   assert.equal(materializer.materialize(value, expected), true);
@@ -102,7 +105,7 @@ test('destination conflict blocks before any other plan file is written', (t) =>
   fs.mkdirSync(path.dirname(value.paths.profileState), { recursive: true, mode: 0o700 });
   fs.writeFileSync(value.paths.profileState, '{"conflict":true}\n', { mode: 0o600 });
   prepareNewFixture(value.paths.profileState);
-  const materializer = new CustomProfileMaterializer();
+  const materializer = new CustomProfileMaterializer({ profileStorageEffects });
   assert.throws(() => materializer.materialize(value, materializer.expected(value)), /conflict/u);
   assert.equal(fs.existsSync(value.paths.schoolProfile), false);
   assert.equal(fs.existsSync(value.paths.account), false);
@@ -115,7 +118,7 @@ test('materializer never follows a destination symlink', { skip: process.platfor
   fs.writeFileSync(outside, '{}\n', { mode: 0o600 });
   fs.mkdirSync(path.dirname(value.paths.schoolProfile), { recursive: true, mode: 0o700 });
   fs.symlinkSync(outside, value.paths.schoolProfile);
-  const materializer = new CustomProfileMaterializer();
+  const materializer = new CustomProfileMaterializer({ profileStorageEffects });
   assert.throws(() => materializer.materialize(value, materializer.expected(value)), /private file/u);
   assert.equal(fs.readFileSync(outside, 'utf8'), '{}\n');
 });
@@ -123,7 +126,7 @@ test('materializer never follows a destination symlink', { skip: process.platfor
 test('custom Profile index is owner-only additive idempotent and bounded', (t) => {
   const userData = root(t);
   const firstPlan = plan(userData, 1);
-  const store = new CustomProfileIndexStore({ userData });
+  const store = new CustomProfileIndexStore({ userData, profileStorageEffects });
   const entry = {
     profileId: firstPlan.context.profileId,
     profileKey: firstPlan.context.profileKey,
@@ -158,7 +161,7 @@ test('custom Profile index rejects broad permissions and links', {
   skip: process.platform === 'win32',
 }, (t) => {
   const userData = root(t);
-  const store = new CustomProfileIndexStore({ userData });
+  const store = new CustomProfileIndexStore({ userData, profileStorageEffects });
   fs.mkdirSync(path.dirname(store.filePath), { recursive: true, mode: 0o700 });
   fs.writeFileSync(store.filePath, '{"schemaVersion":1,"entries":[]}\n', { mode: 0o644 });
   assert.throws(() => store.read(), /private file/u);
@@ -192,6 +195,7 @@ function runtime(userData, overrides = {}) {
   let entropy = 80;
   return new CustomProfileProvisioningRuntime({
     userData,
+    profileStorageEffects,
     randomBytes: (length) => Buffer.alloc(length, ++entropy),
     now: () => 1_800_000_000_500,
     ...overrides,
@@ -209,8 +213,8 @@ test('runtime commits files and index then clears its journal without activating
   assert.equal(result.ok, true);
   assert.equal(result.status, 'provisioned');
   assert.equal(fs.readFileSync(settings).equals(before), true);
-  assert.equal(new CustomProfileIndexStore({ userData }).read().entries.length, 1);
-  assert.equal(new CustomProfileProvisioningJournalStore({ userData }).read(), null);
+  assert.equal(new CustomProfileIndexStore({ userData, profileStorageEffects }).read().entries.length, 1);
+  assert.equal(new CustomProfileProvisioningJournalStore({ userData, profileStorageEffects }).read(), null);
   assert.equal(fs.existsSync(path.join(
     userData, 'profiles', result.context.profileKey, 'school-profile.json',
   )), true);
@@ -224,6 +228,7 @@ test('inactive custom Profile deletion clears Browser data, retires index last, 
     userData,
     packageRoot: desktopRoot,
     desktopDir: desktopRoot,
+    profileStorageEffects,
   });
   const calls = [];
   const deletion = new CustomProfileDeletionRuntime({
@@ -234,6 +239,7 @@ test('inactive custom Profile deletion clears Browser data, retires index last, 
       clearStorageData: async () => calls.push(['storage', partition]),
       clearCache: async () => calls.push(['cache', partition]),
     }) },
+    profileStorageEffects,
   });
   const profileRoot = path.join(userData, 'profiles', provisioned.context.profileKey);
   assert.equal((await deletion.deleteProfile({
@@ -241,7 +247,7 @@ test('inactive custom Profile deletion clears Browser data, retires index last, 
     activeProfileId: 'hkustgz',
   })).ok, true);
   assert.equal(fs.existsSync(profileRoot), false);
-  assert.deepEqual(new CustomProfileIndexStore({ userData }).read().entries, []);
+  assert.deepEqual(new CustomProfileIndexStore({ userData, profileStorageEffects }).read().entries, []);
   assert.deepEqual(calls.map(([name]) => name), ['close', 'storage', 'cache']);
 });
 
@@ -250,7 +256,7 @@ test('failed Browser cleanup tombstones the custom Profile and restart recovery 
   const provisioned = runtime(userData).begin(consumedConfirmation(13));
   const desktopRoot = path.resolve(__dirname, '..', '..', '..', '..');
   const directory = new ProfileCandidateDirectory({
-    userData, packageRoot: desktopRoot, desktopDir: desktopRoot,
+    userData, packageRoot: desktopRoot, desktopDir: desktopRoot, profileStorageEffects,
   });
   let fail = true;
   const deletion = new CustomProfileDeletionRuntime({
@@ -261,6 +267,7 @@ test('failed Browser cleanup tombstones the custom Profile and restart recovery 
       clearStorageData: async () => { if (fail) throw new Error('synthetic clear failure'); },
       clearCache: async () => {},
     }) },
+    profileStorageEffects,
   });
   const first = await deletion.deleteProfile({
     profileId: provisioned.context.profileId,
@@ -271,14 +278,14 @@ test('failed Browser cleanup tombstones the custom Profile and restart recovery 
     'a tombstoned Profile cannot be selected again');
   fail = false;
   assert.deepEqual(await deletion.recover(), { ok: true, recovered: 1 });
-  assert.deepEqual(new CustomProfileIndexStore({ userData }).read().entries, []);
+  assert.deepEqual(new CustomProfileIndexStore({ userData, profileStorageEffects }).read().entries, []);
 });
 
 test('prepared materialized and indexed crash points recover idempotently', (t) => {
   for (const fault of ['markMaterialized', 'markIndexed', 'clearIndexed']) {
     const userData = path.join(root(t), fault);
     fs.mkdirSync(userData, { mode: 0o700 });
-    const store = new CustomProfileProvisioningJournalStore({ userData });
+    const store = new CustomProfileProvisioningJournalStore({ userData, profileStorageEffects });
     const first = runtime(userData, { journalStore: faultOnce(store, fault) });
     assert.throws(() => first.begin(consumedConfirmation(fault.length)),
       new RegExp(`synthetic ${fault}`));
@@ -287,7 +294,7 @@ test('prepared materialized and indexed crash points recover idempotently', (t) 
     const result = runtime(userData, { journalStore: store }).recover();
     assert.equal(result.status, 'provisioned', fault);
     assert.equal(store.read(), null, fault);
-    assert.equal(new CustomProfileIndexStore({ userData }).read().entries.length, 1, fault);
+    assert.equal(new CustomProfileIndexStore({ userData, profileStorageEffects }).read().entries.length, 1, fault);
   }
 });
 
@@ -315,15 +322,15 @@ test('a destination conflict leaves a prepared journal and never indexes or acti
   fs.writeFileSync(planned.paths.account, '{"conflict":true}\n', { mode: 0o600 });
   prepareNewFixture(planned.paths.account);
   assert.throws(() => deterministic().begin(confirmation), /destination conflict/u);
-  assert.equal(new CustomProfileIndexStore({ userData }).read().entries.length, 0);
-  assert.equal(new CustomProfileProvisioningJournalStore({ userData }).read()?.state, 'prepared');
+  assert.equal(new CustomProfileIndexStore({ userData, profileStorageEffects }).read().entries.length, 0);
+  assert.equal(new CustomProfileProvisioningJournalStore({ userData, profileStorageEffects }).read()?.state, 'prepared');
 });
 
 test('provisioning journal rejects broad permissions and links', {
   skip: process.platform === 'win32',
 }, (t) => {
   const userData = root(t);
-  const store = new CustomProfileProvisioningJournalStore({ userData });
+  const store = new CustomProfileProvisioningJournalStore({ userData, profileStorageEffects });
   fs.mkdirSync(path.dirname(store.filePath), { recursive: true, mode: 0o700 });
   fs.writeFileSync(store.filePath, '{}\n', { mode: 0o644 });
   assert.throws(() => store.read(), /private file/u);

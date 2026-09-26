@@ -9,7 +9,12 @@ const { CustomGatewayConfirmationOwner } = require('../lib/profiles/onboarding/c
 const { CustomProfileProvisioningRuntime } = require('../lib/profiles/provisioning/custom-profile-provisioning-runtime');
 const { PROTOCOL_FAMILY } = require('../lib/profiles/schema/school-profile-schema');
 
-const { ensureOwnerOnly } = require('../lib/platform/storage/private-file');
+const {
+  createPrivateStorageEffects,
+  ensureOwnerOnly,
+} = require('../lib/platform/storage/private-file');
+
+const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
 
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'campus-custom-main-e2e-'));
 fs.chmodSync(userData, 0o700);
@@ -49,6 +54,7 @@ function provision() {
   let provisionSeed = 80;
   return new CustomProfileProvisioningRuntime({
     userData,
+    profileStorageEffects,
     randomBytes: (length) => Buffer.alloc(length, ++provisionSeed),
     now: () => 1_800_000_000_100,
   }).begin(confirmation);

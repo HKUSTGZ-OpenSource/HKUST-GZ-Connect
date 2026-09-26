@@ -5,7 +5,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
-const { ensureOwnerOnly } = require('../../../../lib/platform/storage/private-file');
+const {
+  createPrivateStorageEffects,
+  ensureOwnerOnly,
+} = require('../../../../lib/platform/storage/private-file');
 const {
   protectWindowsFileOwnerOnly,
   verifyWindowsFileOwnerOnly,
@@ -57,6 +60,17 @@ function prepared(seed = 1) {
   });
 }
 
+function createStore(options) {
+  const fileSystem = options.fileSystem || fs;
+  const platform = options.platform || process.platform;
+  const profileStorageEffects = createPrivateStorageEffects({
+    fileSystem,
+    platform,
+    windowsAcl: options.windowsAcl,
+  });
+  return new ActiveContextSwitchJournalStore({ ...options, profileStorageEffects });
+}
+
 function ready(value) {
   return markActiveContextSwitchReady(value, { now: () => 1_800_000_000_100 });
 }
@@ -76,7 +90,7 @@ function fixture(t) {
 
 test('owner-only store persists one prepared ready committed transition', (t) => {
   const { file } = fixture(t);
-  const store = new ActiveContextSwitchJournalStore({ filePath: file });
+  const store = createStore({ filePath: file });
   const first = prepared();
   const second = ready(first);
   const third = committed(second);
@@ -94,7 +108,7 @@ test('owner-only store persists one prepared ready committed transition', (t) =>
 
 test('store rejects skipped states, concurrent identity and premature clearing', (t) => {
   const { file } = fixture(t);
-  const store = new ActiveContextSwitchJournalStore({ filePath: file });
+  const store = createStore({ filePath: file });
   const first = prepared();
   store.prepare(first);
   assert.throws(() => store.commit(committed(ready(first))), /not ready/u);
@@ -114,27 +128,27 @@ test('reads reject symbolic links, hard links and broad POSIX permissions', {
   fs.writeFileSync(unrelated, JSON.stringify(prepared()), { mode: 0o600 });
 
   fs.symlinkSync(unrelated, file);
-  assert.throws(() => new ActiveContextSwitchJournalStore({ filePath: file }).read(),
+  assert.throws(() => createStore({ filePath: file }).read(),
     /private file/u);
   fs.unlinkSync(file);
   fs.linkSync(unrelated, file);
-  assert.throws(() => new ActiveContextSwitchJournalStore({ filePath: file }).read(),
+  assert.throws(() => createStore({ filePath: file }).read(),
     /private file/u);
   fs.unlinkSync(file);
   fs.copyFileSync(unrelated, file);
   fs.chmodSync(file, 0o644);
-  assert.throws(() => new ActiveContextSwitchJournalStore({ filePath: file }).read(),
+  assert.throws(() => createStore({ filePath: file }).read(),
     /private file/u);
 });
 
 test('failure before rename preserves the previous state', (t) => {
   const { file } = fixture(t);
   const first = prepared();
-  const base = new ActiveContextSwitchJournalStore({ filePath: file });
+  const base = createStore({ filePath: file });
   base.prepare(first);
   const injected = Object.create(fs);
   injected.renameSync = () => { throw new Error('simulated rename failure'); };
-  const store = new ActiveContextSwitchJournalStore({ filePath: file, fileSystem: injected });
+  const store = createStore({ filePath: file, fileSystem: injected });
   assert.throws(() => store.markReady(ready(first)), /ready failed/u);
   assert.deepEqual(base.read(), first);
 });
@@ -144,7 +158,7 @@ test('a readable transition resolves post-rename directory fsync uncertainty', {
 }, (t) => {
   const { file } = fixture(t);
   const first = prepared();
-  const base = new ActiveContextSwitchJournalStore({ filePath: file });
+  const base = createStore({ filePath: file });
   base.prepare(first);
   const injected = Object.create(fs);
   injected.fsyncSync = (descriptor) => {
@@ -153,7 +167,7 @@ test('a readable transition resolves post-rename directory fsync uncertainty', {
     }
     return fs.fsyncSync(descriptor);
   };
-  const store = new ActiveContextSwitchJournalStore({ filePath: file, fileSystem: injected });
+  const store = createStore({ filePath: file, fileSystem: injected });
   const next = ready(first);
   assert.deepEqual(store.markReady(next), { ready: true, durabilityUnconfirmed: true });
   assert.deepEqual(base.read(), next);
@@ -161,7 +175,7 @@ test('a readable transition resolves post-rename directory fsync uncertainty', {
 
 test('journal disappearance and malformed content are never treated as absence', (t) => {
   const { file } = fixture(t);
-  const base = new ActiveContextSwitchJournalStore({ filePath: file });
+  const base = createStore({ filePath: file });
   base.prepare(prepared());
   const injected = Object.create(fs);
   let observations = 0;
@@ -174,7 +188,7 @@ test('journal disappearance and malformed content are never treated as absence',
     }
     return fs.lstatSync(value, ...args);
   };
-  assert.throws(() => new ActiveContextSwitchJournalStore({
+  assert.throws(() => createStore({
     filePath: file,
     fileSystem: injected,
   }).read(), /disappeared after observation/u);
@@ -200,7 +214,7 @@ test('native Windows rejects an inherited journal ACL before parsing malformed c
   const { file } = fixture(t);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, '{!', { mode: 0o600 });
-  const store = new ActiveContextSwitchJournalStore({ filePath: file });
+  const store = createStore({ filePath: file });
   assert.equal(verifyWindowsFileOwnerOnly(file), false);
   assert.throws(() => store.read(), /journal ACL is invalid/u);
   assert.equal(protectWindowsFileOwnerOnly(file), true);
@@ -219,7 +233,7 @@ test('simulated Windows store protects and verifies every journal generation', (
     protect(value) { protectedPaths.push(value); return true; },
     verify(value) { verifiedPaths.push(value); return fs.existsSync(value); },
   };
-  const store = new ActiveContextSwitchJournalStore({
+  const store = createStore({
     filePath: file,
     platform: 'win32',
     windowsAcl,
@@ -235,10 +249,10 @@ test('simulated Windows store protects and verifies every journal generation', (
 });
 
 test('store path is absolute and Windows ACL failure removes a new journal', (t) => {
-  assert.throws(() => new ActiveContextSwitchJournalStore({ filePath: 'relative.json' }),
+  assert.throws(() => createStore({ filePath: 'relative.json' }),
     /absolute/u);
   const { file } = fixture(t);
-  const store = new ActiveContextSwitchJournalStore({
+  const store = createStore({
     filePath: file,
     platform: 'win32',
     windowsAcl: { protect: () => false, verify: () => false },

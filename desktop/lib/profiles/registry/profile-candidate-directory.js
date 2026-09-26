@@ -14,10 +14,6 @@ const {
   validateOpaqueKey,
   validateSchoolProfileDocument,
 } = require('../schema/school-profile-schema');
-const {
-  protectWindowsFileOwnerOnly,
-  verifyWindowsFileOwnerOnly,
-} = require('../../platform/storage/windows-private-file');
 
 function engineLaunchBinding(record) {
   const stdinFrame = JSON.stringify({
@@ -45,14 +41,36 @@ class ProfileCandidateDirectory {
     packagedRegistry = null,
     customRegistry = null,
     anchorStore = null,
-    fileSystem = fs,
-    platform = process.platform,
-    windowsAcl = {
-      protect: protectWindowsFileOwnerOnly,
-      verify: verifyWindowsFileOwnerOnly,
-    },
+    profileStorageEffects,
+    fileSystem: fileSystemOverride,
+    platform: platformOverride,
+    windowsAcl: windowsAclOverride,
   } = {}) {
+    if (profileStorageEffects) {
+      if (typeof profileStorageEffects.assertCompatible !== 'function') {
+        throw new TypeError('Profile candidate storage effects are invalid');
+      }
+      profileStorageEffects.assertCompatible({
+        fileSystem: fileSystemOverride,
+        platform: platformOverride,
+        windowsAcl: windowsAclOverride,
+      });
+    }
+    const fileSystem = profileStorageEffects
+      ? profileStorageEffects.fileSystem
+      : fileSystemOverride || fs;
+    const platform = profileStorageEffects
+      ? profileStorageEffects.platform
+      : platformOverride || process.platform;
+    const windowsAcl = profileStorageEffects?.windowsAcl || windowsAclOverride || null;
+    if (!profileStorageEffects && (!customRegistry || !anchorStore)) {
+      throw new TypeError('Profile candidate private storage effects are required');
+    }
     if (typeof userData !== 'string' || !path.isAbsolute(userData) || path.resolve(userData) !== userData ||
+        !fileSystem || typeof fileSystem.openSync !== 'function' ||
+        !['darwin', 'linux', 'win32'].includes(platform) ||
+        (profileStorageEffects && platform === 'win32' &&
+          (typeof windowsAcl?.protect !== 'function' || typeof windowsAcl?.verify !== 'function')) ||
         typeof packageRoot !== 'string' || !path.isAbsolute(packageRoot) ||
         typeof desktopDir !== 'string' || !path.isAbsolute(desktopDir) ||
         typeof isPackaged !== 'boolean' ||
@@ -66,18 +84,22 @@ class ProfileCandidateDirectory {
     this.fileSystem = fileSystem;
     this.platform = platform;
     this.windowsAcl = windowsAcl;
+    this.profileStorageEffects = profileStorageEffects;
     this.packagedRegistry = packagedRegistry || new SchoolProfileRegistry({
       packageRoot, fsImpl: fileSystem, platform,
     }).load();
     this.customRegistry = customRegistry || new CustomSchoolProfileRegistry({
-      userData, fileSystem, platform, windowsAcl,
+      userData, profileStorageEffects,
     });
     this.anchorStore = anchorStore || new ReviewedProfileAnchorStore({
-      userData, fileSystem, platform, windowsAcl,
+      userData, profileStorageEffects,
     });
   }
 
   anchorReviewedCurrent({ profileId, profileKey, accountKey } = {}) {
+    if (!this.profileStorageEffects) {
+      throw new TypeError('Profile candidate private storage effects are required');
+    }
     const sourceDocument = this.packagedRegistry.withProfileDocument(profileId, (value) => value);
     const profile = validateSchoolProfileDocument(sourceDocument);
     if (profile.evidenceClass !== 'builtin-reviewed') {
