@@ -32,7 +32,9 @@ test('Engine callbacks require context epoch connection intent and process gener
   const runtime = connect.indexOf('new EngineConnectionRuntime({');
   assert.ok(capture > bind && runtime > capture);
   assert.match(connect, /isCurrent: isCurrentEngineContext/u);
-  assert.match(connect, /if \(!isCurrentEngineContext\(engineGeneration\)/u);
+  const serving = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-connection-runtime'), 'utf8');
+  assert.match(serving, /if \(!this\.isCurrent\(this\.generation\)/u);
+  assert.match(connect, /new EngineServingCoordinator\(\{[\s\S]*getGeneration: \(\) => engineGeneration/u);
   assert.match(connect, /handleEngineExitBoundary\(result, isCurrentEngineContext\)/u);
   assert.match(connect, /Number\(s\.port\), isCurrentEngineContext,/u);
   assert.match(connect, /revokeEngineServing\(engineGeneration, isCurrentEngineContext\)/u);

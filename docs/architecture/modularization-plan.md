@@ -113,6 +113,10 @@ Exit target: no Browser owner exceeds 600 lines and lifecycle tests cover every 
 notification state in the existing update domain, lowering Main to 1,682 lines
 without increasing dependency caps. This is one bounded seam, not M3 completion.
 
+[Engine serving ownership](desktop-engine-serving-owner.md) places readiness and
+Browser activation in the existing runtime, lowering Main further to 1,604 lines
+without moving process creation, credentials or termination into this slice.
+
 Move remaining settings/credential transaction, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 

@@ -6,6 +6,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
+const servingSource = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-connection-runtime'), 'utf8');
 
 test('engine exit closes the browser request boundary before stdio close cleanup', () => {
   const boundaryStart = source.indexOf('function revokeEngineServing(');
@@ -32,11 +33,14 @@ test('fatal, stopping, and exit boundaries revoke in-flight serving promotion', 
   assert.match(revoke, /suspendOpenBrowserPolicy\(\)/);
   assert.match(revoke, /clearConnectionPresentation\(\)/);
 
-  const handlers = source.slice(source.indexOf('handlers: {', exitStart));
-  assert.match(handlers, /onStopping:.*revokeEngineServing\(engineGeneration, isCurrentEngineContext\)/);
-  assert.match(handlers, /onListenerMismatch:[\s\S]*?revokeEngineServing\(engineGeneration, isCurrentEngineContext\)[\s\S]*?engineSupervisor\.stop/);
-  assert.match(handlers, /onFatalError:[\s\S]*?revokeEngineServing\(engineGeneration, isCurrentEngineContext\)/);
-  assert.match(handlers, /onProtocolTimeout:[\s\S]*?revokeEngineServing\(engineGeneration, isCurrentEngineContext\)/);
+  assert.match(source, /handlers: serving\.handlers/u);
+  assert.match(source, /revokeServing: \(\) => revokeEngineServing\(engineGeneration, isCurrentEngineContext\)/u);
+  assert.match(source, /stopEngine: \(\) => engineSupervisor\.stop\(\{ graceMs: 1000, forceWaitMs: STOP_FORCE_WAIT_MS \}\)/u);
+  const handlers = servingSource.slice(servingSource.indexOf('class EngineServingCoordinator'));
+  assert.match(handlers, /onStopping:.*this\.revokeServing\(\)/);
+  assert.match(handlers, /onListenerMismatch:[\s\S]*?this\.revokeServing\(\)[\s\S]*?this\.stopEngine\(\)/);
+  assert.match(handlers, /onFatalError:[\s\S]*?this\.revokeServing\(\)/);
+  assert.match(handlers, /onProtocolTimeout:[\s\S]*?this\.revokeServing\(\)/);
   const close = source.slice(source.indexOf('function handleEngineClose('), revokeStart);
   assert.match(close, /closeSnapshot\.wasConnectedBeforeStop/);
   assert.match(close, /closeSnapshot\.connectedUptimeBeforeStop/);

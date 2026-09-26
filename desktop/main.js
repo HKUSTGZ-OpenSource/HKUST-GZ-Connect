@@ -28,12 +28,12 @@ const { desktopRuntimeComposition } = require('./lib/app/desktop-runtime-composi
 const { ActiveContextLease, assertActiveContextSwitchStartupClear, createLegacyRuntimeStoragePaths, createMainProfileSwitchComposition, createMultiSchoolStartupInitializer, createPageFavoriteController, customGatewayProductAvailability, DesktopPersistenceRuntime, LegacyMigrationCredentialOwner, ProfileWorkspaceStartupRuntime, relaunchAfterPersistenceMigration, ResourceLibraryRuntime, resolveUserDataOverride, selectProfileWorkspacePreReadyStorage, writePersistenceE2EMarker, writeProfileSwitchE2EMarker } = desktopRuntimeComposition;
 const {
   classifyEngineCode,
-  classifyEngineOutput,
-  classifyEngineStopReason, formatEngineEventDiagnostic,
+
+  classifyEngineStopReason,
   resolveEngineFailureKind,
 } = require('./lib/connection/engine/engine-output');
 const { AuthChallengeCoordinator, EngineControlRegistry } = require('./lib/connection/engine/engine-control-suite');
-const { EngineConnectionRuntime } = require('./lib/connection/engine/engine-connection-runtime');
+const { EngineConnectionRuntime, EngineServingCoordinator } = require('./lib/connection/engine/engine-connection-runtime');
 const { DesktopShell } = require('./lib/platform/shell/desktop-shell');
 const { SYNTHETIC_ENGINE_E2E_ENV, resolveEngineLaunch, resolveGatewayProbeLaunch, resolveNativeResourcePath } = require('./lib/connection/engine/engine-process');
 const {
@@ -902,13 +902,23 @@ async function connectOnce(isRetry, intent) {
       cleanupUnconfirmed: true,
     });
   }
-  let diagnosticTail = '';
   let engineGeneration = null;
   let ownedEngine = null;
-  let structuredFatalCode = null;
   let engineRuntime = null;
   let engineContextToken = null;
   const isCurrentEngineContext = (generation) => activeEngineContextCurrent(generation, engineContextToken);
+  const serving = new EngineServingCoordinator({
+    getGeneration: () => engineGeneration, port: s.port, connectionState,
+    getBrowser: () => campusBrowserManager, getPresentation: () => state, getTranslator: () => t,
+    isCurrent: isCurrentEngineContext, emit, appendDiagnostic: chunk => logWriter.append(chunk),
+    revokeServing: () => revokeEngineServing(engineGeneration, isCurrentEngineContext),
+    stopEngine: () => engineSupervisor.stop({ graceMs: 1000, forceWaitMs: STOP_FORCE_WAIT_MS }),
+    observeCapabilities: report => activeSchoolProfile.observeCapabilityReport(report),
+    onFirstConnected: () => {
+      connectedAt = Date.now();
+      telemetryCoordinator.start(engineGeneration, engineContextToken);
+    },
+  });
   connectionState.invalidateEngineGeneration();
   const expectedEngineGeneration = engineSupervisor.currentGeneration + 1;
   const engineArgs = [
@@ -928,7 +938,7 @@ async function connectOnce(isRetry, intent) {
     options: { stdio: ['pipe', 'pipe', 'pipe'], ...launch.options },
     onError: ({ error, generation }) => {
       if (!isCurrentEngineContext(generation)) return;
-      structuredFatalCode = 'EVENT_OUTPUT_FAILED';
+      serving.fatalCode = 'EVENT_OUTPUT_FAILED';
       state.lastError = t('error.engineStart', { message: error.message });
       emit();
     },
@@ -939,8 +949,8 @@ async function connectOnce(isRetry, intent) {
       if (ownedEngine) removeEngineOwnerRecord(ENGINE_OWNER, ownedEngine);
       handleEngineClose(
         result,
-        diagnosticTail,
-        structuredFatalCode,
+        serving.diagnosticTail,
+        serving.fatalCode,
         structuredStopReason,
         Number(s.port), isCurrentEngineContext,
       );
@@ -963,8 +973,8 @@ async function connectOnce(isRetry, intent) {
   if (engineGeneration !== expectedEngineGeneration) {
     proxyCredential?.destroy();
     removeExternalProxySidecar();
-    structuredFatalCode = 'EVENT_OUTPUT_FAILED';
-    state.lastError = classifyEngineCode(structuredFatalCode, s.port, t);
+    serving.fatalCode = 'EVENT_OUTPUT_FAILED';
+    state.lastError = classifyEngineCode(serving.fatalCode, s.port, t);
     emit();
     await engineSupervisor.stop({ graceMs: 0, forceWaitMs: STOP_FORCE_WAIT_MS });
     return { ok: false };
@@ -973,7 +983,7 @@ async function connectOnce(isRetry, intent) {
     if (!proxyCredential.bindGeneration(engineGeneration, Number(s.port))) {
       proxyCredential.destroy();
       removeExternalProxySidecar();
-      structuredFatalCode = 'EVENT_OUTPUT_FAILED';
+      serving.fatalCode = 'EVENT_OUTPUT_FAILED';
       state.lastError = t('error.proxyCredentialUnavailable');
       emit();
       await engineSupervisor.stop({ graceMs: 0, forceWaitMs: STOP_FORCE_WAIT_MS });
@@ -995,50 +1005,7 @@ async function connectOnce(isRetry, intent) {
       return { ok: false, cleanupUnconfirmed: true };
     }
   }
-  let browserActivationInFlight = null;
-  const finishConnected = () => {
-    const wasConnected = connectionState.isConnected();
-    if (!isCurrentEngineContext(engineGeneration) ||
-        !connectionState.markConnected(engineGeneration)) return;
-    state.lastError = null;
-    if (!wasConnected) {
-      connectedAt = Date.now();
-      telemetryCoordinator.start(engineGeneration, engineContextToken);
-    }
-    emit();
-  };
-  const markConnected = () => {
-    if (!isCurrentEngineContext(engineGeneration) ||
-        !connectionState.isReadyToConnect(engineGeneration)) return;
-    if (!campusBrowserManager.routingSuspended) {
-      finishConnected();
-      return;
-    }
-    if (browserActivationInFlight) return;
-    const activation = campusBrowserManager.resumeRoutingPolicy(Number(s.port));
-    browserActivationInFlight = activation;
-    activation.then(() => {
-      if (browserActivationInFlight === activation) browserActivationInFlight = null;
-      finishConnected();
-    }).catch((error) => {
-      if (browserActivationInFlight === activation) browserActivationInFlight = null;
-      if (!isCurrentEngineContext(engineGeneration)) return;
-      // The engine is usable by authenticated external clients, while the
-      // built-in browser deliberately remains behind its request gate.
-      finishConnected();
-      state.browserNotice = t('error.browserRoutingAfterSave', { message: error.message });
-      emit();
-    });
-  };
-  const applyHumanDiagnostic = (chunk) => {
-    diagnosticTail = (diagnosticTail + chunk).slice(-512);
-    if (!isCurrentEngineContext(engineGeneration)) return;
-    const classifiedError = classifyEngineOutput(diagnosticTail, s.port, t);
-    if (classifiedError) {
-      state.lastError = classifiedError;
-      emit();
-    }
-  };
+
   engineRuntime = new EngineConnectionRuntime({
     generation: engineGeneration,
     contextToken: engineContextToken,
@@ -1046,52 +1013,7 @@ async function connectOnce(isRetry, intent) {
     stdin: child.stdin,
     controlRegistry: engineControlRegistry,
     isCurrent: isCurrentEngineContext,
-    handlers: {
-      onDiagnostic: (event) => logWriter.append(formatEngineEventDiagnostic(event, { ...connectionState.snapshot(), generation: engineGeneration })),
-      onConnecting: (engineState) => {
-        if (!connectionState.markEnginePhase(engineGeneration, engineState)) return;
-        emit();
-      },
-      onStopping: () => { if (revokeEngineServing(engineGeneration, isCurrentEngineContext)) emit(); },
-      onConnectionCandidate: () => {
-        connectionState.recordEngineConnectedCandidate(engineGeneration);
-        markConnected();
-      },
-      onListenerReady: () => {
-        connectionState.recordListenerReady(engineGeneration);
-        markConnected();
-      },
-      onListenerMismatch: () => {
-        revokeEngineServing(engineGeneration, isCurrentEngineContext); structuredFatalCode = 'LOCAL_LISTENER_FAILED';
-        state.lastError = classifyEngineCode(structuredFatalCode, s.port, t); emit();
-        engineSupervisor.stop({ graceMs: 1000, forceWaitMs: STOP_FORCE_WAIT_MS }).catch(() => {});
-      },
-      onClientIpAssigned: (_family, address) => {
-        connectionState.markEnginePhase(engineGeneration, 'preparing_tunnel');
-        state.clientIp = address;
-        emit();
-      },
-      onDnsMode: (mode) => {
-        state.dnsMode = mode;
-        emit();
-      },
-      onNetworkUnhealthy: () => {
-        revokeEngineServing(engineGeneration, isCurrentEngineContext); state.lastError = t('error.tunnelRecovering'); emit();
-      },
-      onFatalError: (code, secondaryCode) => {
-        revokeEngineServing(engineGeneration, isCurrentEngineContext); structuredFatalCode = code;
-        state.lastError = classifyEngineCode(code, s.port, t, secondaryCode); emit();
-      },
-      onProtocolTimeout: () => {
-        revokeEngineServing(engineGeneration, isCurrentEngineContext);
-        structuredFatalCode = 'EVENT_OUTPUT_FAILED';
-        state.lastError = classifyEngineCode(structuredFatalCode, s.port, t);
-        emit();
-        engineSupervisor.stop({ graceMs: 1000, forceWaitMs: STOP_FORCE_WAIT_MS })
-          .catch(() => {});
-      },
-      onProviderCapabilities: (report) => activeSchoolProfile.observeCapabilityReport(report) && emit(),
-    },
+    handlers: serving.handlers,
   });
   // An engine that dies before reading stdin (missing library, wrong
   // architecture) makes this write emit EPIPE. Without a listener that would
@@ -1113,7 +1035,7 @@ async function connectOnce(isRetry, intent) {
   child.stderr.on('data', (data) => {
     const chunk = data.toString();
     logWriter.append(chunk);
-    applyHumanDiagnostic(chunk);
+    serving.applyHumanDiagnostic(chunk);
   });
   return { ok: true, generation: engineGeneration };
 }
