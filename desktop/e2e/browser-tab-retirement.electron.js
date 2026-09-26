@@ -8,6 +8,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { app, BrowserWindow, WebContentsView, session } = require('electron');
 const { BrowserTabLifecycle } = require('../lib/browser/tabs/tab-manager');
+const { BrowserWorkspaceOwner } = require('../lib/browser/workspace/campus-workspace-controller');
 const { scheduleTemporaryProfileCleanup } = require('../scripts/temp-profile-cleanup');
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-tab-retirement-'));
@@ -77,7 +78,28 @@ async function main() {
     owner.close(background.id);
     owner.close(foreground.id);
     assert.equal(owner.size, 0);
-    console.log('native Browser tab retirement: PASS');
+
+    const workspaceOwner = new BrowserWorkspaceOwner({
+      getController: () => workspace, getTabs: () => owner.tabs, activeTab: () => owner.active(),
+      createTab: () => owner.createWorkspace(pageSession), switchTab: id => owner.activate(id),
+    });
+    for (const retireContext of [false, true]) {
+      const home = owner.createWorkspace(pageSession);
+      await actualLoad;
+      await new Promise(setImmediate);
+      await new Promise(setImmediate);
+      assert.equal(home.loading, false);
+      calls.length = 0;
+      assert.equal(workspaceOwner.focusWorkspace('search', 'synthetic'), true);
+      if (retireContext) workspaceOwner.retire();
+      else owner.close(home.id);
+      await new Promise(setImmediate);
+      assert.equal(calls.includes('workspaceFocus'), false, 'retired focus must not reach a native view');
+      assert.equal(workspaceOwner.pendingFocus.size, 0);
+      if (retireContext) owner.close(home.id);
+    }
+    assert.equal(owner.size, 0);
+    console.log('native Browser tab and workspace retirement: PASS');
   } finally {
     window.destroy();
   }

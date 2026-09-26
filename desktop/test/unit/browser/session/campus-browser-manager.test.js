@@ -105,6 +105,48 @@ test('manager creates one browser with Engine-neutral injected policies', async 
   assert.equal(browser.addressFocused, true);
 });
 
+test('retired workspace commands cannot invoke mutations or focus the replacement Browser', async () => {
+  const mutations = [];
+  let finish;
+  const f = fixture({ onWorkspaceMutation: command => {
+    mutations.push(command);
+    return new Promise(resolve => { finish = resolve; });
+  } });
+  const old = f.manager.getOrCreate();
+  let oldUpdates = 0;
+  old.updateToolbar = () => { oldUpdates += 1; };
+  const controller = old.options.workspaceController;
+  const pending = controller.onCommand({ command: 'create-group', name: 'Synthetic' });
+  f.manager.close();
+  const replacement = f.manager.getOrCreate();
+  let replacementUpdates = 0;
+  replacement.updateToolbar = () => { replacementUpdates += 1; };
+  finish({ ok: true });
+  assert.deepEqual(await pending, { ok: false, stale: true });
+  assert.equal(oldUpdates, 0);
+  assert.equal(replacementUpdates, 0);
+  for (const command of [{ command: 'focus-address' },
+    { command: 'create-group', name: 'Later' }, { command: 'open-resource', resourceId: 'library' }]) {
+    assert.deepEqual(await controller.onCommand(command), { ok: false, stale: true });
+  }
+  assert.equal(mutations.length, 1);
+  assert.equal(replacement.addressFocused, undefined);
+});
+
+test('a bookmark manager open completing after disposal cannot focus a new Browser', async () => {
+  const f = fixture();
+  const old = f.manager.getOrCreate();
+  let finish;
+  old.openWorkspace = () => new Promise(resolve => { finish = resolve; });
+  const pending = f.manager.openBookmarkManager();
+  f.manager.close();
+  const replacement = f.manager.getOrCreate();
+  finish('about:blank');
+  assert.deepEqual(await pending, { ok: false, stale: true });
+  assert.equal(old.workspaceFocus, undefined);
+  assert.equal(replacement.workspaceFocus, undefined);
+});
+
 test('bookmark folders use a native menu above WebContentsView and retain ID-only authority', async () => {
   const opened = [];
   const popups = [];
@@ -281,12 +323,16 @@ test('confirmed context closure retires downloads but a veto retains them', asyn
   const browser = f.manager.getOrCreate();
   let retired = 0;
   browser.downloadController = { retire: () => { retired += 1; } };
+  let workspaceRetired = 0;
+  browser.workspaceOwner = { retire: () => { workspaceRetired += 1; } };
   browser.closeForContextSwitch = async () => false;
   assert.equal(await f.manager.closeForContextSwitch(), false);
   assert.equal(retired, 0);
+  assert.equal(workspaceRetired, 0);
   browser.closeForContextSwitch = async () => true;
   assert.equal(await f.manager.closeForContextSwitch(), true);
   assert.equal(retired, 1);
+  assert.equal(workspaceRetired, 1);
 });
 
 test('explicit manager disposal retires the download owner', () => {
@@ -294,8 +340,11 @@ test('explicit manager disposal retires the download owner', () => {
   const browser = f.manager.getOrCreate();
   let retired = false;
   browser.downloadController = { retire: () => { retired = true; } };
+  let workspaceRetired = false;
+  browser.workspaceOwner = { retire: () => { workspaceRetired = true; } };
   f.manager.close();
   assert.equal(retired, true);
+  assert.equal(workspaceRetired, true);
 });
 
 test('late old-context close preserves the replacement Browser and its portal URL', async () => {

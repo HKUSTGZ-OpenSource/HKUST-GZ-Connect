@@ -145,6 +145,7 @@ class CampusBrowserManager {
 
   getOrCreate() {
     if (this.browser) return this.browser;
+    let browser;
     const credentialVault = new this.CredentialVaultClass({
       filePath: this.credentialFile,
       safeStorage: this.safeStorage,
@@ -158,15 +159,17 @@ class CampusBrowserManager {
       getGroups: () => this.getWorkspaceGroups(),
       getLocale: this.getLocale,
       onCommand: async (command) => {
-        if (command.command === 'focus-address') return { ok: this.browser?.focusAddressBar() === true };
+        if (!browser || this.browser !== browser) return { ok: false, stale: true };
+        if (command.command === 'focus-address') return { ok: browser.focusAddressBar() === true };
         if (command.command === 'open-resource') return this.onOpenResource(command.resourceId);
         if (command.command === 'manage-rules') return this.showRoutingRules();
         const result = await this.onWorkspaceMutation(command);
-        this.browser?.updateToolbar();
+        if (this.browser !== browser) return { ok: false, stale: true };
+        browser.updateToolbar();
         return result;
       },
     });
-    this.browser = new this.CampusBrowserClass({
+    this.browser = browser = new this.CampusBrowserClass({
       BrowserWindow: this.BrowserWindow,
       WebContentsView: this.WebContentsView,
       session: this.session,
@@ -251,11 +254,15 @@ class CampusBrowserManager {
   }
 
   async openBookmarkManager() {
+    let browser;
     try {
-      await this.getOrCreate().openWorkspace(this.getSocksPort());
-      this.browser?.focusWorkspace('manage');
+      browser = this.getOrCreate();
+      await browser.openWorkspace(this.getSocksPort());
+      if (this.browser !== browser) return { ok: false, stale: true };
+      browser.focusWorkspace('manage');
       return { ok: true, url: BLANK_CAMPUS_HOME, route: ROUTE_DIRECT };
     } catch (error) {
+      if (browser && this.browser !== browser) return { ok: false, stale: true };
       const message = this.getTranslator()('error.browserStart', { message: error.message });
       this.reportError(message);
       return { ok: false, error: message };
@@ -282,6 +289,7 @@ class CampusBrowserManager {
   close() {
     const browser = this.browser;
     browser?.downloadController?.retire();
+    browser?.workspaceOwner?.retire();
     this.browser = null;
     this.lastPortalSessionUrl = '';
     return browser?.close() ?? null;
@@ -315,6 +323,7 @@ class CampusBrowserManager {
     if (typeof browser.closeForContextSwitch !== 'function') return false;
     if (await browser.closeForContextSwitch() !== true) return false;
     browser.downloadController?.retire();
+    browser.workspaceOwner?.retire();
     if (this.browser === browser) {
       this.browser = null;
       this.lastPortalSessionUrl = '';
