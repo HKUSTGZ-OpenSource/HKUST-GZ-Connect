@@ -17,6 +17,7 @@ const {
 const {
   ActiveContextSwitchJournalStore,
 } = require('../../../lib/switching/active-context/active-context-switch-store');
+const { createPrivateStorageEffects } = require('../../../lib/platform/storage/private-file');
 const {
   commitActiveContextSwitch,
   createPreparedActiveContextSwitch,
@@ -24,6 +25,7 @@ const {
 } = require('../../../lib/switching/active-context/active-context-switch-journal');
 
 const DESKTOP = path.resolve(__dirname, '..', '..', '..');
+const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
 
 function privateRoot(t, prefix) {
   const value = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -67,6 +69,7 @@ test('real Windows storage provisions and reopens one isolated custom school', {
   let entropy = 60;
   const result = new CustomProfileProvisioningRuntime({
     userData,
+    profileStorageEffects,
     randomBytes: (length) => Buffer.alloc(length, ++entropy),
     now: () => 1_800_000_000_500,
   }).begin(customConfirmation());
@@ -78,6 +81,7 @@ test('real Windows storage provisions and reopens one isolated custom school', {
     packageRoot: DESKTOP,
     desktopDir: DESKTOP,
     isPackaged: false,
+    profileStorageEffects,
   });
   const custom = candidates.listViews({ locale: 'en' })
     .find((candidate) => candidate.profileId === result.context.profileId);
@@ -116,6 +120,7 @@ test('real Windows switch journal remains owner-only through every durable state
   });
   const store = new ActiveContextSwitchJournalStore({
     filePath: path.join(userData, 'global', 'active-context-switch.json'),
+    profileStorageEffects,
   });
   const prepared = createPreparedActiveContextSwitch({
     from: context('hkustgz', '1', '2', '3', 3),

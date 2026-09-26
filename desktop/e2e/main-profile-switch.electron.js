@@ -16,10 +16,12 @@ const { ProfileSwitchRuntime } = require('../lib/switching/runtime/profile-switc
 const { ProfileWorkspaceStartupRuntime } = require('../lib/persistence/runtime/profile-workspace-startup-runtime');
 const { PROTOCOL_FAMILY } = require('../lib/profiles/schema/school-profile-schema');
 const { saveSettings } = require('../lib/persistence/settings/settings-store');
+const { createPrivateStorageEffects } = require('../lib/platform/storage/private-file');
 
 const DESKTOP = path.join(__dirname, '..');
 const MARKER = 'profile-switch-e2e-ready.json';
 const WAIT_MS = 30_000;
+const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
 
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
@@ -55,6 +57,7 @@ function provisionCustom(userData) {
   let provisionSeed = 70;
   return new CustomProfileProvisioningRuntime({
     userData,
+    profileStorageEffects,
     randomBytes: (length) => Buffer.alloc(length, ++provisionSeed),
     now: () => 1_800_000_000_100,
   }).begin(confirmation);
@@ -67,6 +70,7 @@ function directory(userData) {
     desktopDir: DESKTOP,
     resourcesPath: '/unused',
     isPackaged: false,
+    profileStorageEffects,
   });
 }
 
@@ -76,6 +80,7 @@ async function leavePreparedSwitch(userData, destinationProfileId) {
   candidates.withCandidate('hkustgz', (record) => { source = record.context; });
   const journalStore = new ActiveContextSwitchJournalStore({
     filePath: path.join(userData, 'global', 'active-context-switch.json'),
+    profileStorageEffects,
   });
   const barrier = new ActiveContextSwitchBarrier({
     invalidateContext() {}, suspendBrowser: async () => true,
@@ -87,7 +92,7 @@ async function leavePreparedSwitch(userData, destinationProfileId) {
   const runtime = new ProfileSwitchRuntime({
     directory: candidates,
     journalStore,
-    activationStore: new ActiveContextActivationStore({ userData }),
+    activationStore: new ActiveContextActivationStore({ userData, profileStorageEffects }),
     barrier,
     getActivePersistentContext: () => source,
     getEngineGeneration: () => null,

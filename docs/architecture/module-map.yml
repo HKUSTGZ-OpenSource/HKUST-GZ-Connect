@@ -1,7 +1,7 @@
 schemaVersion: 2
 status: proposed
 owner: maintainers
-lastVerified: 2026-09-25
+lastVerified: 2026-09-27
 enforcement: path-coverage-and-entrypoint-ownership
 dependencyEnforcement: inventory-only
 
@@ -121,6 +121,7 @@ modules:
     paths: [desktop/lib/platform/**, desktop/lib/network-environment/**]
     publicEntrypoints:
       - desktop/lib/platform/shell/desktop-shell.js
+      - desktop/lib/platform/storage/private-file.js
       - desktop/lib/network-environment/runtime/network-environment-service.js
     allowedDependencies: [desktop-diagnostics]
     risk: high

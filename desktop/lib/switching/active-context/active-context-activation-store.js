@@ -1,13 +1,10 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const fs = require('node:fs');
 const path = require('node:path');
-const { atomicWritePrivateFile } = require('../../platform/storage/atomic-private-file');
 const {
   validateActiveContextSwitchJournal,
 } = require('./active-context-switch-journal');
-const { readPrivateFileBounded } = require('../../platform/storage/private-file');
 const {
   createProfileAccountWorkspaceLayout,
   validateUserDataRoot,
@@ -15,10 +12,6 @@ const {
 const {
   validateGlobalSettingsDocument,
 } = require('../../persistence/schema/profile-workspace-documents');
-const {
-  protectWindowsFileOwnerOnly,
-  verifyWindowsFileOwnerOnly,
-} = require('../../platform/storage/windows-private-file');
 
 const MAX_TARGET_BYTES = 512 * 1024;
 const WORKSPACE_KEYS = Object.freeze([
@@ -70,20 +63,33 @@ function storageOptions(platform, windowsAcl) {
 class ActiveContextActivationStore {
   constructor({
     userData,
-    fileSystem = fs,
-    platform = process.platform,
-    windowsAcl = {
-      protect: protectWindowsFileOwnerOnly,
-      verify: verifyWindowsFileOwnerOnly,
-    },
+    profileStorageEffects,
+    fileSystem: fileSystemOverride,
+    platform: platformOverride,
+    windowsAcl: windowsAclOverride,
   } = {}) {
+    if (typeof profileStorageEffects?.assertCompatible !== 'function') {
+      throw new TypeError('active context activation storage effects are required');
+    }
+    profileStorageEffects.assertCompatible({
+      fileSystem: fileSystemOverride,
+      platform: platformOverride,
+      windowsAcl: windowsAclOverride,
+    });
+    const fileSystem = profileStorageEffects?.fileSystem;
+    const platform = profileStorageEffects?.platform;
+    const windowsAcl = profileStorageEffects?.windowsAcl;
     if (!fileSystem || typeof fileSystem.openSync !== 'function' ||
+        !profileStorageEffects ||
+        typeof profileStorageEffects.atomicWritePrivateFile !== 'function' ||
+        typeof profileStorageEffects.readPrivateFileBounded !== 'function' ||
         !['darwin', 'linux', 'win32'].includes(platform) ||
         (platform === 'win32' &&
           (typeof windowsAcl?.protect !== 'function' || typeof windowsAcl?.verify !== 'function'))) {
       throw new TypeError('active context activation store dependencies are invalid');
     }
     this.userData = validateUserDataRoot(userData);
+    this.profileStorageEffects = profileStorageEffects;
     this.fileSystem = fileSystem;
     this.platform = platform;
     this.windowsAcl = windowsAcl;
@@ -193,10 +199,9 @@ class ActiveContextActivationStore {
         if (!sameReceipt(receipt(next), transition.after)) {
           throw new Error(`active context activation plan drifted: ${target.name}`);
         }
-        if (!atomicWritePrivateFile(
+        if (!this.profileStorageEffects.atomicWritePrivateFile(
           target.path,
           next,
-          this.fileSystem,
           storageOptions(this.platform, this.windowsAcl),
         )) {
           throw new Error(`active context activation write failed: ${target.name}`);
@@ -221,11 +226,9 @@ class ActiveContextActivationStore {
     }
     let data;
     try {
-      ({ data } = readPrivateFileBounded(file, {
+      ({ data } = this.profileStorageEffects.readPrivateFileBounded(file, {
         maxBytes: MAX_TARGET_BYTES,
         minBytes: 2,
-        platform: this.platform,
-        fileSystem: this.fileSystem,
       }));
     } catch (error) {
       throw new Error(`${name} is unavailable`, { cause: error });

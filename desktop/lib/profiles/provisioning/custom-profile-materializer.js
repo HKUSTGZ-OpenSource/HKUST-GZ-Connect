@@ -1,19 +1,11 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const fs = require('node:fs');
 const path = require('node:path');
-const { atomicWritePrivateFile } = require('../../platform/storage/atomic-private-file');
 const {
   CUSTOM_PROFILE_FILE_IDS,
   CUSTOM_PROFILE_PROVISIONING_VERSION,
 } = require('./custom-profile-provisioning-plan');
-const { ensurePrivateDirectoryChain } = require('../../platform/storage/private-directory');
-const { readPrivateFileBounded } = require('../../platform/storage/private-file');
-const {
-  protectWindowsFileOwnerOnly,
-  verifyWindowsFileOwnerOnly,
-} = require('../../platform/storage/windows-private-file');
 
 const MAX_CUSTOM_PROFILE_FILE_BYTES = 512 * 1024;
 
@@ -59,19 +51,32 @@ function exactPlan(plan) {
 
 class CustomProfileMaterializer {
   constructor({
-    fileSystem = fs,
-    platform = process.platform,
-    windowsAcl = {
-      protect: protectWindowsFileOwnerOnly,
-      verify: verifyWindowsFileOwnerOnly,
-    },
+    profileStorageEffects,
+    fileSystem: fileSystemOverride,
+    platform: platformOverride,
+    windowsAcl: windowsAclOverride,
   } = {}) {
+    if (typeof profileStorageEffects?.assertCompatible !== 'function') {
+      throw new TypeError('custom Profile materializer storage effects are required');
+    }
+    profileStorageEffects.assertCompatible({
+      fileSystem: fileSystemOverride,
+      platform: platformOverride,
+      windowsAcl: windowsAclOverride,
+    });
+    const fileSystem = profileStorageEffects?.fileSystem;
+    const platform = profileStorageEffects?.platform;
+    const windowsAcl = profileStorageEffects?.windowsAcl;
     if (!fileSystem || typeof fileSystem.openSync !== 'function' ||
+        !profileStorageEffects ||
+        typeof profileStorageEffects.atomicWritePrivateFile !== 'function' ||
+        typeof profileStorageEffects.readPrivateFileBounded !== 'function' ||
         !['darwin', 'linux', 'win32'].includes(platform) ||
         (platform === 'win32' && (typeof windowsAcl?.protect !== 'function' ||
           typeof windowsAcl?.verify !== 'function'))) {
       throw new TypeError('custom Profile materializer dependencies are invalid');
     }
+    this.profileStorageEffects = profileStorageEffects;
     this.fileSystem = fileSystem;
     this.platform = platform;
     this.windowsAcl = windowsAcl;
@@ -112,10 +117,7 @@ class CustomProfileMaterializer {
       }
     }
     for (const directory of new Set(Object.values(plan.paths).map(path.dirname))) {
-      ensurePrivateDirectoryChain(plan.layout.root, directory, {
-        fileSystem: this.fileSystem,
-        platform: this.platform,
-      });
+      this.profileStorageEffects.ensurePrivateDirectoryChain(plan.layout.root, directory);
     }
     const options = this.platform === 'win32' ? {
       protectTemporary: (file) => this.windowsAcl.protect(file) === true,
@@ -124,7 +126,7 @@ class CustomProfileMaterializer {
     } : {};
     for (const id of CUSTOM_PROFILE_FILE_IDS) {
       if (before[id].present) continue;
-      if (!atomicWritePrivateFile(plan.paths[id], plan.files[id], this.fileSystem, options) &&
+      if (!this.profileStorageEffects.atomicWritePrivateFile(plan.paths[id], plan.files[id], options) &&
           !sameReceipt(this.#fileReceipt(plan.paths[id]), expected[id])) {
         throw new Error(`custom Profile destination write failed: ${id}`);
       }
@@ -156,11 +158,9 @@ class CustomProfileMaterializer {
     if (this.platform === 'win32' && !this.windowsAcl.verify(file)) {
       throw new Error('custom Profile destination ACL is invalid');
     }
-    const { data } = readPrivateFileBounded(file, {
+    const { data } = this.profileStorageEffects.readPrivateFileBounded(file, {
       maxBytes: MAX_CUSTOM_PROFILE_FILE_BYTES,
       minBytes: 2,
-      platform: this.platform,
-      fileSystem: this.fileSystem,
     });
     try { return receipt(data); }
     finally { data.fill(0); }

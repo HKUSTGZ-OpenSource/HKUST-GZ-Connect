@@ -5,7 +5,11 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
-const { ensureOwnerOnly, readPrivateFileBounded } = require('../../../../lib/platform/storage/private-file');
+const {
+  createPrivateStorageEffects,
+  ensureOwnerOnly,
+  readPrivateFileBounded,
+} = require('../../../../lib/platform/storage/private-file');
 const { prepareBroadCurrentUserFile } = require('./support/windows-acl-fixture');
 
 test('owner-only hardening changes only an opened regular file', (t) => {
@@ -75,6 +79,54 @@ test('bounded private reads use one no-follow regular-file descriptor', (t) => {
     );
   }
   assert.throws(() => readPrivateFileBounded(file, { maxBytes: 0 }), /bound/);
+});
+
+test('private storage effects bind injected filesystem, platform and Windows ACL operations', (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-private-effects-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const calls = [];
+  const windowsAcl = {
+    protect(file) { calls.push(['protect', file]); return true; },
+    verify(file) { calls.push(['verify', file]); return true; },
+  };
+  const storage = createPrivateStorageEffects({
+    fileSystem: fs,
+    platform: 'win32',
+    windowsAcl,
+  });
+  const root = path.join(directory, 'profiles');
+  const targetDirectory = path.join(root, 'custom');
+  const file = path.join(targetDirectory, 'profile.json');
+
+  assert.equal(Object.isFrozen(storage), true);
+  assert.equal(storage.fileSystem, fs);
+  assert.equal(storage.platform, 'win32');
+  assert.equal(storage.assertCompatible({ fileSystem: fs, platform: 'win32', windowsAcl }), true);
+  assert.throws(() => storage.assertCompatible({ fileSystem: Object.create(fs) }), /does not match/u);
+  assert.equal(storage.ensurePrivateDirectoryChain(root, targetDirectory), true);
+  assert.equal(storage.atomicWritePrivateFile(file, Buffer.from('{}'), {
+    protectTemporary: (temporary) => storage.windowsAcl.protect(temporary),
+    verifyCommitted: (committed) => storage.windowsAcl.verify(committed),
+    removeCommittedOnFailure: true,
+  }), true);
+  const { data } = storage.readPrivateFileBounded(file, { maxBytes: 16, minBytes: 2 });
+  try { assert.equal(data.toString('utf8'), '{}'); }
+  finally { data.fill(0); }
+  assert.equal(storage.verifyPrivateDirectoryChain(root, targetDirectory), true);
+  assert.equal(storage.fsyncPrivateDirectory(targetDirectory), true);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0][0], 'protect');
+  assert.equal(path.dirname(calls[0][1]), targetDirectory);
+  assert.match(path.basename(calls[0][1]), /^\.profile\.json\.\d+\.\d+\.\d+\.tmp$/u);
+  assert.deepEqual(calls[1], ['verify', file]);
+});
+
+test('private storage effects reject unsupported platform and incomplete Windows ACLs', () => {
+  assert.throws(() => createPrivateStorageEffects({ platform: 'unknown' }), /dependencies are invalid/u);
+  assert.throws(() => createPrivateStorageEffects({
+    platform: 'win32',
+    windowsAcl: { verify: () => true },
+  }), /dependencies are invalid/u);
 });
 
 test('private-file operations reject hard links without changing the shared inode', (t) => {

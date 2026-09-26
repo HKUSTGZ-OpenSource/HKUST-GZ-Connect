@@ -1,16 +1,8 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const fs = require('node:fs');
 const path = require('node:path');
-const { atomicWritePrivateFile } = require('../../platform/storage/atomic-private-file');
-const { ensurePrivateDirectoryChain } = require('../../platform/storage/private-directory');
-const { readPrivateFileBounded } = require('../../platform/storage/private-file');
 const { validateOpaqueKey, validateProfileId } = require('../schema/school-profile-schema');
-const {
-  protectWindowsFileOwnerOnly,
-  verifyWindowsFileOwnerOnly,
-} = require('../../platform/storage/windows-private-file');
 
 const CUSTOM_PROFILE_INDEX_VERSION = 1;
 const MAX_CUSTOM_PROFILE_INDEX_BYTES = 256 * 1024;
@@ -104,21 +96,34 @@ function withoutProfile(current, profileId) {
 class CustomProfileIndexStore {
   constructor({
     userData,
-    fileSystem = fs,
-    platform = process.platform,
-    windowsAcl = {
-      protect: protectWindowsFileOwnerOnly,
-      verify: verifyWindowsFileOwnerOnly,
-    },
+    profileStorageEffects,
+    fileSystem: fileSystemOverride,
+    platform: platformOverride,
+    windowsAcl: windowsAclOverride,
   } = {}) {
+    if (typeof profileStorageEffects?.assertCompatible !== 'function') {
+      throw new TypeError('custom Profile index storage effects are required');
+    }
+    profileStorageEffects.assertCompatible({
+      fileSystem: fileSystemOverride,
+      platform: platformOverride,
+      windowsAcl: windowsAclOverride,
+    });
+    const fileSystem = profileStorageEffects?.fileSystem;
+    const platform = profileStorageEffects?.platform;
+    const windowsAcl = profileStorageEffects?.windowsAcl;
     if (typeof userData !== 'string' || !path.isAbsolute(userData) || path.resolve(userData) !== userData ||
         !fileSystem || typeof fileSystem.openSync !== 'function' ||
+        !profileStorageEffects ||
+        typeof profileStorageEffects.atomicWritePrivateFile !== 'function' ||
+        typeof profileStorageEffects.readPrivateFileBounded !== 'function' ||
         !['darwin', 'linux', 'win32'].includes(platform) ||
         (platform === 'win32' && (typeof windowsAcl?.protect !== 'function' ||
           typeof windowsAcl?.verify !== 'function'))) {
       throw new TypeError('custom Profile index dependencies are invalid');
     }
     this.userData = userData;
+    this.profileStorageEffects = profileStorageEffects;
     this.filePath = path.join(userData, 'global', 'custom-profile-index.json');
     this.fileSystem = fileSystem;
     this.platform = platform;
@@ -167,16 +172,13 @@ class CustomProfileIndexStore {
       if (!sameReceipt(receipt(after), transition.after)) {
         throw new Error('custom Profile index transition drifted');
       }
-      ensurePrivateDirectoryChain(this.userData, path.dirname(this.filePath), {
-        fileSystem: this.fileSystem,
-        platform: this.platform,
-      });
+      this.profileStorageEffects.ensurePrivateDirectoryChain(this.userData, path.dirname(this.filePath));
       const options = this.platform === 'win32' ? {
         protectTemporary: (file) => this.windowsAcl.protect(file) === true,
         verifyCommitted: (file) => this.windowsAcl.verify(file) === true,
         removeCommittedOnFailure: true,
       } : {};
-      if (!atomicWritePrivateFile(this.filePath, after, this.fileSystem, options)) {
+      if (!this.profileStorageEffects.atomicWritePrivateFile(this.filePath, after, options)) {
         throw new Error('custom Profile index write failed');
       }
       const verified = this.#readCurrent();
@@ -221,16 +223,13 @@ class CustomProfileIndexStore {
       if (!sameReceipt(receipt(after), transition.after)) {
         throw new Error('custom Profile index deletion transition drifted');
       }
-      ensurePrivateDirectoryChain(this.userData, path.dirname(this.filePath), {
-        fileSystem: this.fileSystem,
-        platform: this.platform,
-      });
+      this.profileStorageEffects.ensurePrivateDirectoryChain(this.userData, path.dirname(this.filePath));
       const options = this.platform === 'win32' ? {
         protectTemporary: (file) => this.windowsAcl.protect(file) === true,
         verifyCommitted: (file) => this.windowsAcl.verify(file) === true,
         removeCommittedOnFailure: true,
       } : {};
-      if (!atomicWritePrivateFile(this.filePath, after, this.fileSystem, options)) {
+      if (!this.profileStorageEffects.atomicWritePrivateFile(this.filePath, after, options)) {
         throw new Error('custom Profile index deletion write failed');
       }
       const verified = this.#readCurrent();
@@ -259,11 +258,9 @@ class CustomProfileIndexStore {
     if (this.platform === 'win32' && !this.windowsAcl.verify(this.filePath)) {
       throw new Error('custom Profile index ACL is invalid');
     }
-    const { data } = readPrivateFileBounded(this.filePath, {
+    const { data } = this.profileStorageEffects.readPrivateFileBounded(this.filePath, {
       maxBytes: MAX_CUSTOM_PROFILE_INDEX_BYTES,
       minBytes: 2,
-      platform: this.platform,
-      fileSystem: this.fileSystem,
     });
     try {
       return { data, document: document(JSON.parse(data.toString('utf8'))) };

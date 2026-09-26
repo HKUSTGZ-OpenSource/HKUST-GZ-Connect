@@ -15,6 +15,7 @@ function requiredFunction(value, name) {
 function createMainProfileSwitchComposition({
   enabled,
   directoryOptions,
+  profileStorageEffects,
   userData,
   journalFile,
   activeAuthority,
@@ -94,7 +95,7 @@ function createMainProfileSwitchComposition({
     connectionState.stopCompleted(intent, result);
     return result;
   };
-  const runtime = runtimeFactory({
+  const runtimeOptions = {
     directoryOptions,
     userData,
     journalFile,
@@ -106,7 +107,9 @@ function createMainProfileSwitchComposition({
     liveEffects: barrier(stopLiveEngine),
     getEngineGeneration: () => engineSupervisor.hasActive
       ? engineSupervisor.currentGeneration : null,
-  });
+  };
+  if (profileStorageEffects) runtimeOptions.profileStorageEffects = profileStorageEffects;
+  const runtime = runtimeFactory(runtimeOptions);
   let relaunchScheduled = false;
   const switchProfile = async (profileId) => {
     if (relaunchScheduled) {

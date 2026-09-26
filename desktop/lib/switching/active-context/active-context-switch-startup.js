@@ -7,7 +7,11 @@ const {
 function assertActiveContextSwitchStartupClear({
   mode,
   filePath,
-  createStore = (options) => new ActiveContextSwitchJournalStore(options),
+  profileStorageEffects,
+  createStore = (options) => new ActiveContextSwitchJournalStore({
+    ...options,
+    profileStorageEffects,
+  }),
 } = {}) {
   if (!['legacy-flat', 'profile-workspace'].includes(mode) ||
       typeof filePath !== 'string' || !filePath || typeof createStore !== 'function') {

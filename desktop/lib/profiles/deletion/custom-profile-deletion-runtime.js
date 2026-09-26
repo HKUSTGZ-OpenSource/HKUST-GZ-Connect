@@ -2,10 +2,6 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { atomicWritePrivateFile, fsyncDirectory } = require('../../platform/storage/atomic-private-file');
-const { ensurePrivateDirectoryChain, verifyPrivateDirectoryChain } = require('../../platform/storage/private-directory');
-const { readPrivateFileBounded } = require('../../platform/storage/private-file');
-const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../platform/storage/windows-private-file');
 
 const TOMBSTONE_VERSION = 1;
 const MAX_TOMBSTONE_BYTES = 16 * 1024;
@@ -78,18 +74,45 @@ class CustomProfileDeletionRuntime {
     userData,
     withCandidateDirectory,
     electronSession,
-    fileSystem = fs,
-    platform = process.platform,
-    windowsAcl = { protect: protectWindowsFileOwnerOnly, verify: verifyWindowsFileOwnerOnly },
+    profileStorageEffects,
+    fileSystem: fileSystemOverride,
+    platform: platformOverride,
+    windowsAcl: windowsAclOverride,
     now = Date.now,
   } = {}) {
+    if (typeof profileStorageEffects?.assertCompatible !== 'function') {
+      throw new TypeError('custom Profile deletion storage effects are required');
+    }
+    profileStorageEffects.assertCompatible({
+      fileSystem: fileSystemOverride,
+      platform: platformOverride,
+      windowsAcl: windowsAclOverride,
+    });
+    const fileSystem = profileStorageEffects.fileSystem;
+    const platform = profileStorageEffects.platform;
+    const windowsAcl = profileStorageEffects.windowsAcl;
     if (typeof userData !== 'string' || !path.isAbsolute(userData) || path.resolve(userData) !== userData ||
         typeof withCandidateDirectory !== 'function' || !electronSession ||
         typeof electronSession.fromPartition !== 'function' || !fileSystem ||
-        !['darwin', 'linux', 'win32'].includes(platform) || typeof now !== 'function') {
+        typeof fileSystem.openSync !== 'function' ||
+        !['darwin', 'linux', 'win32'].includes(platform) ||
+        (platform === 'win32' && (typeof windowsAcl?.protect !== 'function' ||
+          typeof windowsAcl?.verify !== 'function')) ||
+        typeof profileStorageEffects.readPrivateFileBounded !== 'function' ||
+        typeof profileStorageEffects.atomicWritePrivateFile !== 'function' ||
+        typeof now !== 'function') {
       throw new TypeError('custom Profile deletion dependencies are invalid');
     }
-    Object.assign(this, { userData, withCandidateDirectory, electronSession, fileSystem, platform, windowsAcl, now });
+    Object.assign(this, {
+      userData,
+      withCandidateDirectory,
+      electronSession,
+      profileStorageEffects,
+      fileSystem: profileStorageEffects.fileSystem,
+      platform: profileStorageEffects.platform,
+      windowsAcl: profileStorageEffects.windowsAcl,
+      now,
+    });
     this.inFlight = null;
   }
 
@@ -180,10 +203,7 @@ class CustomProfileDeletionRuntime {
   }
 
   #writeTombstone(file, value) {
-    ensurePrivateDirectoryChain(this.userData, path.dirname(file), {
-      fileSystem: this.fileSystem,
-      platform: this.platform,
-    });
+    this.profileStorageEffects.ensurePrivateDirectoryChain(this.userData, path.dirname(file));
     const bytes = tombstoneBytes(value);
     try {
       const options = this.platform === 'win32' ? {
@@ -191,18 +211,16 @@ class CustomProfileDeletionRuntime {
         verifyCommitted: (target) => this.windowsAcl.verify(target) === true,
         removeCommittedOnFailure: true,
       } : {};
-      if (!atomicWritePrivateFile(file, bytes, this.fileSystem, options)) {
+      if (!this.profileStorageEffects.atomicWritePrivateFile(file, bytes, options)) {
         throw new Error('custom Profile deletion tombstone write failed');
       }
     } finally { bytes.fill(0); }
   }
 
   #readTombstone(file) {
-    const { data } = readPrivateFileBounded(file, {
+    const { data } = this.profileStorageEffects.readPrivateFileBounded(file, {
       maxBytes: MAX_TOMBSTONE_BYTES,
       minBytes: 2,
-      platform: this.platform,
-      fileSystem: this.fileSystem,
     });
     try { return tombstoneDocument(JSON.parse(data.toString('utf8'))); }
     finally { data.fill(0); }
@@ -216,26 +234,20 @@ class CustomProfileDeletionRuntime {
   }
 
   #quarantine(root, profileKey) {
-    verifyPrivateDirectoryChain(this.userData, root, {
-      fileSystem: this.fileSystem,
-      platform: this.platform,
-    });
+    this.profileStorageEffects.verifyPrivateDirectoryChain(this.userData, root);
     const target = quarantineRoot(this.userData, profileKey);
     if (this.#directoryExists(target)) return target;
     this.fileSystem.renameSync(root, target);
-    if (!fsyncDirectory(path.dirname(root), this.fileSystem)) {
+    if (!this.profileStorageEffects.fsyncDirectory(path.dirname(root))) {
       throw new Error('custom Profile quarantine rename was not durable');
     }
     return target;
   }
 
   #removeQuarantine(root) {
-    verifyPrivateDirectoryChain(this.userData, root, {
-      fileSystem: this.fileSystem,
-      platform: this.platform,
-    });
+    this.profileStorageEffects.verifyPrivateDirectoryChain(this.userData, root);
     this.fileSystem.rmSync(root, { recursive: true, force: false });
-    if (!fsyncDirectory(path.dirname(root), this.fileSystem)) {
+    if (!this.profileStorageEffects.fsyncDirectory(path.dirname(root))) {
       throw new Error('custom Profile namespace deletion was not durable');
     }
   }

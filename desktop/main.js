@@ -40,7 +40,8 @@ const {
   registerCoreControlIpc,
   registerSettingsCredentialIpc,
 } = require('./lib/ipc/control-ipc-suite');
-const { ensureOwnerOnly } = require('./lib/platform/storage/private-file');
+const { ensureOwnerOnly, createPrivateStorageEffects } = require('./lib/platform/storage/private-file');
+const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
 const { BufferedLogWriter, readLogTail } = require('./lib/diagnostics/logging/log-writer');
 const { UpdateNotificationRuntime, checkForUpdate } = require('./lib/platform/update/update-check');
 const { ConnectivityRecovery } = require('./lib/connection/recovery/connectivity-recovery');
@@ -97,6 +98,7 @@ const activeSchoolProfile = createPreReadySchoolProfileController({
   userData: DATA,
   packageRoot: __dirname, isPackaged: app.isPackaged,
   resourcesPath: process.resourcesPath, desktopDir: __dirname,
+  profileStorageEffects,
 });
 const oneShotVpnCredential = new OneShotVpnCredentialBroker();
 const activeContextLease = new ActiveContextLease(activeSchoolProfile.activeContextBinding());
@@ -229,10 +231,10 @@ let settingsRecoveryNotice = null;
 let settingsRecoveryNoticeText = null;
 
 // ---------- settings & credentials ----------
-const initializeMultiSchoolStartup = createMultiSchoolStartupInitializer({ userData: DATA, packageRoot: __dirname, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, desktopDir: __dirname }); const customProfileDeletion = createCustomProfileDeletionRuntime({ userData: DATA, withCandidateDirectory: (callback) => initializeMultiSchoolStartup.withDirectory(callback), electronSession: session });
+const initializeMultiSchoolStartup = createMultiSchoolStartupInitializer({ userData: DATA, packageRoot: __dirname, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, desktopDir: __dirname, profileStorageEffects }); const customProfileDeletion = createCustomProfileDeletionRuntime({ userData: DATA, withCandidateDirectory: (callback) => initializeMultiSchoolStartup.withDirectory(callback), electronSession: session, profileStorageEffects });
 const schoolProfileOnboarding = createSchoolProfileOnboardingRuntime({ userData: DATA, probeLaunch: resolveGatewayProbeLaunch({ appIsPackaged: app.isPackaged, baseDirectory: __dirname, nativeProbe: gatewayProbePath(), execPath: process.execPath }), spawnProcess: spawn,
   getActiveContext: () => activeSchoolProfile.activeContextBinding(), listProfiles: (options) => initializeMultiSchoolStartup.listViews(options),
-  onDiagnostic: (code) => logWriter?.append(`[profile-onboarding] ${code}\n`),
+  onDiagnostic: (code) => logWriter?.append(`[profile-onboarding] ${code}\n`), profileStorageEffects,
 });
 const customGatewayOnboardingEnabled = customGatewayProductAvailability();
 function loadSettings() { return persistenceRuntime.loadSettings(); }
@@ -679,6 +681,7 @@ const externalIntegrationRuntime = createExternalIntegrationRuntime({
 });
 const profileSwitching = createMainProfileSwitchComposition({
   enabled: preReadyStorage.mode === 'profile-workspace',
+  profileStorageEffects,
   directoryOptions: { userData: DATA, packageRoot: __dirname, isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath, desktopDir: __dirname },
   userData: DATA, journalFile: ACTIVE_CONTEXT_SWITCH, activeAuthority: preReadyStorage.authority,
@@ -940,7 +943,9 @@ app.on('login', (event, webContents, _details, authInfo, callback) => {
 });
 app.whenReady().then(() => {
   if (!profileSwitching.runtime) {
-    assertActiveContextSwitchStartupClear({ mode: preReadyStorage.mode, filePath: ACTIVE_CONTEXT_SWITCH });
+    assertActiveContextSwitchStartupClear({
+      mode: preReadyStorage.mode, filePath: ACTIVE_CONTEXT_SWITCH, profileStorageEffects,
+    });
   }
   return profileSwitching.recoverBeforeServices();
 }).then((switchRecovery) => {

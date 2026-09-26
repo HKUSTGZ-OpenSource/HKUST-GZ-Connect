@@ -1,11 +1,8 @@
 'use strict';
 
-const fs = require('node:fs');
 const path = require('node:path');
 const { verifyCustomEngineConfigFile } = require('../provisioning/custom-engine-config');
 const { CustomProfileIndexStore } = require('./custom-profile-index');
-const { verifyPrivateDirectoryChain } = require('../../platform/storage/private-directory');
-const { readPrivateFileBounded } = require('../../platform/storage/private-file');
 const {
   loadProfileWorkspaceAuthorityByKeys,
 } = require('../../persistence/runtime/profile-workspace-runtime-authority');
@@ -14,10 +11,6 @@ const {
   createSchoolProfileView,
   validateSchoolProfileDocument,
 } = require('../schema/school-profile-schema');
-const {
-  protectWindowsFileOwnerOnly,
-  verifyWindowsFileOwnerOnly,
-} = require('../../platform/storage/windows-private-file');
 const {
   customProfileQuarantineRoot,
   findCustomProfileDeletionTombstones,
@@ -36,25 +29,38 @@ class CustomSchoolProfileRegistry {
   constructor({
     userData,
     indexStore = null,
-    fileSystem = fs,
-    platform = process.platform,
-    windowsAcl = {
-      protect: protectWindowsFileOwnerOnly,
-      verify: verifyWindowsFileOwnerOnly,
-    },
+    profileStorageEffects,
+    fileSystem: fileSystemOverride,
+    platform: platformOverride,
+    windowsAcl: windowsAclOverride,
   } = {}) {
+    if (typeof profileStorageEffects?.assertCompatible !== 'function') {
+      throw new TypeError('custom school Profile storage effects are required');
+    }
+    profileStorageEffects.assertCompatible({
+      fileSystem: fileSystemOverride,
+      platform: platformOverride,
+      windowsAcl: windowsAclOverride,
+    });
+    const fileSystem = profileStorageEffects?.fileSystem;
+    const platform = profileStorageEffects?.platform;
+    const windowsAcl = profileStorageEffects?.windowsAcl;
     if (typeof userData !== 'string' || !path.isAbsolute(userData) || path.resolve(userData) !== userData ||
         !fileSystem || typeof fileSystem.openSync !== 'function' ||
+        !profileStorageEffects ||
+        typeof profileStorageEffects.verifyPrivateDirectoryChain !== 'function' ||
+        typeof profileStorageEffects.readPrivateFileBounded !== 'function' ||
         !['darwin', 'linux', 'win32'].includes(platform) ||
         (platform === 'win32' && typeof windowsAcl?.verify !== 'function')) {
       throw new TypeError('custom school Profile registry dependencies are invalid');
     }
     this.userData = userData;
+    this.profileStorageEffects = profileStorageEffects;
     this.fileSystem = fileSystem;
     this.platform = platform;
     this.windowsAcl = windowsAcl;
     this.indexStore = indexStore || new CustomProfileIndexStore({
-      userData, fileSystem, platform, windowsAcl,
+      userData, profileStorageEffects,
     });
     this.records = new Map();
     this.loaded = false;
@@ -70,10 +76,7 @@ class CustomSchoolProfileRegistry {
           findCustomProfileDeletionTombstones(quarantined, this.fileSystem).length === 1) {
         continue;
       }
-      verifyPrivateDirectoryChain(this.userData, profileRoot, {
-        fileSystem: this.fileSystem,
-        platform: this.platform,
-      });
+      this.profileStorageEffects.verifyPrivateDirectoryChain(this.userData, profileRoot);
       const sourceDocument = this.#readJson(
         path.join(profileRoot, 'school-profile.json'),
         validateSchoolProfileDocument,
@@ -98,9 +101,7 @@ class CustomSchoolProfileRegistry {
       const engineConfig = verifyCustomEngineConfigFile({
         filePath: authority.layout.profile.engineConfig,
         profile: sourceDocument,
-        fileSystem: this.fileSystem,
-        platform: this.platform,
-        verifyWindowsAcl: (file) => this.windowsAcl.verify(file),
+        profileStorageEffects: this.profileStorageEffects,
       });
       records.set(profile.profileId, Object.freeze({
         profile,
@@ -170,18 +171,13 @@ class CustomSchoolProfileRegistry {
   }
 
   #readJson(file, validator) {
-    verifyPrivateDirectoryChain(this.userData, path.dirname(file), {
-      fileSystem: this.fileSystem,
-      platform: this.platform,
-    });
+    this.profileStorageEffects.verifyPrivateDirectoryChain(this.userData, path.dirname(file));
     if (this.platform === 'win32' && !this.windowsAcl.verify(file)) {
       throw new Error('custom Profile private file ACL is invalid');
     }
-    const { data } = readPrivateFileBounded(file, {
+    const { data } = this.profileStorageEffects.readPrivateFileBounded(file, {
       maxBytes: MAX_CUSTOM_PROFILE_DOCUMENT_BYTES,
       minBytes: 2,
-      platform: this.platform,
-      fileSystem: this.fileSystem,
     });
     try {
       const value = JSON.parse(data.toString('utf8'));

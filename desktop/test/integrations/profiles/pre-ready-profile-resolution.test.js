@@ -14,10 +14,12 @@ const { selectProfileWorkspacePreReadyStorage } =
   require('../../../lib/persistence/runtime/profile-workspace-pre-ready-selection');
 const { createPreReadySchoolProfileController } = require('../../../lib/profiles/runtime/school-profile-controller');
 const { PROTOCOL_FAMILY } = require('../../../lib/profiles/schema/school-profile-schema');
+const { createPrivateStorageEffects } = require('../../../lib/platform/storage/private-file');
 const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } =
   require('../../../lib/platform/storage/windows-private-file');
 
 const DESKTOP = path.join(__dirname, '..', '..', '..');
+const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
 
 function root(t) {
   const value = fs.mkdtempSync(path.join(os.tmpdir(), 'pre-ready-profile-resolution-'));
@@ -60,6 +62,7 @@ function provisionCustom(userData) {
   let provisionSeed = 70;
   return new CustomProfileProvisioningRuntime({
     userData,
+    profileStorageEffects,
     randomBytes: (length) => Buffer.alloc(length, ++provisionSeed),
     now: () => 1_800_000_000_100,
   }).begin(confirmation);
@@ -91,6 +94,7 @@ function controller(userData) {
     resourcesPath: '/unused',
     isPackaged: false,
     randomBytes: (length) => Buffer.alloc(length, 9),
+    profileStorageEffects,
   });
 }
 
@@ -132,6 +136,7 @@ test('clean custom authority resolves before path-bound services and survives st
     desktopDir: DESKTOP,
     resourcesPath: '/unused',
     isPackaged: false,
+    profileStorageEffects,
   }).initialize({
     mode: preReady.mode,
     authority: fullAuthority,
