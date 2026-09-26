@@ -1,6 +1,7 @@
 'use strict';
 
 const { EngineEventParser } = require('./engine-protocol');
+const { classifyEngineCode, classifyEngineOutput, formatEngineEventDiagnostic } = require('./engine-output');
 const {
   ENGINE_HELLO_TIMEOUT_MS,
   EngineProtocolSession,
@@ -191,6 +192,112 @@ class EngineConnectionRuntime {
   }
 }
 
+// Per-attempt serving promotion and presentation. Protocol admission stays in
+// EngineConnectionRuntime; process creation, credentials and shutdown stay with their owners.
+class EngineServingCoordinator {
+  constructor(ports) {
+    Object.assign(this, ports);
+    this.diagnosticTail = '';
+    this.fatalCode = null;
+    this.browserActivationInFlight = null;
+    this.handlers = {
+      onDiagnostic: (event) => this.appendDiagnostic(formatEngineEventDiagnostic(event, { ...this.connectionState.snapshot(), generation: this.generation })),
+      onConnecting: (engineState) => {
+        if (!this.connectionState.markEnginePhase(this.generation, engineState)) return;
+        this.emit();
+      },
+      onStopping: () => { if (this.revokeServing()) this.emit(); },
+      onConnectionCandidate: () => {
+        this.connectionState.recordEngineConnectedCandidate(this.generation);
+        this.markConnected();
+      },
+      onListenerReady: () => {
+        this.connectionState.recordListenerReady(this.generation);
+        this.markConnected();
+      },
+      onListenerMismatch: () => {
+        this.revokeServing(); this.fatalCode = 'LOCAL_LISTENER_FAILED';
+        this.presentation.lastError = classifyEngineCode(this.fatalCode, this.port, this.t); this.emit();
+        this.stopEngine().catch(() => {});
+      },
+      onClientIpAssigned: (_family, address) => {
+        this.connectionState.markEnginePhase(this.generation, 'preparing_tunnel');
+        this.presentation.clientIp = address;
+        this.emit();
+      },
+      onDnsMode: (mode) => {
+        this.presentation.dnsMode = mode;
+        this.emit();
+      },
+      onNetworkUnhealthy: () => {
+        this.revokeServing(); this.presentation.lastError = this.t('error.tunnelRecovering'); this.emit();
+      },
+      onFatalError: (code, secondaryCode) => {
+        this.revokeServing(); this.fatalCode = code;
+        this.presentation.lastError = classifyEngineCode(code, this.port, this.t, secondaryCode); this.emit();
+      },
+      onProtocolTimeout: () => {
+        this.revokeServing();
+        this.fatalCode = 'EVENT_OUTPUT_FAILED';
+        this.presentation.lastError = classifyEngineCode(this.fatalCode, this.port, this.t);
+        this.emit();
+        this.stopEngine()
+          .catch(() => {});
+      },
+      onProviderCapabilities: (report) => this.observeCapabilities(report) && this.emit(),
+    };
+  }
+
+  get generation() { return this.getGeneration(); }
+  get browser() { return this.getBrowser(); }
+  get presentation() { return this.getPresentation(); }
+  get t() { return this.getTranslator(); }
+
+  finishConnected() {
+    const wasConnected = this.connectionState.isConnected();
+    if (!this.isCurrent(this.generation) ||
+        !this.connectionState.markConnected(this.generation)) return;
+    this.presentation.lastError = null;
+    if (!wasConnected) {
+      this.onFirstConnected();
+    }
+    this.emit();
+  }
+  markConnected() {
+    if (!this.isCurrent(this.generation) ||
+        !this.connectionState.isReadyToConnect(this.generation)) return;
+    if (!this.browser.routingSuspended) {
+      this.finishConnected();
+      return;
+    }
+    if (this.browserActivationInFlight) return;
+    const activation = this.browser.resumeRoutingPolicy(Number(this.port));
+    this.browserActivationInFlight = activation;
+    activation.then(() => {
+      if (this.browserActivationInFlight === activation) this.browserActivationInFlight = null;
+      this.finishConnected();
+    }).catch((error) => {
+      if (this.browserActivationInFlight === activation) this.browserActivationInFlight = null;
+      if (!this.isCurrent(this.generation)) return;
+      // The engine is usable by authenticated external clients, while the
+      // built-in browser deliberately remains behind its request gate.
+      this.finishConnected();
+      this.presentation.browserNotice = this.t('error.browserRoutingAfterSave', { message: error.message });
+      this.emit();
+    });
+  }
+  applyHumanDiagnostic(chunk) {
+    this.diagnosticTail = (this.diagnosticTail + chunk).slice(-512);
+    if (!this.isCurrent(this.generation)) return;
+    const classifiedError = classifyEngineOutput(this.diagnosticTail, this.port, this.t);
+    if (classifiedError) {
+      this.presentation.lastError = classifiedError;
+      this.emit();
+    }
+  }
+}
+
 module.exports = {
   EngineConnectionRuntime,
+  EngineServingCoordinator,
 };

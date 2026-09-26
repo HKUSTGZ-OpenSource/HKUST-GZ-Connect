@@ -19,14 +19,15 @@ test('main consumes generation-bound stopped reasons at process close', () => {
   assert.match(source, /engineRuntime\?\.dispose\(\)/);
   assert.match(source, /resolveEngineFailureKind\(\{[\s\S]*stopReason: structuredStopReason/);
   assert.match(source, /classifyEngineStopReason\(structuredStopReason, stoppedSocksPort, t\)/);
-  assert.match(source, /onDiagnostic: \(event\) => logWriter\.append\(formatEngineEventDiagnostic\(event,/);
+  assert.match(source, /appendDiagnostic: chunk => logWriter\.append\(chunk\)/);
+  assert.match(runtime, /onDiagnostic: \(event\) => this\.appendDiagnostic\(formatEngineEventDiagnostic\(event,/);
 });
 
 test('desktop requires Engine API hello and has no English stdout readiness fallback', () => {
   assert.match(runtime, /ENGINE_HELLO_TIMEOUT_MS/);
   assert.match(runtime, /this\.protocol\.helloSeen/);
   assert.match(runtime, /onProtocolTimeout/);
-  assert.match(source, /structuredFatalCode = 'EVENT_OUTPUT_FAILED'/);
+  assert.match(source, /serving\.fatalCode = 'EVENT_OUTPUT_FAILED'/);
   assert.doesNotMatch(`${source}\n${runtime}`, /legacyFallback|legacyStdoutTail/);
   assert.doesNotMatch(`${source}\n${runtime}`, /SOCKS5 server listening|Client IP assigned/);
   assert.match(source, /child\.stderr\.on\('data'[\s\S]*applyHumanDiagnostic\(chunk\)/);
