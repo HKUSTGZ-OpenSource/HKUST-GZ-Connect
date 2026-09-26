@@ -34,6 +34,12 @@ function assertConnectionOverviewPackageEntries(entries) {
   }
 }
 
+function assertRequiredPackageEntries(entries, requiredEntries) {
+  for (const entry of requiredEntries) {
+    if (!entries.has(entry)) throw new Error(`missing required packaged file: ${entry}`);
+  }
+}
+
 function assertConnectionOverviewNativeFeature(appSource, featureHostSource) {
   const appImportsHost = appSource.includes(
     "import { createRendererFeatures } from './features/feature-host/index.mjs';",
@@ -470,6 +476,7 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     '/lib/platform/update/update-check.js',
     '/renderer/app.js',
     '/renderer/features/feature-host/index.mjs',
+    '/renderer/features/update-notices/index.mjs',
     '/renderer/features/auth-challenge/index.mjs',
     '/renderer/features/auth-challenge/controller.mjs',
     '/renderer/features/auth-challenge/lifecycle.mjs',
@@ -506,9 +513,7 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     '/assets/profiles/hkustgz/builtin-resources.json',
     '/assets/profiles/hkustgz/builtin-service-desk.json',
   ];
-  for (const entry of requiredEntries) {
-    if (!entries.has(entry)) throw new Error(`missing required packaged file: ${entry}`);
-  }
+  assertRequiredPackageEntries(entries, requiredEntries);
   assertConnectionOverviewPackageEntries(entries);
   if (entries.has('/assets/campus-resources.json')) {
     throw new Error('legacy duplicate campus resource asset entered the package');
@@ -690,6 +695,7 @@ module.exports = {
   assertPackagedSchoolProfiles,
   assertNoTestOnlyNativeResources,
   assertNoTestOnlyPackageEntries,
+  assertRequiredPackageEntries,
   parseArguments,
   parseMachODylibDependencies,
   readMacSignature,
