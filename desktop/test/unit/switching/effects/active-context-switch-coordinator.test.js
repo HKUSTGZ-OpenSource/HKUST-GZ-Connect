@@ -177,6 +177,26 @@ test('failed cleanup leaves prepared authority gated and a later recovery resume
   assert.equal(value.store.read(), null);
 });
 
+test('unconfirmed Browser close keeps Engine and Profile cleanup behind the Browser barrier', async (t) => {
+  const value = fixture(t, { outcomes: { closeBrowserWorkspace: false } });
+  await assert.rejects(value.coordinator.begin(switchRequest()), (error) => (
+    error.code === 'ACTIVE_CONTEXT_SWITCH_BROWSER_CLOSE_FAILED'
+  ));
+
+  assert.equal(value.store.read().state, 'prepared');
+  assert.deepEqual(value.receipt(), activationState(activation(1), 'before'));
+  assert.deepEqual(value.calls.map(([name]) => name), [
+    'gateBrowser',
+    'validateSource',
+    'cancelContinuations',
+    'closeBrowserWorkspace',
+  ]);
+  assert.equal(value.calls.some(([name]) => name === 'stopEngine'), false);
+  assert.equal(value.calls.some(([name]) => name === 'revokeProxyAccess'), false);
+  assert.equal(value.calls.some(([name]) => name === 'clearServerState'), false);
+  assert.equal(value.calls.some(([name]) => name === 'applyActivation'), false);
+});
+
 test('ready journal recovers both before-activation and after-activation crash points', async (t) => {
   for (const alreadyApplied of [false, true]) {
     const requestedActivation = activation(1);

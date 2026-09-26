@@ -36,6 +36,24 @@ dependency is added. Direct native fixtures use the same factory.
 - Routing, Session cookies, login/credential algorithms, persisted state and user data are not
   moved or changed.
 
+## Pending-load and retirement follow-up (#162)
+
+- The owner installs its native `closed` retirement listener as soon as the window record is
+  created, before awaiting toolbar `loadFile`. Concurrent creation callers join that record's
+  readiness; `CampusBrowser.open()` and `openWorkspace()` wait for the same readiness and ask the
+  owner to show that exact current window before creating or switching tabs.
+- A failed or retired load rejects its readiness waiters. A late continuation cannot attach toolbar
+  or resize listeners, show an old window, or mutate a replacement. If native closure is not
+  confirmed, the failed/closing record remains current and blocks tabs and replacement creation.
+- Physical close confirmation and Browser-domain cleanup are separate states. Detach and Browser
+  cleanup are attempted once for that record; a cleanup error stays attached to the blocking record
+  and makes context-switch close unconfirmed rather than allowing the Engine/Profile barrier to
+  proceed. Context-switch reentrancy cannot create a replacement during that cleanup.
+- The bounded close deadline is unchanged. The owner removes its temporary `closed` observer on
+  close, timeout, timer setup failure, or native close failure; observer-removal errors are retained
+  and make close unconfirmed. Shared campus Session, isolated WebViews,
+  popup opener/postMessage/self-close behavior, and OTP handling remain unchanged.
+
 ## Verification and rollback
 
 The initial candidate was tested against `main@42d1495`; these counts describe that
@@ -60,8 +78,8 @@ not installed or published. Integrated full Node results are 1,624 tests / 1,610
 14 platform skips / zero failed; integrated native toolbar and popup-MFA fixtures passed.
 Native Windows/Linux package acceptance remains the required exact-head CI matrix.
 
-Offline review confirmed inherited pending-load cleanup and deadline-listener gaps;
-these are tracked separately in issue #162, not represented as fixed by extraction.
+The pure extraction left pending-load cleanup and deadline-listener gaps open; the follow-up is
+tracked separately in issue #162 and is not part of the original extraction's verification record.
 
 The source-only candidate reduces `campus-browser.js` from the 1,502-line starting point to 1,476
 lines without changing its baseline Main's 34 direct / 170 transitive dependencies.

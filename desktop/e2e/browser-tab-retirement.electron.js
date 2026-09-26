@@ -12,8 +12,15 @@ const { BrowserWorkspaceOwner } = require('../lib/browser/workspace/campus-works
 const { scheduleTemporaryProfileCleanup } = require('../scripts/temp-profile-cleanup');
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-tab-retirement-'));
-scheduleTemporaryProfileCleanup(profile, 'hkustgz-tab-retirement');
 app.setPath('userData', profile);
+let profileCleanupScheduled = false;
+function scheduleProfileCleanup() {
+  if (profileCleanupScheduled) return;
+  profileCleanupScheduled = true;
+  scheduleTemporaryProfileCleanup(profile, 'hkustgz-tab-retirement');
+}
+app.once('quit', scheduleProfileCleanup);
+process.once('exit', scheduleProfileCleanup);
 
 async function main() {
   await app.whenReady();

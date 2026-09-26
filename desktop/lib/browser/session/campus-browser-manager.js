@@ -69,6 +69,7 @@ class CampusBrowserWindowOwner {
     windowChrome,
     onToolbarCommand,
     onResize,
+    onBeforeCreate = () => {},
     onClosed,
     onMissingWindow,
   } = {}) {
@@ -78,13 +79,14 @@ class CampusBrowserWindowOwner {
         typeof getTranslator !== 'function' || typeof parentWindow !== 'function' ||
         typeof platform !== 'string' || typeof windowChrome !== 'function' ||
         typeof onToolbarCommand !== 'function' || typeof onResize !== 'function' ||
+        typeof onBeforeCreate !== 'function' ||
         typeof onClosed !== 'function' || typeof onMissingWindow !== 'function') {
       throw new TypeError('Campus Browser window owner dependencies are incomplete');
     }
     Object.assign(this, {
       BrowserWindow, toolbarFile, toolbarPreload, getProfilePresentation, getLocale,
       getTranslator, parentWindow, platform, windowChrome,
-      onToolbarCommand, onResize, onClosed, onMissingWindow,
+      onToolbarCommand, onResize, onBeforeCreate, onClosed, onMissingWindow,
     });
     this.current = null;
   }
@@ -129,43 +131,215 @@ class CampusBrowserWindowOwner {
   }
 
   async createWindow() {
-    const window = new this.BrowserWindow(this.windowOptions());
-    const record = { window, retired: false };
-    this.current = record;
-    await window.loadFile(this.toolbarFile, { query: this.toolbarQuery() });
-    window.webContents.on('ipc-message', (_event, channel, payload) => {
-      if (this.current === record && !record.retired && channel === 'campus-toolbar-command') {
-        this.onToolbarCommand(payload);
+    let record = this.current;
+    if (record && !record.retired && record.window.isDestroyed()) this.retire(record);
+    record = this.current;
+    if (record) {
+      if (record.retired && record.closeConfirmed) {
+        if (record.closeObserverFailure || record.closeConfirmationFailure) {
+          return Promise.reject(record.closeObserverFailure || record.closeConfirmationFailure);
+        } else if (record.closeFlight) {
+          return Promise.reject(new Error('Campus Browser window close is still pending'));
+        } else if (record.cleanupComplete) {
+          if (this.current === record) this.current = null;
+        } else if (record.cleanupInProgress && record.closeReason !== 'context-switch') {
+          const deferredCreation = Promise.resolve().then(() => this.createWindow());
+          deferredCreation.catch(() => {});
+          return deferredCreation;
+        } else {
+          return Promise.reject(record.cleanupFailure ||
+            new Error('Campus Browser window cleanup is not confirmed'));
+        }
+      } else if (record.state === 'failed' || record.state === 'closing') {
+        return Promise.reject(record.cleanupFailure || record.failure ||
+          new Error('Campus Browser window is not ready'));
+      } else {
+        return record.readyPromise;
       }
+    }
+
+    this.onBeforeCreate();
+    const window = new this.BrowserWindow(this.windowOptions());
+    let resolveReady;
+    let rejectReady;
+    const readyPromise = new Promise((resolve, reject) => {
+      resolveReady = resolve;
+      rejectReady = reject;
     });
-    window.on('resize', () => {
-      if (this.current === record && !record.retired) this.onResize(window);
-    });
-    window.on('closed', () => this.retire(record));
-    return window;
+    readyPromise.catch(() => {});
+    record = {
+      window,
+      webContents: null,
+      readyPromise,
+      resolveReady,
+      rejectReady,
+      readySettled: false,
+      retired: false,
+      closeConfirmed: false,
+      cleanupComplete: false,
+      cleanupInProgress: false,
+      cleanupFailure: null,
+      cleanupFailures: [],
+      closeFailure: null,
+      closeObserverFailure: null,
+      closeConfirmationFailure: null,
+      closeFlight: null,
+      closeReason: '',
+      state: 'loading',
+      failure: null,
+      closedListener: null,
+      resizeListener: null,
+      ipcListener: null,
+    };
+    this.current = record;
+    window.on('closed', record.closedListener = () => this.retire(record));
+    try { record.webContents = window.webContents; }
+    catch (error) {
+      this.failLoad(record, error);
+      return readyPromise;
+    }
+    void this.loadWindow(record);
+    return readyPromise;
+  }
+
+  async loadWindow(record) {
+    try {
+      await record.window.loadFile(this.toolbarFile, { query: this.toolbarQuery() });
+      if (this.current !== record || record.retired || record.state !== 'loading' ||
+          record.window.isDestroyed()) return;
+      record.ipcListener = (_event, channel, payload) => {
+        if (this.current === record && !record.retired && record.state === 'ready' &&
+            channel === 'campus-toolbar-command') this.onToolbarCommand(payload);
+      };
+      record.resizeListener = () => {
+        if (this.current === record && !record.retired && record.state === 'ready') {
+          this.onResize(record.window);
+        }
+      };
+      record.webContents.on('ipc-message', record.ipcListener);
+      record.window.on('resize', record.resizeListener);
+      record.state = 'ready';
+      this.settleReady(record, null, record.window);
+    } catch (error) {
+      this.failLoad(record, error);
+    }
+  }
+
+  failLoad(record, error) {
+    if (this.current !== record || record.retired) return;
+    record.state = 'failed';
+    record.failure = error;
+    this.settleReady(record, error);
+    if (record.window.isDestroyed()) {
+      this.retire(record);
+      return;
+    }
+    try { record.window.close(); }
+    catch (closeError) { record.closeFailure = closeError; }
+    if (this.current === record && record.window.isDestroyed()) this.retire(record);
+  }
+
+  settleReady(record, error, window = null) {
+    if (record.readySettled) return false;
+    record.readySettled = true;
+    if (error) record.rejectReady(error);
+    else record.resolveReady(window);
+    return true;
+  }
+
+  detach(record) {
+    let failure = null;
+    const listeners = [
+      [record.window, 'closed', record.closedListener],
+      [record.window, 'resize', record.resizeListener],
+      [record.webContents, 'ipc-message', record.ipcListener],
+    ];
+    for (const [target, event, listener] of listeners) {
+      if (!listener) continue;
+      try { target.removeListener(event, listener); }
+      catch (error) { failure ||= error; }
+    }
+    record.closedListener = null;
+    record.resizeListener = null;
+    record.ipcListener = null;
+    return failure;
+  }
+
+  show(window) {
+    const record = this.current;
+    if (!record || record.window !== window || record.retired || record.state !== 'ready' ||
+        window.isDestroyed()) throw new Error('Campus Browser window is no longer ready');
+    if (window.isMinimized()) window.restore();
+    window.show();
+    window.focus();
+    if (this.current !== record || record.state !== 'ready' || window.isDestroyed()) {
+      throw new Error('Campus Browser window is no longer current');
+    }
   }
 
   requestClose() {
-    const window = this.window;
-    if (!window || window.isDestroyed()) return false;
-    window.close();
+    const record = this.current;
+    if (!record || record.retired || record.window.isDestroyed()) return false;
+    this.beginClose(record);
+    try { record.window.close(); }
+    catch (error) {
+      record.closeFailure = error;
+      record.failure = error;
+      record.state = 'failed';
+      throw error;
+    }
+    return true;
+  }
+
+  beginClose(record, reason = 'user') {
+    if (record.retired) return false;
+    if (reason === 'context-switch' || !record.closeReason) record.closeReason = reason;
+    record.state = 'closing';
+    const failure = record.failure || new Error('Campus Browser window closed before ready');
+    this.settleReady(record, failure);
     return true;
   }
 
   retire(record) {
     if (!record || record.retired) return false;
     record.retired = true;
+    record.closeConfirmed = true;
+    record.state = 'retired';
+    this.settleReady(record, record.failure || new Error('Campus Browser window closed before ready'));
     if (this.current !== record) return false;
-    // Keep the BrowserWindow visible to domain cleanup while views and popups
-    // detach, matching Electron's closed-event ownership ordering.
-    this.onClosed(record.window);
+    record.cleanupInProgress = true;
+    const detachFailure = this.detach(record);
+    if (detachFailure) record.cleanupFailures.push(detachFailure);
+    try {
+      // Keep the BrowserWindow visible while Browser-owned tabs, views, and
+      // popups detach. A callback failure must keep this record blocking.
+      this.onClosed(record.window);
+    } catch (error) {
+      record.cleanupFailures.push(error);
+    } finally {
+      record.cleanupInProgress = false;
+    }
+    record.cleanupFailure = record.cleanupFailures[0] || null;
+    if (record.cleanupFailure) {
+      record.state = 'failed';
+      return false;
+    }
+    record.cleanupComplete = true;
+    if (record.closeObserverFailure || record.closeConfirmationFailure) {
+      record.state = 'failed';
+      return false;
+    }
+    if (record.closeFlight) return true;
     if (this.current === record) this.current = null;
     return true;
   }
 
   clear() {
-    if (this.current) this.current.retired = true;
-    this.current = null;
+    const record = this.current;
+    if (!record) return false;
+    if (record.retired || record.closeFlight || record.closeObserverFailure ||
+        record.closeConfirmationFailure || !record.window.isDestroyed()) return false;
+    return this.retire(record);
   }
 
   closeForContextSwitch({ timeoutMs = 5_000, setTimeoutFn = setTimeout,
@@ -174,26 +348,71 @@ class CampusBrowserWindowOwner {
         typeof setTimeoutFn !== 'function' || typeof clearTimeoutFn !== 'function') {
       return Promise.reject(new TypeError('Campus Browser close deadline is invalid'));
     }
-    const window = this.window;
-    if (!window || window.isDestroyed()) {
+    const record = this.current;
+    if (!record) {
       this.onMissingWindow();
       return Promise.resolve(true);
     }
-    return new Promise((resolve) => {
-      let settled = false;
-      let timer = null;
-      const finish = (closed) => {
-        if (settled) return;
-        settled = true;
-        clearTimeoutFn(timer);
-        resolve(closed);
-      };
-      window.once('closed', () => finish(true));
+    if (record.closeFlight) return record.closeFlight.promise;
+    if (record.closeObserverFailure || record.closeConfirmationFailure) {
+      return Promise.resolve(false);
+    }
+    const { window } = record;
+    if (record.retired || window.isDestroyed()) {
+      if (!record.retired) this.retire(record);
+      return Promise.resolve(record.cleanupComplete === true &&
+        !record.cleanupFailure && !record.closeObserverFailure &&
+        !record.closeConfirmationFailure);
+    }
+    let resolveClose;
+    const promise = new Promise((resolve) => { resolveClose = resolve; });
+    const flight = { promise, settled: false, closeRequested: false };
+    record.closeFlight = flight;
+    let timer = null;
+    let closedListener = null;
+    const finish = (closed) => {
+      if (flight.settled) return;
+      flight.settled = true;
+      if (timer !== null) {
+        try { clearTimeoutFn(timer); } catch (error) { record.closeFailure = error; }
+      }
+      let observerRemoved = true;
+      if (closedListener) {
+        try { window.removeListener('closed', closedListener); }
+        catch (error) {
+          record.closeFailure = error;
+          record.closeObserverFailure = error;
+          record.state = 'failed';
+          observerRemoved = false;
+        }
+      }
+      if (!closed && flight.closeRequested && record.retired) {
+        record.closeConfirmationFailure = record.closeFailure ||
+          new Error('Campus Browser close event was not confirmed before its deadline');
+        record.state = 'failed';
+      }
+      if (record.closeFlight === flight) record.closeFlight = null;
+      const confirmed = closed && observerRemoved && record.cleanupComplete === true &&
+        !record.cleanupFailure && !record.closeObserverFailure &&
+        !record.closeConfirmationFailure;
+      if (confirmed && this.current === record) this.current = null;
+      resolveClose(confirmed);
+    };
+    closedListener = () => finish(record.cleanupComplete === true);
+    window.on('closed', closedListener);
+    try {
       timer = setTimeoutFn(() => finish(false), timeoutMs);
       timer?.unref?.();
-      try { window.close(); }
-      catch { finish(false); }
-    });
+      if (flight.settled) return promise;
+      this.beginClose(record, 'context-switch');
+      flight.closeRequested = true;
+      window.close();
+      if (this.current === record && window.isDestroyed()) this.retire(record);
+    } catch (error) {
+      record.closeFailure = error;
+      finish(false);
+    }
+    return promise;
   }
 }
 

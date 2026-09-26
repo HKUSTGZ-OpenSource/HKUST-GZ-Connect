@@ -291,11 +291,13 @@ class CampusBrowser {
         windowChrome: campusWindowChrome,
         onToolbarCommand: payload => this.handleToolbarCommand(payload),
         onResize: () => this.scheduleLayout(),
+        onBeforeCreate: () => { this.cancelScheduledUpdates(); this.lastToolbarState = null; },
         onClosed: () => this.handleWindowClosed(),
         onMissingWindow: () => this.close(),
       })
       : null;
     if (this.windowOwner && (typeof this.windowOwner.createWindow !== 'function' ||
+        typeof this.windowOwner.show !== 'function' ||
         typeof this.windowOwner.requestClose !== 'function' ||
         typeof this.windowOwner.closeForContextSwitch !== 'function' ||
         typeof this.windowOwner.clear !== 'function' || !('window' in this.windowOwner))) {
@@ -1329,10 +1331,14 @@ class CampusBrowser {
   closeTab(id) { return this.tabManager.close(id); }
 
   async createWindow() {
-    this.cancelScheduledUpdates();
-    this.lastToolbarState = null;
     if (!this.windowOwner) throw new Error('Campus Browser window owner is unavailable');
     await this.windowOwner.createWindow();
+  }
+
+  async showReadyWindow() {
+    if (!this.windowOwner) throw new Error('Campus Browser window owner is unavailable');
+    const window = await this.windowOwner.createWindow();
+    this.windowOwner.show(window);
   }
 
   handleWindowClosed() {
@@ -1389,11 +1395,7 @@ class CampusBrowser {
     if (!await this.ensureRoutingReady(resolution, port)) {
       throw new Error(this.t('error.connectTimeout'));
     }
-    if (!this.window || this.window.isDestroyed()) await this.createWindow();
-
-    if (this.window.isMinimized()) this.window.restore();
-    this.window.show();
-    this.window.focus();
+    await this.showReadyWindow();
     if (url === BLANK_CAMPUS_HOME) {
       const existing = this.tabs.find((tab) => tab.kind === 'workspace');
       if (existing) {
@@ -1413,10 +1415,7 @@ class CampusBrowser {
       throw new TypeError('Campus Workspace port is invalid');
     }
     if (!this.configuredPort && !this.routingSuspended) await this.configure(port);
-    if (!this.window || this.window.isDestroyed()) await this.createWindow();
-    if (this.window.isMinimized()) this.window.restore();
-    this.window.show();
-    this.window.focus();
+    await this.showReadyWindow();
     const existing = this.tabs.find((tab) => tab.kind === 'workspace');
     if (existing) {
       this.switchTab(existing.id);
@@ -1431,8 +1430,9 @@ class CampusBrowser {
     this.cancelScheduledUpdates();
     this.certificateController.cancelAll();
     if (this.windowOwner?.requestClose() === true) return;
+    const retired = this.windowOwner?.clear();
+    if (retired === true || this.windowOwner?.window) return;
     this.tabManager.clearTransientState();
-    this.windowOwner?.clear();
     this.view = null;
     this.attachedView = null;
     this.routingActivationInFlight = null;
