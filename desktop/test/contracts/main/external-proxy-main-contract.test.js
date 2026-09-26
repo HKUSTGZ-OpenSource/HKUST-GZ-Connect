@@ -41,7 +41,10 @@ test('VS Code snippet sidecar follows the connection and Profile lifecycle', () 
   assert.match(source.slice(disconnectStart, reconnectStart), /removeExternalProxySidecar\(\)/);
   const exitStart = source.indexOf('function handleEngineExitBoundary');
   const exitEnd = source.indexOf('\nasync function connectOnce(', exitStart);
-  assert.match(source.slice(exitStart, exitEnd), /removeExternalProxySidecar\(\)/);
+  assert.match(source.slice(exitStart, exitEnd), /engineTermination\.exit\(\.\.\.args\)/);
+  assert.match(source, /removeSidecar: removeExternalProxySidecar/u);
+  const termination = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-connection-runtime'), 'utf8');
+  assert.match(termination.slice(termination.indexOf('  exit({ generation }')), /this\.removeSidecar\(\)/);
   assert.match(source, /stableProxyCredential\?\.destroy\(\)/);
 });
 

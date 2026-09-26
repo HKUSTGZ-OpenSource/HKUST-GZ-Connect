@@ -27,7 +27,7 @@ const BASELINE = Object.freeze({
   // platform discovery, one-shot credential security closures and the reviewed
   // service-desk hand-off. Further feature work must extract responsibilities
   // instead of growing Main again.
-  mainLines: 1604,
+  mainLines: 1509,
   rendererLines: 562,
   campusBrowserLines: 1502,
   browserTabOwnerLines: 600,

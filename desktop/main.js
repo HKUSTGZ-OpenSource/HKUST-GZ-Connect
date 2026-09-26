@@ -26,14 +26,9 @@ const {
 } = require('./lib/persistence/credentials/credential-settings-transaction');
 const { desktopRuntimeComposition } = require('./lib/app/desktop-runtime-composition');
 const { ActiveContextLease, assertActiveContextSwitchStartupClear, createLegacyRuntimeStoragePaths, createMainProfileSwitchComposition, createMultiSchoolStartupInitializer, createPageFavoriteController, customGatewayProductAvailability, DesktopPersistenceRuntime, LegacyMigrationCredentialOwner, ProfileWorkspaceStartupRuntime, relaunchAfterPersistenceMigration, ResourceLibraryRuntime, resolveUserDataOverride, selectProfileWorkspacePreReadyStorage, writePersistenceE2EMarker, writeProfileSwitchE2EMarker } = desktopRuntimeComposition;
-const {
-  classifyEngineCode,
-
-  classifyEngineStopReason,
-  resolveEngineFailureKind,
-} = require('./lib/connection/engine/engine-output');
+const { classifyEngineCode } = require('./lib/connection/engine/engine-output');
 const { AuthChallengeCoordinator, EngineControlRegistry } = require('./lib/connection/engine/engine-control-suite');
-const { EngineConnectionRuntime, EngineServingCoordinator } = require('./lib/connection/engine/engine-connection-runtime');
+const { EngineConnectionRuntime, EngineServingCoordinator, EngineTerminationCoordinator } = require('./lib/connection/engine/engine-connection-runtime');
 const { DesktopShell } = require('./lib/platform/shell/desktop-shell');
 const { SYNTHETIC_ENGINE_E2E_ENV, resolveEngineLaunch, resolveGatewayProbeLaunch, resolveNativeResourcePath } = require('./lib/connection/engine/engine-process');
 const {
@@ -178,7 +173,7 @@ let reconnectInFlight = null;
 const connectionState = new ConnectionStateMachine();
 const connectionWaitRegistry = new ConnectionWaitRegistry();
 connectionWaitRegistry.observe(connectionState.snapshot());
-const MAX_ATTEMPTS = 3;
+
 // The reviewed Engine can spend up to roughly 52 seconds in bounded Modern
 // data-plane setup retries after authentication. Browser readiness must not
 // report a timeout while that same, still-current attempt can legitimately
@@ -650,109 +645,19 @@ async function connect(isRetry = false, expectedIntent = null) {
   try { return await operation; }
   finally { if (connectInFlight === record) connectInFlight = null; }
 }
-function handleEngineClose({ code, generation }, diagnosticTail,
-  structuredFatalCode = null, structuredStopReason = null, stoppedSocksPort = 1080,
-  isCurrentContext = () => true) {
-  // A delayed close from an already invalidated generation must not suspend a
-  // newer listener that is now serving the browser.
-  const supervisorGenerationCurrent = engineSupervisor.isCurrent(generation) && isCurrentContext(generation);
-  clearActiveEngineControl(generation);
-  if (!cleanupProxyAccessForEngineClose({ generation, supervisorGenerationCurrent,
-    connectionGenerationCurrent: connectionState.isCurrentGeneration(generation),
-    clearCredential: clearActiveProxyCredential, removeSidecar: removeExternalProxySidecar,
-  })) return;
-  // Unexpected process death releases the configured loopback port before the
-  // close event reaches JavaScript. Repoint the persistent browser Session at
-  // its fail-closed PAC immediately; a later generation may restore it only
-  // after reporting listener_ready.
-  suspendOpenBrowserPolicy().catch((error) => {
-    state.browserNotice = t('error.browserRoutingAfterSave', { message: error.message });
-    emit();
-  });
-  const closeSnapshot = connectionState.snapshot(); const wasConnected = closeSnapshot.phase === 'connected' || closeSnapshot.wasConnectedBeforeStop;
-  const uptime = Math.max(connectedAt ? Date.now() - connectedAt : 0, closeSnapshot.connectedUptimeBeforeStop);
-  clearConnectionPresentation();
-  const failureKind = resolveEngineFailureKind({
-    code: structuredFatalCode,
-    stopReason: structuredStopReason,
-    diagnosticText: diagnosticTail,
-  });
-  const terminalFailure = failureKind === 'terminal'; state.failureKind = failureKind; state.failureCode = structuredFatalCode || structuredStopReason || null;
-  if (!structuredFatalCode && !state.lastError) {
-    state.lastError = classifyEngineStopReason(structuredStopReason, stoppedSocksPort, t);
-  }
-  let cfg;
-  try {
-    cfg = loadSettings();
-  } catch (error) {
-    connectionState.engineClosed({
-      generation,
-      supervisorGenerationCurrent,
-      terminalFailure: true,
-    });
-    reportSettingsReadFailure(error, { emitState: false });
-    emit();
-    return;
-  }
-  const autoOn = cfg.autoReconnect !== false;
-  const maxA = Number.isInteger(cfg.maxAttempts) ? cfg.maxAttempts : MAX_ATTEMPTS;
-  const decision = connectionState.engineClosed({
-    generation,
-    supervisorGenerationCurrent,
-    terminalFailure,
-    autoReconnect: autoOn,
-    maxAttempts: maxA,
-    uptimeMs: uptime,
-    failureKind,
-  });
-  if (decision.action === 'settled' || decision.action === 'terminal') {
-    emit();
-    return;
-  }
-  // Only a genuinely stable session earns a fresh retry budget. Merely
-  // opening SOCKS and then losing the data plane must keep counting, or a
-  // rejecting gateway can drive the app into an infinite login loop.
-  if (decision.action === 'retry') {
-    state.lastError = wasConnected
-      ? t('error.reconnecting')
-      : (failureKind === 'gateway-transient'
-        ? t('error.gatewayRetrying')
-        : null);
-    emit();
-    const intent = connectionState.snapshot().intent;
-    engineSupervisor.schedule(generation, decision.delayMs, () => connect(true, intent));
-    return;
-  }
-
-  if (failureKind === 'gateway-transient') {
-    state.lastError = t('error.gatewayRejected');
-  } else if (!state.lastError) {
-    state.lastError = wasConnected
-      ? t('error.reconnectFailed')
-      : (code ? t('error.connectFailed') : null);
-  }
-  emit();
-}
-function revokeEngineServing(generation, isCurrentContext = () => true) {
-  const uptimeMs = connectedAt ? Date.now() - connectedAt : 0;
-  if (!isCurrentContext(generation) || !engineSupervisor.isCurrent(generation) ||
-      !connectionState.markEngineStopping(generation, { uptimeMs })) return false;
-  // Its epoch and request gate synchronously defeat an awaiting activation.
-  suspendOpenBrowserPolicy().catch((error) => {
-    state.browserNotice = t('error.browserRoutingAfterSave', { message: error.message });
-    emit();
-  });
-  clearConnectionPresentation(); return true;
-}
-function handleEngineExitBoundary({ generation }, isCurrentContext = () => true) {
-  // `exit` can precede stdio close; revoke serving synchronously but retain the
-  // generation so the terminal-only drain can classify fatal/stopped output.
-  if (!revokeEngineServing(generation, isCurrentContext)) return;
-  clearActiveEngineControl(generation);
-  clearActiveProxyCredential(generation);
-  removeExternalProxySidecar();
-  emit();
-}
+const engineTermination = new EngineTerminationCoordinator({
+  isGenerationCurrent: generation => engineSupervisor.isCurrent(generation), connectionState,
+  scheduleRetry: (generation, delay, callback) => engineSupervisor.schedule(generation, delay, callback),
+  getPresentation: () => state, getConnectedAt: () => connectedAt, getTranslator: () => t,
+  now: () => Date.now(), clearControl: clearActiveEngineControl,
+  cleanupProxyAccess: cleanupProxyAccessForEngineClose,
+  clearCredential: clearActiveProxyCredential, removeSidecar: removeExternalProxySidecar,
+  suspendBrowser: suspendOpenBrowserPolicy, clearPresentation: clearConnectionPresentation,
+  loadSettings, reportSettingsReadFailure, emit, connect: (retry, intent) => connect(retry, intent),
+});
+function handleEngineClose(...args) { return engineTermination.close(...args); }
+function revokeEngineServing(...args) { return engineTermination.revokeServing(...args); }
+function handleEngineExitBoundary(...args) { return engineTermination.exit(...args); }
 function failConnectionStart(intent, errorKey, result = { ok: false }) {
   connectionState.failIntent(intent); state.lastError = t(errorKey); emit(); return result;
 }
