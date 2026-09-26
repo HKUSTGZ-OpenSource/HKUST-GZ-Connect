@@ -32,6 +32,295 @@ test('Campus Browser createWindow keeps its existing void-return contract', asyn
   assert.equal(await browser.createWindow(), undefined);
   assert.ok(browser.window, 'the native window remains available through its owner');
 });
+
+test('concurrent Browser and Workspace opens wait for one shared toolbar load', async (t) => {
+  const loading = deferred();
+  const fixture = createFakeBrowser({
+    browserWindowLoad: () => loading.promise,
+    emitWindowClosedOnClose: true,
+  });
+  await fixture.browser.configure(1080);
+  let pageResult;
+  let workspaceResult;
+  const pageOpen = fixture.browser.open('portal.example.internal', 1080, ROUTE_CAMPUS).then(
+    value => { pageResult = { value }; },
+    error => { pageResult = { error }; },
+  );
+  const workspaceOpen = fixture.browser.openWorkspace(1080).then(
+    value => { workspaceResult = { value }; },
+    error => { workspaceResult = { error }; },
+  );
+  t.after(async () => {
+    loading.resolve();
+    await Promise.all([pageOpen, workspaceOpen]);
+    fixture.browser.close();
+  });
+
+  await waitForCondition(() => fixture.browserWindows.length === 1, 'one Campus Browser chrome');
+  await nextImmediate();
+  const window = fixture.browserWindows[0];
+  assert.equal(window.loadCalls.length, 1, 'concurrent opens must share one window creation');
+  assert.equal(pageResult, undefined, 'page open waits for local toolbar readiness');
+  assert.equal(workspaceResult, undefined, 'Workspace open waits for local toolbar readiness');
+  assert.equal(fixture.browser.tabs.length, 0, 'no tab is created against a loading window');
+  assert.equal(window.showCalls, 0);
+  assert.equal(window.focusCalls, 0);
+
+  loading.resolve();
+  await Promise.all([pageOpen, workspaceOpen]);
+  await nextImmediate();
+  assert.deepEqual(pageResult, { value: 'https://portal.example.internal/' });
+  assert.deepEqual(workspaceResult, { value: BLANK_CAMPUS_HOME });
+  assert.equal(fixture.browserWindows.length, 1);
+  assert.equal(fixture.browser.tabs.filter(tab => tab.kind === 'workspace').length, 1);
+  assert.equal(fixture.browser.tabs.filter(tab => tab.kind !== 'workspace').length, 1);
+  assert.ok(window.showCalls >= 1);
+  assert.ok(window.focusCalls >= 1);
+});
+
+test('context close retires a Browser.open waiting for routing readiness', async (t) => {
+  const routing = deferred();
+  const fixture = createFakeBrowser();
+  let readinessCalls = 0;
+  fixture.browser.ensureRoutingReady = () => {
+    readinessCalls++;
+    return routing.promise;
+  };
+  const opening = fixture.browser.open('late.example.internal', 1080, ROUTE_CAMPUS).then(
+    value => ({ value }), error => ({ error }),
+  );
+  t.after(async () => {
+    routing.resolve(true);
+    await opening;
+    fixture.browser.close();
+  });
+
+  assert.equal(readinessCalls, 1);
+  assert.equal(fixture.browserWindows.length, 0);
+  assert.equal(await fixture.browser.closeForContextSwitch(), true);
+  assert.equal(fixture.browser.windowOwner.contextRetired, true);
+  routing.resolve(true);
+  const result = await opening;
+
+  assert.ok(result.error, 'the retired context cannot report a successful late open');
+  assert.equal(fixture.browserWindows.length, 0, 'late readiness cannot create a BrowserWindow');
+  assert.equal(fixture.browser.tabs.length, 0, 'late readiness cannot create a tab');
+});
+
+test('context close retires a Workspace open waiting for routing configuration', async (t) => {
+  const configuration = deferred();
+  const fixture = createFakeBrowser();
+  let configureCalls = 0;
+  fixture.browser.configure = async () => {
+    configureCalls++;
+    await configuration.promise;
+    return {};
+  };
+  const opening = fixture.browser.openWorkspace(1080).then(
+    value => ({ value }), error => ({ error }),
+  );
+  t.after(async () => {
+    configuration.resolve();
+    await opening;
+    fixture.browser.close();
+  });
+
+  assert.equal(configureCalls, 1);
+  assert.equal(fixture.browserWindows.length, 0);
+  assert.equal(await fixture.browser.closeForContextSwitch(), true);
+  assert.equal(fixture.browser.windowOwner.contextRetired, true);
+  configuration.resolve();
+  const result = await opening;
+
+  assert.ok(result.error, 'the retired context cannot report a successful late Workspace open');
+  assert.equal(fixture.browserWindows.length, 0, 'late configuration cannot create a BrowserWindow');
+  assert.equal(fixture.browser.tabs.length, 0, 'late configuration cannot create a Workspace tab');
+});
+
+test('context close during campus readiness prevents late routing activation', async (t) => {
+  for (const suspended of [false, true]) {
+    const readiness = deferred();
+    const fixture = createFakeBrowser({ ensureCampusReady: () => readiness.promise });
+    let configureCalls = 0;
+    let resumeCalls = 0;
+    fixture.browser.configure = async () => { configureCalls++; return {}; };
+    fixture.browser.resumeRoutingPolicy = async () => { resumeCalls++; return {}; };
+    fixture.browser.browserSessionManager.suspended = suspended;
+    const opening = fixture.browser.open('late.example.internal', 1080, ROUTE_CAMPUS).then(
+      value => ({ value }), error => ({ error }),
+    );
+    t.after(async () => {
+      readiness.resolve(true);
+      await opening;
+      fixture.browser.close();
+    });
+
+    assert.equal(await fixture.browser.closeForContextSwitch(), true);
+    readiness.resolve(true);
+    const result = await opening;
+
+    assert.ok(result.error, 'retired readiness cannot authorize Browser.open');
+    assert.equal(configureCalls, 0, 'retired readiness cannot start a late PAC configure');
+    assert.equal(resumeCalls, 0, 'retired readiness cannot resume routing for the old Browser');
+    assert.equal(fixture.browserWindows.length, 0);
+    assert.equal(fixture.browser.tabs.length, 0);
+  }
+});
+
+test('an ordinary Browser close still allows a later explicit open', async () => {
+  const fixture = createFakeBrowser();
+  await fixture.browser.openWorkspace(1080);
+  fixture.browser.close();
+  assert.equal(fixture.browser.windowOwner.contextRetired, false);
+
+  assert.equal(await fixture.browser.openWorkspace(1080), BLANK_CAMPUS_HOME);
+  assert.equal(fixture.browserWindows.length, 2);
+  assert.equal(fixture.browser.tabs.filter(tab => tab.kind === 'workspace').length, 1);
+});
+
+test('a closed pending window cannot let its old Browser.open affect a replacement', async (t) => {
+  const firstLoad = deferred();
+  const replacementLoad = deferred();
+  let fixture;
+  fixture = createFakeBrowser({
+    browserWindowLoad: window => fixture.browserWindows.indexOf(window) === 0
+      ? firstLoad.promise : replacementLoad.promise,
+    emitWindowClosedOnClose: true,
+  });
+  await fixture.browser.configure(1080);
+  let firstResult;
+  let replacementResult;
+  const firstOpen = fixture.browser.open('old.example.internal', 1080, ROUTE_CAMPUS).then(
+    value => { firstResult = { value }; },
+    error => { firstResult = { error }; },
+  );
+  let replacementOpen;
+  t.after(async () => {
+    firstLoad.resolve();
+    replacementLoad.resolve();
+    await Promise.all([firstOpen, ...(replacementOpen ? [replacementOpen] : [])]);
+    fixture.browser.close();
+  });
+
+  await waitForCondition(() => fixture.browserWindows.length === 1, 'first pending BrowserWindow');
+  const retiredWindow = fixture.browserWindows[0];
+  fixture.browser.close();
+  assert.equal(fixture.browser.window, null, 'the confirmed old close retires its owner');
+
+  replacementOpen = fixture.browser.openWorkspace(1080).then(
+    value => { replacementResult = { value }; },
+    error => { replacementResult = { error }; },
+  );
+  await waitForCondition(() => fixture.browserWindows.length === 2, 'replacement BrowserWindow');
+  const replacementWindow = fixture.browserWindows[1];
+  assert.equal(replacementResult, undefined, 'replacement Workspace also waits for its load');
+  assert.equal(fixture.browser.tabs.length, 0);
+
+  replacementLoad.resolve();
+  await replacementOpen;
+  await firstOpen;
+  assert.ok(firstResult.error, 'the retired opener cannot report a successful open');
+  assert.deepEqual(replacementResult, { value: BLANK_CAMPUS_HOME });
+  firstLoad.resolve();
+  await nextImmediate();
+
+  assert.equal(fixture.browser.window, replacementWindow);
+  assert.equal(fixture.browser.tabs.length, 1);
+  assert.equal(fixture.browser.activeTab().kind, 'workspace');
+  assert.equal(retiredWindow.listenerCount('closed'), 0);
+  assert.equal(retiredWindow.listenerCount('resize'), 0);
+  assert.equal(retiredWindow.webContents.listenerCount('ipc-message'), 0);
+});
+
+test('load failure rejects every in-flight Browser caller without creating page surfaces', async (t) => {
+  const loading = deferred();
+  const fixture = createFakeBrowser({
+    browserWindowLoad: () => loading.promise,
+    emitWindowClosedOnClose: true,
+  });
+  await fixture.browser.configure(1080);
+  let pageResult;
+  let workspaceResult;
+  const pageOpen = fixture.browser.open('failed.example.internal', 1080, ROUTE_CAMPUS).then(
+    value => { pageResult = { value }; },
+    error => { pageResult = { error }; },
+  );
+  const workspaceOpen = fixture.browser.openWorkspace(1080).then(
+    value => { workspaceResult = { value }; },
+    error => { workspaceResult = { error }; },
+  );
+  t.after(async () => {
+    loading.resolve();
+    await Promise.all([pageOpen, workspaceOpen]);
+    fixture.browser.close();
+  });
+
+  await waitForCondition(() => fixture.browserWindows.length === 1, 'failed toolbar BrowserWindow');
+  const window = fixture.browserWindows[0];
+  const failure = new Error('synthetic toolbar load failure');
+  loading.reject(failure);
+  await Promise.all([pageOpen, workspaceOpen]);
+
+  assert.equal(pageResult.error, failure);
+  assert.equal(workspaceResult.error, failure);
+  assert.equal(window.closeCalls, 1, 'a failed local chrome load must close its own window');
+  assert.equal(fixture.browser.window, null, 'only confirmed close retires the failed record');
+  assert.equal(fixture.browser.tabs.length, 0);
+  assert.equal(fixture.browser.view, null);
+  assert.equal(window.webContents.listenerCount('ipc-message'), 0);
+  assert.equal(window.listenerCount('resize'), 0);
+});
+
+test('unconfirmed close during toolbar load blocks stale and replacement Browser opens', async (t) => {
+  const loading = deferred();
+  const fixture = createFakeBrowser({
+    browserWindowLoad: () => loading.promise,
+    browserWindowClose: () => {},
+  });
+  await fixture.browser.configure(1080);
+  let firstResult;
+  let secondResult;
+  const firstOpen = fixture.browser.open('old.example.internal', 1080, ROUTE_CAMPUS).then(
+    value => { firstResult = { value }; },
+    error => { firstResult = { error }; },
+  );
+  t.after(async () => {
+    loading.resolve();
+    const window = fixture.browserWindows[0];
+    if (window) {
+      window.destroyed = true;
+      window.emit('closed');
+    }
+    await firstOpen;
+    fixture.browser.close();
+  });
+
+  await waitForCondition(() => fixture.browserWindows.length === 1, 'pending BrowserWindow');
+  const window = fixture.browserWindows[0];
+  fixture.browser.close();
+  assert.equal(fixture.browser.window, window,
+    'an unconfirmed native close must keep its record instead of orphaning the surface');
+
+  const secondOpen = fixture.browser.openWorkspace(1080).then(
+    value => { secondResult = { value }; },
+    error => { secondResult = { error }; },
+  );
+  await Promise.all([firstOpen, secondOpen]);
+  assert.ok(firstResult.error, 'close rejects an opener waiting on the loading toolbar');
+  assert.ok(secondResult.error, 'a live closing record blocks replacement Workspace creation');
+  assert.equal(fixture.browserWindows.length, 1);
+  assert.equal(fixture.browser.tabs.length, 0);
+  assert.equal(window.closeCalls, 1);
+
+  loading.resolve();
+  await nextImmediate();
+  assert.equal(fixture.browser.window, window);
+  assert.equal(window.webContents.listenerCount('ipc-message'), 0,
+    'a closing load continuation cannot install toolbar IPC');
+  assert.equal(window.listenerCount('resize'), 0,
+    'a closing load continuation cannot retain resize callbacks');
+});
+
 const {
   DIRECT_PARTITION,
   ROUTE_CAMPUS,
@@ -44,6 +333,24 @@ const CERTIFICATE_PEM = [
   Buffer.from('fixture-certificate-der').toString('base64'),
   '-----END CERTIFICATE-----',
 ].join('\n');
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+async function waitForCondition(predicate, description) {
+  for (let attempt = 0; attempt < 32; attempt++) {
+    if (predicate()) return;
+    await nextImmediate();
+  }
+  assert.fail(`timed out waiting for ${description}`);
+}
 
 test('campus URLs default to a neutral local home and accept host-only input', () => {
   assert.equal(normalizeCampusUrl(''), DEFAULT_CAMPUS_HOME);
@@ -665,6 +972,7 @@ function createFakeBrowser(extra = {}) {
   const scripts = [];
   const homeScripts = [];
   const workspaceStates = [];
+  const browserWindows = [];
   function makeSession(name) {
     const routeSession = new EventEmitter();
     routeSession.name = name;
@@ -745,6 +1053,10 @@ function createFakeBrowser(extra = {}) {
       this.options = options;
       this.webContents = new FakeWebContents();
       this.webContents.session = options.webPreferences?.session;
+      this.loadCalls = [];
+      this.showCalls = 0;
+      this.focusCalls = 0;
+      this.closeCalls = 0;
       const children = [];
       this.contentView = {
         children,
@@ -757,16 +1069,27 @@ function createFakeBrowser(extra = {}) {
         },
       };
       this.destroyed = false;
+      browserWindows.push(this);
     }
     isDestroyed() { return this.destroyed; }
     isMinimized() { return false; }
     getContentSize() { return [1200, 820]; }
     setTitle(value) { this.title = value; }
     setMenuBarVisibility() {}
-    show() {}
-    focus() {}
-    async loadFile() {}
-    close() { this.destroyed = true; }
+    show() { this.showCalls++; }
+    focus() { this.focusCalls++; }
+    async loadFile(file, options) {
+      this.loadCalls.push({ file, options });
+      await extra.browserWindowLoad?.(this, file, options);
+    }
+    close() {
+      this.closeCalls++;
+      if (typeof extra.browserWindowClose === 'function') {
+        return extra.browserWindowClose(this);
+      }
+      this.destroyed = true;
+      if (extra.emitWindowClosedOnClose === true) this.emit('closed');
+    }
   }
   const workspaceController = extra.workspaceController || {
     createView: (View, browserSession) => new View({ webPreferences: { session: browserSession } }),
@@ -786,7 +1109,7 @@ function createFakeBrowser(extra = {}) {
     partition: CAMPUS_PARTITION,
     ...extra,
   });
-  return { browser, calls, scripts, homeScripts, workspaceStates, sessions };
+  return { browser, calls, scripts, homeScripts, workspaceStates, sessions, browserWindows };
 }
 
 test('shared connection credential is sent once to the exact ready login document and then destroyed', async () => {

@@ -291,14 +291,16 @@ class CampusBrowser {
         windowChrome: campusWindowChrome,
         onToolbarCommand: payload => this.handleToolbarCommand(payload),
         onResize: () => this.scheduleLayout(),
+        onBeforeCreate: () => { this.cancelScheduledUpdates(); this.lastToolbarState = null; },
         onClosed: () => this.handleWindowClosed(),
         onMissingWindow: () => this.close(),
       })
       : null;
     if (this.windowOwner && (typeof this.windowOwner.createWindow !== 'function' ||
+        typeof this.windowOwner.show !== 'function' ||
         typeof this.windowOwner.requestClose !== 'function' ||
         typeof this.windowOwner.closeForContextSwitch !== 'function' ||
-        typeof this.windowOwner.clear !== 'function' || !('window' in this.windowOwner))) {
+        typeof this.windowOwner.clear !== 'function' || typeof this.windowOwner.assertContextCurrent !== 'function' || !('window' in this.windowOwner))) {
       throw new TypeError('Campus Browser window owner is invalid');
     }
     // Only the active tab is attached to the native View hierarchy. Hiding a
@@ -485,7 +487,7 @@ class CampusBrowser {
 
   async ensureRoutingReady(resolution, port = this.configuredPort || 1080) {
     if (!resolution || ![ROUTE_CAMPUS, ROUTE_DIRECT].includes(resolution.route)) return false;
-    if (resolution.route === ROUTE_CAMPUS && !await this.ensureCampusReady()) return false;
+    if ((resolution.route === ROUTE_CAMPUS && !await this.ensureCampusReady()) || this.windowOwner?.contextRetired) return false;
     const activated = await this.activateRoutingPolicy(port);
     // A superseding suspend intent makes BrowserSessionManager activation
     // resolve null. Never start a navigation while its fail-closed gate remains
@@ -1245,7 +1247,7 @@ class CampusBrowser {
   }
 
   createTab(rawUrl = null, route = null, options = {}) {
-    if (!this.window || this.window.isDestroyed()) return null;
+    if (this.windowOwner?.contextRetired || !this.window || this.window.isDestroyed()) return null;
     const targetWindow = this.window;
     if (!this.tabManager.canAdd()) {
       if (this.onError) this.onError(this.t('tab.limit', { count: MAX_TABS }));
@@ -1268,7 +1270,7 @@ class CampusBrowser {
   }
 
   createWorkspaceTab() {
-    if (!this.workspaceController || !this.window || this.window.isDestroyed()) return null;
+    if (this.windowOwner?.contextRetired || !this.workspaceController || !this.window || this.window.isDestroyed()) return null;
     const existing = this.tabs.find((tab) => tab.kind === 'workspace');
     if (existing) { this.switchTab(existing.id); this.workspaceController.sendState(existing.view.webContents); return existing; }
     if (!this.tabManager.canAdd()) {
@@ -1329,10 +1331,14 @@ class CampusBrowser {
   closeTab(id) { return this.tabManager.close(id); }
 
   async createWindow() {
-    this.cancelScheduledUpdates();
-    this.lastToolbarState = null;
     if (!this.windowOwner) throw new Error('Campus Browser window owner is unavailable');
     await this.windowOwner.createWindow();
+  }
+
+  async showReadyWindow() {
+    if (!this.windowOwner) throw new Error('Campus Browser window owner is unavailable');
+    const window = await this.windowOwner.createWindow();
+    this.windowOwner.show(window);
   }
 
   handleWindowClosed() {
@@ -1389,13 +1395,9 @@ class CampusBrowser {
     if (!await this.ensureRoutingReady(resolution, port)) {
       throw new Error(this.t('error.connectTimeout'));
     }
-    if (!this.window || this.window.isDestroyed()) await this.createWindow();
-
-    if (this.window.isMinimized()) this.window.restore();
-    this.window.show();
-    this.window.focus();
+    await this.showReadyWindow();
     if (url === BLANK_CAMPUS_HOME) {
-      const existing = this.tabs.find((tab) => tab.kind === 'workspace');
+      const existing = this.windowOwner.assertContextCurrent(this.tabs.find((tab) => tab.kind === 'workspace'));
       if (existing) {
         this.switchTab(existing.id);
         this.workspaceController.sendState(existing.view.webContents);
@@ -1405,7 +1407,7 @@ class CampusBrowser {
     } else {
       this.createTab(url, resolution.route, { displayName: options.displayName || '' });
     }
-    return url;
+    return this.windowOwner?.assertContextCurrent(url) ?? url;
   }
 
   async openWorkspace(port) {
@@ -1413,26 +1415,24 @@ class CampusBrowser {
       throw new TypeError('Campus Workspace port is invalid');
     }
     if (!this.configuredPort && !this.routingSuspended) await this.configure(port);
-    if (!this.window || this.window.isDestroyed()) await this.createWindow();
-    if (this.window.isMinimized()) this.window.restore();
-    this.window.show();
-    this.window.focus();
-    const existing = this.tabs.find((tab) => tab.kind === 'workspace');
+    await this.showReadyWindow();
+    const existing = this.windowOwner.assertContextCurrent(this.tabs.find((tab) => tab.kind === 'workspace'));
     if (existing) {
       this.switchTab(existing.id);
       this.workspaceController.sendState(existing.view.webContents);
     } else {
       this.createWorkspaceTab();
     }
-    return BLANK_CAMPUS_HOME;
+    return this.windowOwner?.assertContextCurrent(BLANK_CAMPUS_HOME) ?? BLANK_CAMPUS_HOME;
   }
 
   close() {
     this.cancelScheduledUpdates();
     this.certificateController.cancelAll();
     if (this.windowOwner?.requestClose() === true) return;
+    const retired = this.windowOwner?.clear();
+    if (retired === true || this.windowOwner?.window) return;
     this.tabManager.clearTransientState();
-    this.windowOwner?.clear();
     this.view = null;
     this.attachedView = null;
     this.routingActivationInFlight = null;

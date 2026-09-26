@@ -5,10 +5,24 @@
 // account, cookie, OTP, or network request is used.
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { app, BrowserWindow, session } = require('electron');
+const { scheduleTemporaryProfileCleanup } = require('../scripts/temp-profile-cleanup');
 
 const PARTITION = `hkustgz-mfa-e2e-${process.pid}`;
+const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-mfa-safety-'));
+fs.chmodSync(profile, 0o700);
+app.setPath('userData', profile);
+let profileCleanupScheduled = false;
+function scheduleProfileCleanup() {
+  if (profileCleanupScheduled) return;
+  profileCleanupScheduled = true;
+  scheduleTemporaryProfileCleanup(profile, 'hkustgz-mfa-safety');
+}
+app.once('quit', scheduleProfileCleanup);
+process.once('exit', scheduleProfileCleanup);
 const TEST_TIMEOUT_MS = 15_000;
 const WAIT_TIMEOUT_MS = 3_000;
 const SYNTHETIC_LOGIN = 'https://sso.example.invalid/login';
