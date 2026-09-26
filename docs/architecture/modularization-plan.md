@@ -109,6 +109,10 @@ Exit target: no Browser owner exceeds 600 lines and lifecycle tests cover every 
 
 ## Wave M3 — Desktop Main composition
 
+[Update notification ownership](update-notification-owner.md) keeps scheduling and
+notification state in the existing update domain, lowering Main to 1,682 lines
+without increasing dependency caps. This is one bounded seam, not M3 completion.
+
 Move remaining settings/credential transaction, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 

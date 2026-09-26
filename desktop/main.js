@@ -60,7 +60,7 @@ const {
 const { ensureOwnerOnly } = require('./lib/platform/storage/private-file');
 const { BufferedLogWriter, readLogTail } = require('./lib/diagnostics/logging/log-writer');
 const { STOP_GRACE_MS, STOP_FORCE_WAIT_MS } = require('./lib/connection/state/stop-policy');
-const { AUTO_CHECK_INTERVAL_MS, checkForUpdate, isCurrentUpdateUrl, shouldAutoCheck } = require('./lib/platform/update/update-check');
+const { UpdateNotificationRuntime, checkForUpdate } = require('./lib/platform/update/update-check');
 const { ConnectivityRecovery } = require('./lib/connection/recovery/connectivity-recovery');
 const { createNetworkStartupSystem } = require('./lib/connection/telemetry/network-status-monitor');
 const { EphemeralProxyCredential, cleanupProxyAccessForEngineClose } = require('./lib/persistence/credentials/proxy-credential');
@@ -233,7 +233,7 @@ const resourceLibraryRuntime = new ResourceLibraryRuntime({
 });
 // Last known "newer release exists" result. Failures never land here, so the
 // renderer can render it without distinguishing network errors from silence.
-let updateInfo = null;
+let updateNotifications = null;
 // UI locale follows the OS; Chinese stays the fallback until whenReady reads
 // the real locale, so early failures still render a coherent language.
 let locale = 'zh';
@@ -512,7 +512,7 @@ function emit() {
   // separate channel; update rides along so an automatic check that finds a
   // new release surfaces without waiting for a full refresh. get-state stays
   // the source of truth on full refreshes.
-  desktopShell?.send('status', { ...statusSnapshot(), locale, update: updateInfo });
+  desktopShell?.send('status', { ...statusSnapshot(), locale, update: updateNotifications?.snapshot() || null });
   desktopShell?.updateTray();
 }
 
@@ -1387,38 +1387,14 @@ async function openCampusResourceById({ resourceId } = {}) {
   catch { return { ok: false, error: t('error.resourceUnavailable') }; }
 }
 
-// ---------- update check (notify only; no auto-download) ----------
-// macOS builds are ad-hoc signed, so the app never downloads updates itself:
-// it only learns whether a newer GitHub release exists and points the user at
-// the release page. checkForUpdate resolves to null on any failure, so this
-// can never throw into the main loop.
-async function runUpdateCheck() {
-  const result = await checkForUpdate(app.getVersion());
-  if (result) {
-    // The API answered, so the 24h throttle window starts here. Failures leave
-    // the timestamp alone and are retried at the next launch.
-    await runActiveContextTransaction(() => {
-      assertSettingsPersistenceAvailable();
-      const settings = loadSettingsOrReport();
-      return {
-        commit: () => saveSettings({ ...settings, updateCheckedAt: Date.now() }),
-        rollback: () => saveSettings(settings),
-      };
-    });
-  }
-  if (result && result.updateAvailable) {
-    updateInfo = result;
-    emit();
-  }
-  return result;
-}
-
-// Automatic checks run at most once every 24h (persisted across restarts and
-// long-running sessions); the settings-page button always forces a fresh check.
-async function runAutomaticUpdateCheck() {
-  if (!shouldAutoCheck(loadSettingsOrReport().updateCheckedAt)) return null;
-  return runUpdateCheck();
-}
+// ---------- update notifications (no automatic download or installation) ----------
+updateNotifications = new UpdateNotificationRuntime({
+  getVersion: () => app.getVersion(), check: checkForUpdate,
+  readSettings: loadSettingsOrReport, saveSettings,
+  assertPersistence: assertSettingsPersistenceAvailable,
+  runTransaction: runActiveContextTransaction, onAvailable: emit,
+  openExternal: url => shell.openExternal(url),
+});
 
 // ---------- IPC ----------
 const CONTROL_RENDERER_FILE = path.join(__dirname, 'renderer', 'index.html'), CAMPUS_WORKSPACE_RENDERER_FILE = path.join(__dirname, 'renderer', 'campus-workspace.html');
@@ -1438,7 +1414,7 @@ const controlStateSnapshot = createControlStateSnapshot({
   hasAccountIdentity: () => persistenceRuntime.hasAccountIdentity() ||
     hasOneShotCredential() || engineSupervisor.hasActive,
   getPacUrl: pacUrl, getLocale: () => locale, platform: process.platform,
-  getVersion: () => app.getVersion(), getUpdate: () => updateInfo,
+  getVersion: () => app.getVersion(), getUpdate: () => updateNotifications.snapshot(),
   getResources: safeCampusResourceLibrary, getResourceGroups: () => resourceLibraryRuntime.listGroups(), getFallbackResources: () => safeCampusResourceLibrary({ customResources: [] }),
   getProfilePresentation: (options) => activeSchoolProfile.createPresentation(options),
   getServiceDesk: () => activeSchoolProfile.serviceDesk,
@@ -1530,12 +1506,8 @@ registerCoreControlIpc({
   },
   openCampusBrowser: (request) => connectAndOpenCampusBrowser(request), openBookmarkManager: () => campusBrowserManager.openBookmarkManager(),
   openResource: (request) => openCampusResourceById(request),
-  checkUpdate: (force) => force ? runUpdateCheck() : runAutomaticUpdateCheck(),
-  openExternal: (url) => {
-    if (!isCurrentUpdateUrl(url, updateInfo)) return { ok: false };
-    shell.openExternal(url).catch(() => {});
-    return { ok: true };
-  },
+  checkUpdate: force => updateNotifications.run(force),
+  openExternal: url => updateNotifications.open(url),
   resize: (height) => desktopShell.resize(height),
 });
 // ---------- window / tray composition ----------
@@ -1695,17 +1667,7 @@ app.whenReady().then(() => {
   powerMonitor.on('suspend', () => connectivityRecovery.suspend());
   powerMonitor.on('resume', () => connectivityRecovery.resume());
   networkStartupCoordinator.start().catch(() => {});
-  // Dev checkouts and CI would only ever hit the rate-limited API for no
-  // benefit, so the automatic check is packaged-builds only. The settings
-  // page can always trigger a manual one. Automatic checks are throttled to
-  // once per 24h; the interval covers sessions that run for days.
-  if (app.isPackaged) {
-    setTimeout(() => { runAutomaticUpdateCheck().catch(() => {}); }, 5000);
-    const updateTimer = setInterval(() => {
-      runAutomaticUpdateCheck().catch(() => {});
-    }, AUTO_CHECK_INTERVAL_MS);
-    updateTimer.unref();
-  }
+  updateNotifications.startAutomatic(app.isPackaged);
   app.on('activate', () => desktopShell.showWindow());
 }).catch((error) => {
   dialog.showErrorBox(t('error.startupTitle'), String(error && error.message ? error.message : error));
@@ -1717,3 +1679,4 @@ app.on('before-quit', (event) => {
   event.preventDefault();
   desktopShell.requestQuit();
 });
+app.on('will-quit', () => updateNotifications?.stopAutomatic());

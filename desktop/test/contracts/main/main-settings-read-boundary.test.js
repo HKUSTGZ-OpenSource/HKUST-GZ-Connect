@@ -46,7 +46,12 @@ test('window close and automatic updates turn settings failures into bounded asy
   assert.match(close, /let action = 'ask';/);
   assert.match(close, /try \{ action = this\.getCloseAction\(\) \|\| 'ask'; \} catch \{\}/);
   assert.match(source, /getCloseAction: \(\) => loadSettingsOrReport\(\)\.closeAction/);
-  assert.match(source, /async function runAutomaticUpdateCheck\(\)/);
+  assert.match(source, /readSettings: loadSettingsOrReport/);
+  assert.match(source, /checkUpdate: force => updateNotifications\.run\(force\)/);
+  const updateOwner = fs.readFileSync(path.join(__dirname, '..', '..', '..',
+    'lib', 'platform', 'update', 'update-check.js'), 'utf8');
+  assert.match(updateOwner, /async run\(force = false\)/);
+  assert.match(updateOwner, /this\.run\(\)\.catch\(\(\) => \{\}\)/);
   assert.match(shellSource, /this\.handleWindowClose\(event\)\.catch\(this\.onWindowError\)/);
 });
 
