@@ -61,6 +61,7 @@ test('address input distinguishes local workspace queries from URLs', () => {
 
 test('toolbar favorite derives current-page authority in Main and refreshes Workspace Home', async () => {
   const toggles = [];
+  let callbackReceiver;
   const resources = [{
     id: 'portal', name: 'Portal', description: '',
     url: 'https://portal.example.edu/', route: ROUTE_CAMPUS, favorite: false,
@@ -69,7 +70,8 @@ test('toolbar favorite derives current-page authority in Main and refreshes Work
   const { browser, scripts, workspaceStates } = createFakeBrowser({
     homeUrl: BLANK_CAMPUS_HOME,
     getWorkspaceResources: () => resources,
-    onTogglePageFavorite: async (candidate) => {
+    onTogglePageFavorite: async function(candidate) {
+      callbackReceiver = this;
       toggles.push(candidate);
       resources[0] = { ...resources[0], favorite: true };
       return { ok: true, favorite: true, resourceId: 'portal' };
@@ -83,6 +85,7 @@ test('toolbar favorite derives current-page authority in Main and refreshes Work
     url: 'https://portal.example.edu/?ticket=opaque', title: 'Test', route: ROUTE_CAMPUS,
   }]);
   assert.equal(toolbarState(scripts).favorite, true);
+  assert.equal(callbackReceiver, browser);
 
   browser.createTab(BLANK_CAMPUS_HOME, ROUTE_DIRECT);
   await nextImmediate();

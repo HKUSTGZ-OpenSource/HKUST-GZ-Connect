@@ -33,7 +33,7 @@ test('dependency parser accepts only static relative CommonJS imports', () => {
 });
 
 test('Browser orchestration cannot regrow and the native tab owner stays below 600 lines', () => {
-  assert.equal(BASELINE.campusBrowserLines, 1627);
+  assert.equal(BASELINE.campusBrowserLines, 1502);
   assert.equal(BASELINE.browserTabOwnerLines, 600);
   for (const key of ['campusBrowserLines', 'browserTabOwnerLines']) {
     assert.ok(architectureErrors({ cycles: [], [key]: BASELINE[key] + 1 })

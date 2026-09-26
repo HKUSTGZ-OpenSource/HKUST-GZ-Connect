@@ -84,6 +84,9 @@ not a completion claim for all Browser owners. The current-base candidate reduce
 Browser orchestrator from 1,804 to 1,627 lines; its tab owner is 397 lines, below the 600-line
 per-owner ceiling.
 
+[Workspace ownership](browser-workspace-owner.md) moves Browser-facing workspace and favorite
+projection/effects into the existing Workspace module, keeping its sandbox protocol unchanged.
+
 Extract tested owners for:
 
 ```text

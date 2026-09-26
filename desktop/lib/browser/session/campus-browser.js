@@ -11,14 +11,11 @@ const {
 const { resolveDomainRouteForUrl } = require('../../routing/policy/domain-route-policy');
 const { normalizeRuleHost } = require('../../routing/rules/routing-rule-store');
 const { normalizeToolbarCommand } = require('../toolbar/campus-toolbar-contract');
-const { projectWorkspaceGroups } = require('../workspace/campus-workspace-controller');
+const { BrowserWorkspaceOwner, projectBrowserWorkspaceResources, MAX_WORKSPACE_HOME_RESOURCES } =
+  require('../workspace/campus-workspace-controller');
 const { CertificateController } = require('../certificates/certificate-controller');
 const { BrowserDownloadController } = require('../downloads/download-controller');
 const { CredentialController } = require('../credentials/credential-controller');
-const {
-  RESOURCE_CATEGORIES,
-  normalizePageFavoriteCandidate,
-} = require('../../resources/schema/campus-resource-contract');
 const {
   BrowserSessionManager,
   applyCampusSessionPolicy,
@@ -32,7 +29,7 @@ const TOOLBAR_HEIGHT = 108;
 const FIND_BAR_HEIGHT = 34;
 const SLOW_LOADING_HINT_MS = 10000;
 const MAX_URL_LENGTH = 2048;
-const MAX_WORKSPACE_HOME_RESOURCES = 64;
+
 const ZOOM_STEP = 0.1;
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 2.0;
@@ -169,42 +166,8 @@ function errorPage(failedUrl, description, t = createT('zh'), route = ROUTE_CAMP
 }
 
 function workspaceHomeResources(value, t = createT('zh')) {
-  if (!Array.isArray(value) || value.length > MAX_WORKSPACE_HOME_RESOURCES) {
-    throw new TypeError('Campus Browser workspace resources are invalid');
-  }
-  const seenIds = new Set();
-  const seenUrls = new Set();
-  return Object.freeze(value.map((resource) => {
-    if (!resource || typeof resource !== 'object' || Array.isArray(resource) ||
-        typeof resource.id !== 'string' || !/^[a-z0-9-]{1,40}$/u.test(resource.id) ||
-        typeof resource.name !== 'string' || !resource.name.trim() || resource.name.length > 80 ||
-        /[\u0000-\u001f\u007f<>]/u.test(resource.name) ||
-        typeof resource.description !== 'string' || resource.description.length > 160 ||
-        /[\u0000-\u001f\u007f<>]/u.test(resource.description) ||
-        ![ROUTE_CAMPUS, ROUTE_DIRECT].includes(resource.route) ||
-        typeof resource.favorite !== 'boolean' ||
-        (resource.lastOpenedAt !== null &&
-          (!Number.isSafeInteger(resource.lastOpenedAt) || resource.lastOpenedAt <= 0))) {
-      throw new TypeError('Campus Browser workspace resource is invalid');
-    }
-    const url = normalizeCampusUrl(resource.url, BLANK_CAMPUS_HOME, t);
-    if (url === BLANK_CAMPUS_HOME || seenIds.has(resource.id) || seenUrls.has(url)) {
-      throw new TypeError('Campus Browser workspace resources are duplicated');
-    }
-    seenIds.add(resource.id);
-    seenUrls.add(url);
-    return Object.freeze({
-      id: resource.id,
-      name: resource.name.trim(),
-      description: resource.description,
-      url,
-      route: resource.route,
-      category: RESOURCE_CATEGORIES.includes(resource.category)
-        ? resource.category : 'custom',
-      favorite: resource.favorite,
-      lastOpenedAt: resource.lastOpenedAt,
-    });
-  }));
+  return projectBrowserWorkspaceResources(value,
+    (url, translate) => normalizeCampusUrl(url, BLANK_CAMPUS_HOME, translate), t);
 }
 
 class CampusBrowser {
@@ -368,6 +331,19 @@ class CampusBrowser {
     // window.opener/postMessage and window.close; preserving that relationship
     // is required for the opener to observe a successful challenge.
     this.managedCredentialPopups = new Set();
+    this.workspaceOwner = new BrowserWorkspaceOwner({
+      getWorkspaceResources: () => this.getWorkspaceResources(),
+      getWorkspaceGroups: () => this.getWorkspaceGroups(),
+      getPresentation: () => this.profilePresentation, getController: () => this.workspaceController,
+      getToggleFavorite: () => this.onTogglePageFavorite
+        ? candidate => this.onTogglePageFavorite(candidate) : null,
+      getTabs: () => this.tabs, activeTab: () => this.activeTab(),
+      createTab: (url, route) => this.createTab(url, route), switchTab: id => this.switchTab(id),
+      currentUrl: tab => this.currentUrl(tab),
+      normalizeUrl: (url, translate) => normalizeCampusUrl(url, BLANK_CAMPUS_HOME, translate),
+      t: (key, vars) => this.t(key, vars), onError: message => this.onError?.(message),
+      updateToolbar: () => this.updateToolbar(),
+    });
     this.findOpen = false;
     this.lastFindQuery = '';
     this.scheduledLayout = null;
@@ -415,80 +391,12 @@ class CampusBrowser {
     this.updateToolbar();
   }
 
-  workspaceResources() {
-    try { return workspaceHomeResources(this.getWorkspaceResources(), this.t); }
-    catch { return Object.freeze([]); }
-  }
-
-  workspaceGroups() {
-    try { return projectWorkspaceGroups(this.getWorkspaceGroups()); }
-    catch { return Object.freeze([]); }
-  }
-
-  bookmarkBarState() {
-    const resources = this.workspaceResources();
-    const favorites = resources.filter(({ favorite }) => favorite === true);
-    const byId = new Map(favorites.map((resource) => [resource.id, resource]));
-    const assigned = new Set();
-    const officialId = this.profilePresentation.officialPortalResourceId;
-    const groups = this.workspaceGroups().map((group) => {
-      const children = group.resourceIds.filter((id) => id !== officialId)
-        .map((id) => byId.get(id)).filter(Boolean)
-        .map(({ id, name }) => Object.freeze({ id, name }));
-      for (const child of children) assigned.add(child.id);
-      return Object.freeze({ type: 'folder', id: group.id, name: group.name, children });
-    }).filter(({ children }) => children.length > 0);
-    const entries = [];
-    const official = resources.find(({ id }) => id === officialId);
-    if (official) {
-      entries.push(Object.freeze({ type: 'bookmark', id: official.id, name: official.name, official: true }));
-      assigned.add(official.id);
-    }
-    for (const { id, name } of favorites) {
-      if (!assigned.has(id)) entries.push(Object.freeze({ type: 'bookmark', id, name, official: false }));
-    }
-    entries.push(...groups);
-    return Object.freeze(entries);
-  }
-
-  refreshWorkspaceHomes() {
-    if (!this.workspaceController) return;
-    for (const tab of this.tabs) {
-      if (tab.kind === 'workspace') this.workspaceController.sendState(tab.view.webContents);
-    }
-  }
-
-  refreshCardBoardLayout(document) {
-    if (!document || typeof document !== 'object' || document.schemaVersion !== 1) return false;
-    let sent = false;
-    for (const tab of this.tabs) {
-      if (tab.kind !== 'workspace' || tab.view.webContents.isDestroyed?.()) continue;
-      tab.view.webContents.send?.('card-board-layout-changed', document);
-      sent = true;
-    }
-    return sent;
-  }
-
-  focusWorkspace(target = 'search', query = '') {
-    if (!this.workspaceController) return false;
-    let tab = this.activeTab();
-    if (!tab || tab.kind !== 'workspace') {
-      const existing = this.tabs.find((candidate) => candidate.kind === 'workspace');
-      tab = existing || this.createTab(BLANK_CAMPUS_HOME, ROUTE_DIRECT);
-      if (existing) this.switchTab(existing.id);
-    }
-    if (!tab || tab.view.webContents.isDestroyed()) return false;
-    const focus = () => {
-      if (typeof this.workspaceController.focus === 'function') {
-        this.workspaceController.focus(tab.view.webContents, target, query);
-      } else if (target === 'search') {
-        this.workspaceController.focusSearch?.(tab.view.webContents);
-      }
-    };
-    if (tab.loading) tab.pendingWorkspaceFocus = { target, query };
-    else setImmediate(focus);
-    return true;
-  }
+  workspaceResources() { return this.workspaceOwner.workspaceResources(); }
+  workspaceGroups() { return this.workspaceOwner.workspaceGroups(); }
+  bookmarkBarState() { return this.workspaceOwner.bookmarkBarState(); }
+  refreshWorkspaceHomes() { return this.workspaceOwner.refreshWorkspaceHomes(); }
+  refreshCardBoardLayout(document) { return this.workspaceOwner.refreshCardBoardLayout(document); }
+  focusWorkspace(target = 'search', query = '') { return this.workspaceOwner.focusWorkspace(target, query); }
 
   focusWorkspaceSearch() { return this.focusWorkspace('search'); }
 
@@ -612,41 +520,8 @@ class CampusBrowser {
     return true;
   }
 
-  pageFavoriteState(tab = this.activeTab()) {
-    const url = this.currentUrl(tab);
-    if (!tab || url === BLANK_CAMPUS_HOME || !this.onTogglePageFavorite) {
-      return { canFavorite: false, favorite: false };
-    }
-    let canonical;
-    try {
-      canonical = normalizePageFavoriteCandidate({
-        url,
-        title: tab.view.webContents.getTitle?.() || '',
-        route: tab.route || ROUTE_CAMPUS,
-      }).url;
-    } catch {
-      return { canFavorite: false, favorite: false };
-    }
-    const resource = this.workspaceResources().find(({ url: resourceUrl }) => resourceUrl === canonical);
-    return { canFavorite: true, favorite: resource?.favorite === true };
-  }
-
-  async toggleActivePageFavorite(tab = this.activeTab()) {
-    const state = this.pageFavoriteState(tab);
-    if (!state.canFavorite || !tab || !this.onTogglePageFavorite) return false;
-    const result = await this.onTogglePageFavorite({
-      url: this.currentUrl(tab),
-      title: tab.view.webContents.getTitle?.() || '',
-      route: tab.route || ROUTE_CAMPUS,
-    });
-    if (!result?.ok) {
-      this.onError?.(result?.error || this.t('browser.favoriteFailed'));
-      return false;
-    }
-    this.refreshWorkspaceHomes();
-    this.updateToolbar();
-    return true;
-  }
+  pageFavoriteState(tab = this.activeTab()) { return this.workspaceOwner.pageFavoriteState(tab); }
+  async toggleActivePageFavorite(tab = this.activeTab()) { return this.workspaceOwner.toggleActivePageFavorite(tab); }
 
   async decideCertificateTrust({ origin, fingerprint, error, certificate }) {
     return this.certificateController.promptAndTrust({ origin, fingerprint, error, certificate });

@@ -1,5 +1,11 @@
 'use strict';
 
+const { RESOURCE_CATEGORIES: BROWSER_RESOURCE_CATEGORIES, normalizePageFavoriteCandidate } =
+  require('../../resources/schema/campus-resource-contract');
+const { ROUTE_CAMPUS, ROUTE_DIRECT } = require('../../routing/policy/campus-route');
+const BLANK_CAMPUS_HOME = 'about:blank';
+const MAX_WORKSPACE_HOME_RESOURCES = 64;
+
 const RESOURCE_ID = /^[a-z0-9-]{1,40}$/u;
 const GROUP_ID = /^group_[a-z0-9_-]{12,64}$/u;
 const REQUEST_ID = /^workspace-[a-z0-9](?:[a-z0-9-]{0,63})$/u;
@@ -197,6 +203,204 @@ function projectWorkspaceGroups(value) {
   }));
 }
 
+function projectBrowserWorkspaceResources(value, normalizeUrl, t) {
+  if (!Array.isArray(value) || value.length > MAX_WORKSPACE_HOME_RESOURCES) {
+    throw new TypeError('Campus Browser workspace resources are invalid');
+  }
+  const seenIds = new Set();
+  const seenUrls = new Set();
+  return Object.freeze(value.map((resource) => {
+    if (!resource || typeof resource !== 'object' || Array.isArray(resource) ||
+        typeof resource.id !== 'string' || !/^[a-z0-9-]{1,40}$/u.test(resource.id) ||
+        typeof resource.name !== 'string' || !resource.name.trim() || resource.name.length > 80 ||
+        /[\u0000-\u001f\u007f<>]/u.test(resource.name) ||
+        typeof resource.description !== 'string' || resource.description.length > 160 ||
+        /[\u0000-\u001f\u007f<>]/u.test(resource.description) ||
+        ![ROUTE_CAMPUS, ROUTE_DIRECT].includes(resource.route) ||
+        typeof resource.favorite !== 'boolean' ||
+        (resource.lastOpenedAt !== null &&
+          (!Number.isSafeInteger(resource.lastOpenedAt) || resource.lastOpenedAt <= 0))) {
+      throw new TypeError('Campus Browser workspace resource is invalid');
+    }
+    const url = normalizeUrl(resource.url, t);
+    if (url === BLANK_CAMPUS_HOME || seenIds.has(resource.id) || seenUrls.has(url)) {
+      throw new TypeError('Campus Browser workspace resources are duplicated');
+    }
+    seenIds.add(resource.id);
+    seenUrls.add(url);
+    return Object.freeze({
+      id: resource.id,
+      name: resource.name.trim(),
+      description: resource.description,
+      url,
+      route: resource.route,
+      category: BROWSER_RESOURCE_CATEGORIES.includes(resource.category)
+        ? resource.category : 'custom',
+      favorite: resource.favorite,
+      lastOpenedAt: resource.lastOpenedAt,
+    });
+  }));
+}
+
+// Browser-facing workspace projection and effects. No storage or routing authority.
+class BrowserWorkspaceOwner {
+  constructor(ports) {
+    Object.assign(this, ports);
+    this.retired = false;
+    this.pendingFocus = new Set();
+    this.loadingFocus = new WeakMap();
+  }
+  get workspaceController() { return this.getController(); }
+  get profilePresentation() { return this.getPresentation(); }
+  get tabs() { return this.getTabs(); }
+  get onTogglePageFavorite() { return this.getToggleFavorite(); }
+
+  retire() {
+    if (this.retired) return;
+    this.retired = true;
+    for (const handle of this.pendingFocus) clearImmediate(handle);
+    this.pendingFocus.clear();
+    for (const tab of this.tabs) {
+      if (this.loadingFocus.has(tab) && tab.pendingWorkspaceFocus === this.loadingFocus.get(tab)) {
+        tab.pendingWorkspaceFocus = null;
+      }
+    }
+  }
+
+  workspaceResources() {
+    if (this.retired) return Object.freeze([]);
+    try { return projectBrowserWorkspaceResources(this.getWorkspaceResources(), this.normalizeUrl, this.t); }
+    catch { return Object.freeze([]); }
+  }
+
+  workspaceGroups() {
+    if (this.retired) return Object.freeze([]);
+    try { return projectWorkspaceGroups(this.getWorkspaceGroups()); }
+    catch { return Object.freeze([]); }
+  }
+
+  bookmarkBarState() {
+    if (this.retired) return Object.freeze([]);
+    const resources = this.workspaceResources();
+    const favorites = resources.filter(({ favorite }) => favorite === true);
+    const byId = new Map(favorites.map((resource) => [resource.id, resource]));
+    const assigned = new Set();
+    const officialId = this.profilePresentation.officialPortalResourceId;
+    const groups = this.workspaceGroups().map((group) => {
+      const children = group.resourceIds.filter((id) => id !== officialId)
+        .map((id) => byId.get(id)).filter(Boolean)
+        .map(({ id, name }) => Object.freeze({ id, name }));
+      for (const child of children) assigned.add(child.id);
+      return Object.freeze({ type: 'folder', id: group.id, name: group.name, children });
+    }).filter(({ children }) => children.length > 0);
+    const entries = [];
+    const official = resources.find(({ id }) => id === officialId);
+    if (official) {
+      entries.push(Object.freeze({ type: 'bookmark', id: official.id, name: official.name, official: true }));
+      assigned.add(official.id);
+    }
+    for (const { id, name } of favorites) {
+      if (!assigned.has(id)) entries.push(Object.freeze({ type: 'bookmark', id, name, official: false }));
+    }
+    entries.push(...groups);
+    return Object.freeze(entries);
+  }
+
+  refreshWorkspaceHomes() {
+    if (this.retired || !this.workspaceController) return;
+    for (const tab of this.tabs) {
+      if (tab.kind === 'workspace') this.workspaceController.sendState(tab.view.webContents);
+    }
+  }
+
+  refreshCardBoardLayout(document) {
+    if (this.retired) return false;
+    if (!document || typeof document !== 'object' || document.schemaVersion !== 1) return false;
+    let sent = false;
+    for (const tab of this.tabs) {
+      if (tab.kind !== 'workspace' || tab.view.webContents.isDestroyed?.()) continue;
+      tab.view.webContents.send?.('card-board-layout-changed', document);
+      sent = true;
+    }
+    return sent;
+  }
+
+  focusWorkspace(target = 'search', query = '') {
+    if (this.retired || !this.workspaceController) return false;
+    const controller = this.workspaceController;
+    let tab = this.activeTab();
+    if (!tab || tab.kind !== 'workspace') {
+      const existing = this.tabs.find((candidate) => candidate.kind === 'workspace');
+      tab = existing || this.createTab(BLANK_CAMPUS_HOME, ROUTE_DIRECT);
+      if (existing) this.switchTab(existing.id);
+    }
+    if (!tab || tab.view.webContents.isDestroyed()) return false;
+    const focus = () => {
+      if (this.retired || this.workspaceController !== controller ||
+          !this.tabs.includes(tab) || this.activeTab() !== tab ||
+          tab.view.webContents.isDestroyed()) return;
+      if (typeof controller.focus === 'function') {
+        controller.focus(tab.view.webContents, target, query);
+      } else if (target === 'search') {
+        controller.focusSearch?.(tab.view.webContents);
+      }
+    };
+    if (tab.loading) {
+      tab.pendingWorkspaceFocus = { target, query };
+      this.loadingFocus.set(tab, tab.pendingWorkspaceFocus);
+    }
+    else {
+      const handle = setImmediate(() => { this.pendingFocus.delete(handle); focus(); });
+      this.pendingFocus.add(handle);
+    }
+    return true;
+  }
+
+  pageFavoriteState(tab = this.activeTab()) {
+    if (this.retired) return { canFavorite: false, favorite: false };
+    const url = this.currentUrl(tab);
+    if (!tab || url === BLANK_CAMPUS_HOME || !this.onTogglePageFavorite) {
+      return { canFavorite: false, favorite: false };
+    }
+    let canonical;
+    try {
+      canonical = normalizePageFavoriteCandidate({
+        url,
+        title: tab.view.webContents.getTitle?.() || '',
+        route: tab.route || ROUTE_CAMPUS,
+      }).url;
+    } catch {
+      return { canFavorite: false, favorite: false };
+    }
+    const resource = this.workspaceResources().find(({ url: resourceUrl }) => resourceUrl === canonical);
+    return { canFavorite: true, favorite: resource?.favorite === true };
+  }
+
+  async toggleActivePageFavorite(tab = this.activeTab()) {
+    const state = this.pageFavoriteState(tab);
+    if (!state.canFavorite || !tab || !this.onTogglePageFavorite) return false;
+    let result;
+    try {
+      result = await this.onTogglePageFavorite({
+        url: this.currentUrl(tab),
+        title: tab.view.webContents.getTitle?.() || '',
+        route: tab.route || ROUTE_CAMPUS,
+      });
+    } catch (error) {
+      if (this.retired) return false;
+      throw error;
+    }
+    if (this.retired) return false;
+    if (!result?.ok) {
+      this.onError?.(result?.error || this.t('browser.favoriteFailed'));
+      return false;
+    }
+    this.refreshWorkspaceHomes();
+    if (!this.retired) this.updateToolbar();
+    return true;
+  }
+}
+
 class CampusWorkspaceController {
   constructor({
     workspaceFile,
@@ -338,6 +542,9 @@ class CampusWorkspaceController {
 }
 
 module.exports = {
+  BrowserWorkspaceOwner,
+  projectBrowserWorkspaceResources,
+  MAX_WORKSPACE_HOME_RESOURCES,
   CampusWorkspaceController,
   normalizeWorkspaceCommand,
   normalizeWorkspaceRequest,
