@@ -39,6 +39,7 @@ export default [
   ["connect.treeDefault","默认"],
   ["connect.treePhysical","真实网卡"],
   ["connect.treeVirtual","虚拟网卡"],
+  ["connect.treeUnknown","类型未知"],
   ["connect.treeCurrent","当前连接"],
   ["connect.treeUseUnderlay","将学校连接切换到 {name}，源地址 {address}"],
   ["connect.treeUseUnderlayObserved","将学校连接切换到 {name}；本机地址 {local}；{public}；{relation}"],
