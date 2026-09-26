@@ -358,6 +358,30 @@ function assertExactNativeResources(engineDirectory, expectedNames) {
   return actual;
 }
 
+function assertPrivateEngineProfileBinding(main, readPackagedSource) {
+  const fail = () => {
+    throw new Error('packaged Desktop does not enforce private Engine profile binding');
+  };
+  let owner = main;
+  if (/new EngineAttemptCoordinator\(/u.test(main)) {
+    if (!main.includes("require('./lib/connection/engine/engine-process')") ||
+        !/verifyEngineLaunchBinding:\s*\(\)\s*=>\s*activeSchoolProfile\.verifyEngineLaunchBinding\(\)/u.test(main)) fail();
+    try {
+      owner = readPackagedSource('lib/connection/engine/engine-process.js');
+    } catch {
+      fail();
+    }
+    if (typeof owner !== 'string' || !owner.includes('class EngineAttemptCoordinator')) fail();
+    const binding = owner.indexOf('engineConfigBinding = this.profile.verifyEngineLaunchBinding();');
+    const credential = owner.indexOf('const credentialOwner = this.openCredential(');
+    const spawn = owner.indexOf('const started = this.engineSupervisor.start(');
+    const frame = owner.indexOf('${engineConfigBinding.stdinFrame}\\n${username}\\n${pw}');
+    if (!(binding >= 0 && credential > binding && spawn > credential && frame > spawn)) fail();
+  }
+  if (!owner.includes("'--profile-binding-v1-stdin'") ||
+      `${main}\n${owner}`.includes("'--config-sha256'")) fail();
+}
+
 function verifyPackage({ resourcesArgument, platform = process.platform, architecture = process.arch, requireAppleSignature = false }) {
   if (!resourcesArgument) {
     throw new Error('usage: node build/verify-package.js <app-or-resources-dir> [platform] [arch] [--require-apple-signature]');
@@ -487,10 +511,8 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     .toString('utf8');
   const packagedServiceWorkspace = extractArchiveFile(archive, 'renderer/campus-service-workspace.js')
     .toString('utf8');
-  if (!packagedMain.includes("'--profile-binding-v1-stdin'") ||
-      packagedMain.includes("'--config-sha256'")) {
-    throw new Error('packaged Desktop does not enforce private Engine profile binding');
-  }
+  assertPrivateEngineProfileBinding(packagedMain,
+    entry => extractArchiveFile(archive, entry).toString('utf8'));
   if (!packagedMain.includes('customGatewayProductAvailability()') ||
       /customGatewayOnboardingEnabled\s*=\s*!app\.isPackaged/u.test(packagedMain)) {
     throw new Error('packaged product does not expose safe Other-school onboarding');
@@ -620,6 +642,7 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
 module.exports = {
   TEST_ONLY_ENGINE_MARKER,
   archiveEntryPath,
+  assertPrivateEngineProfileBinding,
   assertMacDylibDependenciesAllowed,
   assertMacAppIcon,
   assertMacSystemOnlyDylibs,

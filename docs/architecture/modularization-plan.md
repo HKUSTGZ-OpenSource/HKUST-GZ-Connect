@@ -122,6 +122,10 @@ without moving process creation, credentials or termination into this slice.
 serving revocation and retry effects in the existing runtime; Main falls to 1,509 lines.
 Process creation, persistence and the final M3 dependency target remain separate work.
 
+[Engine attempt ownership](desktop-engine-attempt-owner.md) moves the complete startup
+attempt into the existing process module, retaining the current credential selector
+and callback fences. Main falls to 1,247 lines/35 direct dependencies; M3 remains open.
+
 Move remaining settings/credential transaction, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 

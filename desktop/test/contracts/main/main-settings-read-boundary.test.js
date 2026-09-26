@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
 const shellSource = fs.readFileSync(
@@ -30,11 +31,13 @@ test('engine close settles fail-closed when retry settings are temporarily unrea
 });
 
 test('final connection snapshot fails the FSM and classifies credential availability', () => {
-  const body = section('async function connectOnce(', '\nfunction ensureEngineStopped(');
+  const body = attempt;
+  assert.match(source, /engineAttempts\.run\(isRetry, intent\)/u);
   const marker = body.indexOf('// FINAL_CONNECTION_SNAPSHOT:');
-  const spawn = body.indexOf('const started = engineSupervisor.start(');
+  const spawn = body.indexOf('const started = this.engineSupervisor.start(');
   const guardedStart = body.slice(marker, spawn);
-  assert.match(guardedStart, /s = loadSettings\(\);[\s\S]*persistenceRuntime\.openCredential\(\)/);
+  assert.match(guardedStart, /s = this\.loadSettings\(\);[\s\S]*this\.openCredential\(/);
+  assert.match(source, /openPersistent: \(\) => persistenceRuntime\.openCredential\(\)/);
   assert.match(guardedStart, /credentialOwner\.withStrings/);
   assert.match(guardedStart, /credentialOwner\.destroy\(\)/);
   assert.match(guardedStart, /connectionState\.failIntent\(intent\);/);

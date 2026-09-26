@@ -16,6 +16,7 @@ const {
 const {
   TEST_ONLY_ENGINE_MARKER,
   archiveEntryPath,
+  assertPrivateEngineProfileBinding,
   assertMacDylibDependenciesAllowed,
   assertMacSystemOnlyDylibs,
   assertCustomResourceManager,
@@ -35,6 +36,40 @@ test('ASAR entry paths use the packaging host separator at every nesting level',
     archiveEntryPath(entry, path.win32),
     'assets\\profiles\\hkustgz\\school-profile.json',
   );
+});
+
+test('profile binding verifier follows the packaged attempt owner and its Main injection', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
+  const owner = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
+  assert.doesNotThrow(() => assertPrivateEngineProfileBinding(main, entry => {
+    assert.equal(entry, 'lib/connection/engine/engine-process.js'); return owner;
+  }));
+});
+
+test('delegated binding rejects missing owner injection, argv digest, frame and ordering', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
+  const owner = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
+  const changes = [
+    [main.replace("require('./lib/connection/engine/engine-process')", "require('./unreviewed-owner')"), owner],
+    [main.replace('verifyEngineLaunchBinding: () => activeSchoolProfile.verifyEngineLaunchBinding()', 'verifyEngineLaunchBinding: () => null'), owner],
+    [main, owner.replace('class EngineAttemptCoordinator', 'class UnreviewedOwner')],
+    [main, owner.replace("'--profile-binding-v1-stdin'", "'--config-sha256'")],
+    [main, owner.replace('${engineConfigBinding.stdinFrame}', '${unboundFrame}')],
+    [main, owner.replace('engineConfigBinding = this.profile.verifyEngineLaunchBinding();', 'engineConfigBinding = unverifiedBinding;')],
+    [main, owner.replace('const credentialOwner = this.openCredential(', 'const anotherOwner = this.openCredential(')],
+    [main, owner.replace('const started = this.engineSupervisor.start(', 'const started = unreviewedStart(')],
+  ];
+  for (const [root, implementation] of changes) {
+    assert.throws(() => assertPrivateEngineProfileBinding(root, () => implementation), /profile binding/u);
+  }
+  assert.throws(() => assertPrivateEngineProfileBinding(main, () => { throw new Error('missing owner'); }), /profile binding/u);
+});
+
+test('legacy inline binding keeps its original required flag and forbidden digest guard', () => {
+  assert.doesNotThrow(() => assertPrivateEngineProfileBinding("'--profile-binding-v1-stdin'", () => assert.fail('no delegated owner')));
+  for (const main of ['', "'--profile-binding-v1-stdin' '--config-sha256'"]) {
+    assert.throws(() => assertPrivateEngineProfileBinding(main, () => ''), /profile binding/u);
+  }
 });
 
 test('packaging maps each target to its required engine name', () => {

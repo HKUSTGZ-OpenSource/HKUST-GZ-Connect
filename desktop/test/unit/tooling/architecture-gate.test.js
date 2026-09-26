@@ -201,9 +201,11 @@ test('current production graph has no cycle and stays within debt growth caps', 
   assert.deepEqual(snapshot.rootLibraryDebtErrors, []);
 });
 
-test('Main line budget preserves update and Engine lifecycle extractions', () => {
-  assert.equal(BASELINE.mainLines, 1509);
-  assert.ok(architectureErrors({ cycles: [], mainLines: 1510 })
+test('Main line budget preserves update and Engine attempt/lifecycle ownership', () => {
+  assert.equal(BASELINE.mainLines, 1247);
+  assert.equal(BASELINE.mainDirectDependencies, 35);
+  assert.equal(BASELINE.mainEffectiveDirectDependencies, 50);
+  assert.ok(architectureErrors({ cycles: [], mainLines: 1248 })
     .some(error => error.includes('mainLines')));
 });
 
