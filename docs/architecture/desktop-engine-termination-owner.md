@@ -30,7 +30,9 @@ the actual injected ports and moved implementation without dropping safety asser
 Full Desktop, exact-source gates and native synthetic lifecycle/Profile-switch tests
 remain required. Synthetic evidence does not prove a real Gateway/MFA session.
 
-This structural change retains existing asynchronous error-presentation behavior.
-Late-promise error fences are separate behavioral work and must have RED/GREEN tests;
-the extraction alone does not claim that risk resolved. Revert this slice with its
-tests and ratchet to roll back. No data, schema, network or installed-App migration occurs.
+The structural extraction alone retained existing asynchronous error presentation.
+A separate RED/GREEN callback-fence repair captures the suspension intent and checks
+generation, context and intent again before publishing a rejected Browser suspension.
+Retired work is inert; a current failure still emits its actionable notice. No retry,
+primary failure, credential or proxy policy changes. Revert each slice independently
+with its matching tests/ratchet. No data, schema, network or installed-App migration occurs.
