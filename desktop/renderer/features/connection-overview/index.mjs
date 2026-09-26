@@ -36,11 +36,14 @@ function buildUnderlayOptions(environment = {}, t = key => key) {
         publicEgress: null, selected: selectionAvailable && selectedValue === '' });
     }
     if (!sources.length) continue;
+    const isWindowsFallbackId = environment.platform === 'win32' &&
+      /^win:[0-9a-f]{60}$/u.test(item.id);
     options.push({
       interfaceId: item.id,
-      title: item.name === item.id ? item.name : `${item.name} · ${item.id}`,
+      title: item.name === item.id || isWindowsFallbackId ? item.name : `${item.name} · ${item.id}`,
       kind: item.kind,
-      badge: t(item.kind === 'virtual' ? 'connect.treeVirtual' : 'connect.treePhysical'),
+      badge: t(item.kind === 'virtual' ? 'connect.treeVirtual'
+        : item.kind === 'physical' ? 'connect.treePhysical' : 'connect.treeUnknown'),
       selected: sources.some(({ selected }) => selected),
       sources,
     });

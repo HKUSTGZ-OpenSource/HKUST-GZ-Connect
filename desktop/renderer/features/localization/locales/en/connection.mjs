@@ -39,6 +39,7 @@ export default [
   ["connect.treeDefault","Default"],
   ["connect.treePhysical","Physical"],
   ["connect.treeVirtual","Virtual"],
+  ["connect.treeUnknown","Type unknown"],
   ["connect.treeCurrent","Current"],
   ["connect.treeUseUnderlay","Route the campus connection through {name}, source {address}"],
   ["connect.treeUseUnderlayObserved","Route the campus connection through {name}; local address {local}; {public}; {relation}"],
