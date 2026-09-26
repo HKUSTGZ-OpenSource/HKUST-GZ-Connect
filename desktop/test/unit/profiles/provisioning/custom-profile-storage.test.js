@@ -9,7 +9,10 @@ const { CustomGatewayConfirmationOwner } = require('../../../../lib/profiles/onb
 const { CustomProfileIndexStore } = require('../../../../lib/profiles/registry/custom-profile-index');
 const { CustomProfileMaterializer } = require('../../../../lib/profiles/provisioning/custom-profile-materializer');
 const { CustomProfileProvisioningRuntime } = require('../../../../lib/profiles/provisioning/custom-profile-provisioning-runtime');
-const { CustomProfileDeletionRuntime } = require('../../../../lib/profiles/deletion/custom-profile-deletion-runtime');
+const {
+  CustomProfileDeletionRuntime,
+  findCustomProfileDeletionTombstones,
+} = require('../../../../lib/profiles/deletion/custom-profile-deletion-runtime');
 const { ProfileCandidateDirectory } = require('../../../../lib/profiles/registry/profile-candidate-directory');
 const {
   CustomProfileProvisioningJournalStore,
@@ -201,6 +204,16 @@ function runtime(userData, overrides = {}) {
     ...overrides,
   });
 }
+
+test('deletion tombstone discovery preserves its one-argument default filesystem contract', (t) => {
+  const userData = root(t);
+  const account = path.join(userData, 'accounts', 'synthetic-account');
+  fs.mkdirSync(account, { recursive: true, mode: 0o700 });
+  const tombstone = path.join(account, 'deletion-tombstone.json');
+  fs.writeFileSync(tombstone, '{"synthetic":true}\n', { mode: 0o600 });
+
+  assert.deepEqual(findCustomProfileDeletionTombstones(userData), [tombstone]);
+});
 
 test('runtime commits files and index then clears its journal without activating GlobalSettings', (t) => {
   const userData = root(t);
