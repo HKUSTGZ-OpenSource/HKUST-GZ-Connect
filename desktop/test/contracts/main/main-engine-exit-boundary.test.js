@@ -54,12 +54,15 @@ test('fatal, stopping, and exit boundaries revoke in-flight serving promotion', 
 });
 
 test('an unclean stop releases the local process but blocks automatic reconnect', () => {
-  const recoveryStart = source.indexOf('async function recoverConnectivity(');
-  const connectStart = source.indexOf('\nasync function connect(', recoveryStart);
-  const recovery = source.slice(recoveryStart, connectStart);
+  const recovery = operations.slice(
+    operations.indexOf('  async recoverConnectivity('),
+    operations.indexOf('  onConnectivityRecoveryDeclined('),
+  );
   assert.match(recovery, /stopped\.cleanExit === false/);
-  assert.match(recovery, /connectionState\.failIntent\(intent\)/);
+  assert.match(recovery, /this\.connectionState\.failIntent\(intent\)/);
   assert.match(recovery, /error\.engineCleanupUnconfirmed/);
+  assert.match(source, /reconnect: \(intent, reason\) => connectionOperations\.recoverConnectivity\(intent, reason\)/u,
+    'Main delegates connectivity restart admission to the existing operation owner');
 
   assert.match(source, /connectionOperations\.reconnect\(expectedGeneration\)/u);
   const reconnect = operations.slice(operations.indexOf('  async reconnect('));

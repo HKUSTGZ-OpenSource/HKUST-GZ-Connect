@@ -32,16 +32,45 @@ test('browser readiness outlives the bounded Engine data-plane retry window', ()
 });
 
 test('settings failures publish terminal intent state to pending waiters', () => {
-  const recovery = source.slice(
-    source.indexOf('async function recoverConnectivity('),
+  const recovery = operations.slice(
+    operations.indexOf('  async recoverConnectivity('),
+    operations.indexOf('  onConnectivityRecoveryDeclined('),
+  );
+  const policy = operations.slice(
+    operations.indexOf('  shouldReconnectForConnectivity('),
+    operations.indexOf('  async recoverConnectivity('),
+  );
+  assert.match(recovery, /catch \{\s*this\.connectionState\.failIntent\(intent\);\s*this\.emit\(\);/);
+  assert.match(policy, /catch \{\s*this\.connectionState\.failIntent\(intent\);\s*this\.emit\(\);/);
+  const recoveryPorts = source.slice(
     source.indexOf('const connectivityRecovery ='),
+    source.indexOf('const { monitor:'),
   );
-  const policy = source.slice(
-    source.indexOf('shouldReconnect: async'),
-    source.indexOf('reconnect: recoverConnectivity'),
-  );
-  assert.match(recovery, /catch \{\s*connectionState\.failIntent\(intent\);\s*emit\(\);/);
-  assert.match(policy, /catch \{\s*connectionState\.failIntent\(intent\);\s*emit\(\);/);
+  assert.match(recoveryPorts, /invalidate: \(reason, intent\) => connectionOperations\.invalidateForConnectivity\(reason, intent\)/);
+  assert.match(recoveryPorts, /getLifecycleIntent: \(\) => connectionOperations\.currentRecoveryIntent\(\)/);
+  assert.match(recoveryPorts, /shouldReconnect: \(intent, reason\) => connectionOperations\.shouldReconnectForConnectivity\(intent, reason\)/);
+  assert.match(recoveryPorts, /reconnect: \(intent, reason\) => connectionOperations\.recoverConnectivity\(intent, reason\)/);
+  assert.match(recoveryPorts, /onRecoveryDeclined: \(intent, reason\) => connectionOperations\.onConnectivityRecoveryDeclined\(intent, reason\)/);
+  assert.doesNotMatch(source, /function (?:invalidateForConnectivity|recoverConnectivity)\(/,
+    'Main must delegate connectivity decisions rather than retain another policy copy');
+});
+
+test('network callbacks cannot reach the deferred operation owner before construction', () => {
+  const operationOwner = source.indexOf('const connectionOperations = new ConnectionOperationCoordinator(');
+  const networkStart = source.indexOf('networkStartupCoordinator.start()');
+  const powerListener = source.indexOf("powerMonitor.on('suspend'");
+  assert.ok(operationOwner >= 0 && operationOwner < networkStart);
+  assert.ok(operationOwner < powerListener);
+
+  const recovery = fs.readFileSync(require.resolve('../../../lib/connection/recovery/connectivity-recovery'), 'utf8');
+  const recoveryConstructor = recovery.slice(recovery.indexOf('  constructor('), recovery.indexOf('\n  currentIntent('));
+  assert.doesNotMatch(recoveryConstructor, /this\.(?:invalidate|getLifecycleIntent|shouldReconnect|reconnect)\(/,
+    'ConnectivityRecovery stores owner callbacks without invoking them in its constructor');
+
+  const startup = fs.readFileSync(require.resolve('../../../lib/connection/telemetry/network-status-monitor'), 'utf8');
+  const startupConstructor = startup.slice(startup.indexOf('class NetworkStartupCoordinator'), startup.indexOf('\n  current('));
+  assert.doesNotMatch(startupConstructor, /this\.(?:shouldAutoConnect|pauseOffline|resumeOffline|connect|isQuitting)\(/,
+    'network startup stores its callbacks and evaluates them only from start()');
 });
 
 test('connect and reconnect fail closed around quit and coalesce before creating an intent', () => {

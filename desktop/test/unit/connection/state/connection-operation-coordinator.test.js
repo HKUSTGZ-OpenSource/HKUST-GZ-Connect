@@ -15,7 +15,8 @@ function deferred() {
 
 function fixture() {
   const f = { quitting: false, active: false, generation: 1, trace: [], launches: 0,
-    state: {}, fsm: new ConnectionStateMachine(), stopResult: { ok: true, cleanExit: true } };
+    state: {}, fsm: new ConnectionStateMachine(), stopResult: { ok: true, cleanExit: true },
+    settings: { autoReconnect: true }, settingsReads: 0 };
   f.owner = new ConnectionOperationCoordinator({
     connectionState: f.fsm,
     engineSupervisor: {
@@ -24,6 +25,12 @@ function fixture() {
       invalidate: () => { f.trace.push('invalidate'); f.generation += 1; },
     },
     isQuitting: () => f.quitting,
+    loadSettingsOrReport: () => {
+      f.settingsReads += 1;
+      if (f.settingsErrors?.[f.settingsReads - 1]) throw f.settingsErrors[f.settingsReads - 1];
+      if (f.settingsError) throw f.settingsError;
+      return f.settings;
+    },
     cancelRecovery: () => f.trace.push('cancel-recovery'),
     clearProxyCredential: () => f.trace.push('clear-proxy'),
     clearPresentation: () => f.trace.push('clear-presentation'),
@@ -50,6 +57,106 @@ function fixture() {
 test('operation owner stays in the existing public state entrypoint below 600 lines', () => {
   const source = fs.readFileSync(require.resolve('../../../../lib/connection/state/connection-state-machine'), 'utf8');
   assert(source.trimEnd().split('\n').length <= 600);
+});
+
+test('connectivity policy is exposed by the existing operation owner', () => {
+  const f = fixture();
+  assert.equal(f.owner.currentRecoveryIntent(), null);
+  const intent = f.fsm.beginConnectIntent();
+  assert.equal(f.owner.currentRecoveryIntent(), intent);
+  f.quitting = true;
+  assert.equal(f.owner.currentRecoveryIntent(), null);
+});
+
+test('connectivity admission honors saved auto-reconnect and fails closed on settings errors', () => {
+  const f = fixture(); const intent = f.fsm.beginConnectIntent();
+  f.settings.autoReconnect = false;
+  assert.equal(f.owner.shouldReconnectForConnectivity(intent, 'network-online'), false);
+  assert.equal(f.owner.shouldReconnectForConnectivity(intent, 'initial-network-online'), true);
+  f.settingsError = new Error('synthetic settings read failure');
+  assert.equal(f.owner.shouldReconnectForConnectivity(intent, 'network-online'), false);
+  assert.equal(f.fsm.snapshot().desiredConnected, false);
+  assert.equal(f.trace.at(-1), 'emit');
+});
+
+test('connectivity invalidation retains intent, invalidates old work, and shares the stop', async () => {
+  const f = fixture(); const intent = f.fsm.beginConnectIntent();
+  f.fsm.bindEngineGeneration(1); f.active = true; f.stopWait = deferred();
+  const invalidation = f.owner.invalidateForConnectivity('network-offline', intent);
+  assert.equal(f.fsm.snapshot().intent, intent);
+  assert.equal(f.fsm.snapshot().phase, 'connectivity-paused');
+  assert.equal(f.fsm.snapshot().desiredConnected, true);
+  assert.deepEqual(f.trace.slice(0, 4), ['invalidate', 'clear-presentation', 'emit', 'stop']);
+  f.stopWait.resolve(); await invalidation;
+  assert.equal(f.fsm.snapshot().intent, intent);
+  assert.equal(f.state.lastError, 'error.networkUnavailable');
+});
+
+test('a stale connectivity stop cannot overwrite the newer operation presentation', async () => {
+  const f = fixture(); const intent = f.fsm.beginConnectIntent();
+  f.stopResult = { ok: false }; f.stopWait = deferred();
+  const invalidation = f.owner.invalidateForConnectivity('suspend', intent);
+  f.fsm.beginConnectIntent(); f.state.lastError = 'new-operation-notice';
+  f.stopWait.resolve(); await invalidation;
+  assert.equal(f.state.lastError, 'new-operation-notice');
+});
+
+test('connectivity recovery resumes the same intent only after a confirmed stop', async () => {
+  const f = fixture(); const intent = f.fsm.beginConnectIntent();
+  f.fsm.pauseForConnectivity(intent); f.settings.autoReconnect = false;
+  assert.equal(await f.owner.recoverConnectivity(intent, 'initial-network-online'), true);
+  assert.equal(f.fsm.snapshot().intent, intent);
+  assert.equal(f.fsm.snapshot().desiredConnected, true);
+  assert.equal(f.launches, 1);
+});
+
+test('unclean connectivity stop fails closed with the distinct cleanup error', async () => {
+  for (const [stopResult, errorKey] of [
+    [{ ok: false }, 'error.engineStuck'],
+    [{ ok: true, cleanExit: false }, 'error.engineCleanupUnconfirmed'],
+  ]) {
+    const f = fixture(); const intent = f.fsm.beginConnectIntent();
+    f.fsm.pauseForConnectivity(intent); f.stopResult = stopResult;
+    assert.equal(await f.owner.recoverConnectivity(intent, 'network-online'), false);
+    assert.equal(f.launches, 0);
+    assert.equal(f.state.lastError, errorKey);
+    assert.equal(f.fsm.snapshot().desiredConnected, false);
+  }
+});
+
+test('connectivity recovery rereads settings and fails closed if that read changes to an error', async () => {
+  const f = fixture(); const intent = f.fsm.beginConnectIntent();
+  f.fsm.pauseForConnectivity(intent);
+  f.settingsErrors = [null, new Error('synthetic second settings read failure')];
+  assert.equal(f.owner.shouldReconnectForConnectivity(intent, 'network-online'), true);
+  assert.equal(await f.owner.recoverConnectivity(intent, 'network-online'), false);
+  assert.equal(f.trace.includes('stop'), false);
+  assert.equal(f.launches, 0);
+  assert.equal(f.fsm.snapshot().desiredConnected, false);
+  assert.equal(f.trace.at(-1), 'emit');
+});
+
+test('quit or superseding intent while connectivity stop drains forbids restart', async () => {
+  for (const transition of ['quit', 'new-intent']) {
+    const f = fixture(); const intent = f.fsm.beginConnectIntent();
+    f.fsm.pauseForConnectivity(intent); f.stopWait = deferred();
+    const recovering = f.owner.recoverConnectivity(intent, 'network-online');
+    if (transition === 'quit') f.quitting = true;
+    else f.fsm.beginConnectIntent();
+    f.stopWait.resolve();
+    assert.equal(await recovering, false);
+    assert.equal(f.launches, 0);
+  }
+});
+
+test('declined initial startup recovery preserves intent but ordinary decline fails it', () => {
+  const f = fixture(); const initialIntent = f.fsm.beginConnectIntent();
+  f.owner.onConnectivityRecoveryDeclined(initialIntent, 'initial-network-online');
+  assert.equal(f.fsm.snapshot().desiredConnected, true);
+  const ordinaryIntent = f.fsm.beginConnectIntent();
+  f.owner.onConnectivityRecoveryDeclined(ordinaryIntent, 'network-online');
+  assert.equal(f.fsm.snapshot().desiredConnected, false);
+  assert.equal(f.trace.at(-1), 'emit');
 });
 
 test('simultaneous manual connects share one launch and intent', async () => {
