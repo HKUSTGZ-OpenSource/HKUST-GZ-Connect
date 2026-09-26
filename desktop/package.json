@@ -1,6 +1,6 @@
 {
   "name": "hkustgzconnect",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "HKUST(GZ) EasyConnect-compatible client with an independent Rust engine",
   "main": "main.js",
   "author": "heeh02",
