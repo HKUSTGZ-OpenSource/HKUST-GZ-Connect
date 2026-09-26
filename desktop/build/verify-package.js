@@ -34,6 +34,22 @@ function assertConnectionOverviewPackageEntries(entries) {
   }
 }
 
+function assertConnectionOverviewNativeFeature(appSource, featureHostSource) {
+  const appImportsHost = appSource.includes(
+    "import { createRendererFeatures } from './features/feature-host/index.mjs';",
+  );
+  const appMountsFeature = appSource.includes("rendererFeatures.mount('connection-overview',");
+  const hostImportsFeature = featureHostSource.includes(
+    "import { create as createConnectionOverview } from '../connection-overview/index.mjs';",
+  );
+  const hostRegistersFeature = featureHostSource.includes(
+    "Object.freeze({ id: 'connection-overview', create: createConnectionOverview })",
+  );
+  if (!(appImportsHost && appMountsFeature && hostImportsFeature && hostRegistersFeature)) {
+    throw new Error('packaged Renderer does not load the native Connection Overview feature');
+  }
+}
+
 function sha256(data) {
   return crypto.createHash('sha256').update(data).digest('hex');
 }
@@ -453,6 +469,7 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     '/lib/connection/recovery/tunnel-health.js',
     '/lib/platform/update/update-check.js',
     '/renderer/app.js',
+    '/renderer/features/feature-host/index.mjs',
     '/renderer/features/auth-challenge/index.mjs',
     '/renderer/features/auth-challenge/controller.mjs',
     '/renderer/features/auth-challenge/lifecycle.mjs',
@@ -514,6 +531,9 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
 
   const packagedIndex = extractArchiveFile(archive, 'renderer/index.html').toString('utf8');
   const packagedRenderer = extractArchiveFile(archive, 'renderer/app.js').toString('utf8');
+  const packagedFeatureHost = extractArchiveFile(archive, 'renderer/features/feature-host/index.mjs')
+    .toString('utf8');
+  assertConnectionOverviewNativeFeature(packagedRenderer, packagedFeatureHost);
   const packagedPreload = extractArchiveFile(archive, 'preload.js').toString('utf8');
   const packagedMain = extractArchiveFile(archive, 'main.js').toString('utf8');
   const packagedControlDataIpc = extractArchiveFile(archive, 'lib/ipc/control-data-ipc.js')
@@ -549,7 +569,7 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
   for (const feature of [
     'routing-manager', 'certificate-manager', 'group-dialog',
     'proxy-auth-migration', 'notification-view', 'notification-drawer',
-    'connection-overview', 'campus-category-stacks', 'campus-service-workspace',
+    'campus-category-stacks', 'campus-service-workspace',
     'browser-data-settings',
   ]) {
     const featureScript = packagedIndex.indexOf(`src="${feature}.js"`);
@@ -657,6 +677,7 @@ module.exports = {
   REQUIRED_CONNECTION_OVERVIEW_ENTRIES,
   archiveEntryPath,
   assertConnectionOverviewPackageEntries,
+  assertConnectionOverviewNativeFeature,
   assertPrivateEngineProfileBinding,
   assertMacDylibDependenciesAllowed,
   assertMacAppIcon,

@@ -27,6 +27,7 @@ const {
   assertNoTestOnlyNativeResources,
   assertNoTestOnlyPackageEntries,
   assertConnectionOverviewPackageEntries,
+  assertConnectionOverviewNativeFeature,
   parseMachODylibDependencies,
   resolveResourcesDirectory,
 } = require('../../../build/verify-package');
@@ -48,6 +49,26 @@ test('package verifier requires both native Connection Overview assets and rejec
     ...REQUIRED_CONNECTION_OVERVIEW_ENTRIES,
     '/renderer/connection-overview.js',
   ])), /legacy Renderer connection-overview script entered the package/u);
+});
+
+test('package verifier checks Connection Overview native host registration and app mount', () => {
+  const rendererRoot = path.join(__dirname, '..', '..', '..', 'renderer');
+  const verifierSource = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'build', 'verify-package.js'), 'utf8');
+  const appSource = fs.readFileSync(path.join(rendererRoot, 'app.js'), 'utf8');
+  const hostSource = fs.readFileSync(path.join(rendererRoot, 'features', 'feature-host', 'index.mjs'), 'utf8');
+  assert.match(verifierSource, /assertConnectionOverviewNativeFeature\(packagedRenderer,\s*packagedFeatureHost\)/u);
+  assert.doesNotThrow(() => assertConnectionOverviewNativeFeature(appSource, hostSource));
+
+  const rejectedSources = [
+    [appSource.replace("import { createRendererFeatures } from './features/feature-host/index.mjs';", ''), hostSource],
+    [appSource.replace("rendererFeatures.mount('connection-overview',", "rendererFeatures.mount('other-feature',"), hostSource],
+    [appSource, hostSource.replace("import { create as createConnectionOverview } from '../connection-overview/index.mjs';", '')],
+    [appSource, hostSource.replace("Object.freeze({ id: 'connection-overview', create: createConnectionOverview })", "Object.freeze({ id: 'other-feature', create: createConnectionOverview })")],
+    [appSource, hostSource.replace("Object.freeze({ id: 'connection-overview', create: createConnectionOverview })", "Object.freeze({ id: 'connection-overview', create: createOtherFeature })")],
+  ];
+  for (const [app, host] of rejectedSources) {
+    assert.throws(() => assertConnectionOverviewNativeFeature(app, host), /native Connection Overview feature/u);
+  }
 });
 
 test('ASAR entry paths use the packaging host separator at every nesting level', () => {
