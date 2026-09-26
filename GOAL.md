@@ -4,8 +4,8 @@
 - Authority: project maintainer
 - Baseline: `main@15738338ff2a280300b66e98a1823659f24630a4`
 - Started: 2026-09-04
-- Last verified: 2026-09-26 (before this documentation PR)
-- Development main at verification: `71dc05e55964226604d62bfaee87ffdacbc64435`
+- Last verified: 2026-09-27 (before this documentation PR)
+- Development main at verification: `5cec683c4bdcb3e6663572943d8799f6eccb79b3`
 - Scope: repository governance, documentation truth, agent instructions, module boundaries,
   contributor workflow, GitHub protections and organization migration
 
@@ -36,8 +36,9 @@ high-risk rules. No instruction file is treated as a substitute for review or te
 
 1. PR #59 established the contributor, agent, documentation and machine-governance baseline on
    `main`; runtime modularization must now consume those boundaries rather than create alternatives.
-2. `desktop/main.js`, `desktop/lib/browser/session/campus-browser.js`, the Renderer bootstrap/CSS,
-   and `independent/src/bin/ec-engine.rs` are concurrency hot spots.
+2. `desktop/main.js`, `desktop/lib/browser/session/campus-browser.js` and the Renderer
+   bootstrap/CSS remain concurrency hot spots. Rust process composition M4 is completed through
+   #148/#82; its root is 498 lines and default production excludes compatibility laboratories.
 3. Legacy Renderer globals and HTML script order remain migration debt. The merged static policy
    and feature host enforce new boundaries, but `app.js` is not yet only a composition root.
 4. Stable `v2.0.3` is published from `main@b57c394c73e0b07a0076e26f58e1666e29f00135`.
@@ -46,6 +47,10 @@ high-risk rules. No instruction file is treated as a substitute for review or te
    requirement is satisfied. Published packages and the currently installed Mac candidate are
    distinct evidence, not interchangeable versions.
    The post-tag crypto migration #146 closes #105 at `71dc05e` without rewriting release artifacts.
+   Post-tag #149/#150 restore verified update opening and move update scheduling into its owner.
+   #152 closes the reproduced unavailable-store memory-credential defect #151; #153 moves Engine
+   serving coordination into the existing runtime. Main is 1,604 lines, still above M3's target.
+   These changes are not in 2.0.3. M1/M2/M3/M5 and the original Windows report #127 remain open.
 5. Repository Rulesets, CODEOWNERS, templates, Dependabot, release Environment and immutable Action
    policies are active. Two Organization owners are present. Protected `main` still requires one
    approval and seven strict checks; the maintainer authorized one-time administrator squash merges
@@ -183,6 +188,25 @@ release assumptions.
   to the same public, enabled repository across owner transfer without trusting arbitrary redirects.
 
 ## Current decision boundary
+
+Stable remains immutable `v2.0.3@b57c394c73e0b07a0076e26f58e1666e29f00135`.
+Development source at this checkpoint is
+`main@5cec683c4bdcb3e6663572943d8799f6eccb79b3`; later source fixes and owner extractions
+do not silently alter that release or the installed application. The original PR queue is
+converged, but an empty queue is not goal completion. M4/#82 and dependency backlog #105 are
+closed; Renderer, remaining Browser, Main composition, full dependency enforcement, deferred
+role-specific governance and the unreproduced Windows report remain separate acceptance work.
+
+The maintainer-authorized administrator exception does not invent an independent approval or
+change branch/tag protections. Exact-head required checks remain a merge gate. The #152
+secret-scan platform-state anomaly was recovered with one job-only rerun on unchanged source,
+not a fabricated status or a full platform-matrix retry. Native/synthetic evidence remains
+distinct from a real-school canary. The total goal stays Active.
+
+## Historical source-convergence receipt — 2026-09-24/25
+
+The following describes the pre-2.0.3 checkpoint; current findings and the boundary above
+supersede its stable-version and unpackaged-source statements.
 
 The [2026-09-08 integration snapshot](docs/governance/2026-09-08-integration-readiness.md) is
 historical. The 2.0.2 release lane #88/#95/#106/#107 is merged and published. Since that tag,

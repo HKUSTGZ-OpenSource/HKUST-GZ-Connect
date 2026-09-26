@@ -1,9 +1,9 @@
 # Modularization plan
 
-- Status: Active execution plan; M1/M2 partially merged, M3–M5 open
+- Status: Active execution plan; M4 completed, M1/M2/M3/M5 open
 - Owner: architecture maintainers
-- Last verified: 2026-09-25 (`main@dc9113df96da92830091edb0c6a0860219d1dfbe`)
-- Applies to: development `main` after published 2.0.2; merged source is not a new release
+- Last verified: 2026-09-27 (`main@5cec683c4bdcb3e6663572943d8799f6eccb79b3`)
+- Applies to: development `main` after published 2.0.3; merged source is not a new release
 - Supersedes: ad-hoc file-by-file extraction without an ownership receipt
 
 ## Purpose
@@ -20,8 +20,9 @@ exhausted: Main has 36 direct dependencies, 170 transitive dependencies and 1,71
 Renderer has 563 lines. At that baseline, the gate could not see the main Renderer page's ordered
 global-script graph; #110 later added a static boundary policy for new changes.
 
-At the verification commit, the remaining hot spots measure 562 lines in Renderer `app.js`, 1,804
-in Campus Browser, 1,719 in Desktop Main and 2,515 in `ec-engine.rs`. M1–M5 remain open.
+At the verification commit, Renderer `app.js` is 562 lines, Campus Browser 1,502,
+Desktop Main 1,604 and `ec-engine.rs` 498. M4/#82 is closed through #148; the other
+four waves remain open. Counts are debt evidence, not a substitute for ownership/lifecycle gates.
 
 Primary concurrency hot spots:
 
@@ -141,10 +142,10 @@ The first binary-private startup seam is documented in
 complete the runtime orchestration work below.
 
 The [process ownership receipt](engine-process-ownership.md) covers the private control, event,
-operation, startup, serving and failure owners together. The current-base candidate retains
+operation, startup, serving and failure owners together. Merged #148 retains
 pre-password Gateway classification and reduces the root to 498 lines without adding public
-process APIs. Size is only one gate: three build modes, lifecycle, protocol, native, performance
-and package acceptance are still required.
+process APIs. Its three build modes, lifecycle, protocol, native, performance and package
+acceptance closed #82. These remain mandatory gates for future changes; size alone is not acceptance.
 The default-production compiler boundary for research tools is defined in
 [ADR-0034](../adr/0034-compatibility-laboratory-feature-boundary.md). Laboratory opt-in retains
 separate coverage; this boundary does not replace platform/package verification.
