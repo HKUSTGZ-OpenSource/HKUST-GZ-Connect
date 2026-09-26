@@ -1,6 +1,7 @@
 use crate::xml::{first_descendant_text, parse_xml};
 use crate::{Error, Result};
-use rand::rngs::OsRng;
+// rsa 0.9 intentionally uses its own rand_core 0.6 cryptographic interface.
+use rsa::rand_core::OsRng;
 use rsa::{BigUint, Pkcs1v15Encrypt, RsaPublicKey};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;

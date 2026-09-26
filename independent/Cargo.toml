@@ -2,7 +2,7 @@
 name = "ec-compat"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "GPL-3.0-only"
 publish = false
 
@@ -56,12 +56,12 @@ path = "src/bin/ec-auth-fixture.rs"
 base64 = "0.22"
 flate2 = "1.1"
 hex = "0.4"
-hmac = "0.12"
+hmac = "0.13"
 iced-x86 = { version = "1.21", default-features = false, features = ["decoder", "std"] }
 libc = "0.2"
-md-5 = "0.10"
+md-5 = "0.11"
 object = { version = "0.37", default-features = false, features = ["read_core", "elf", "macho", "pe"] }
-rand = "0.8"
+rand = "0.10"
 rc4 = { version = "0.2", features = ["zeroize"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "cookies", "rustls-tls"] }
 roxmltree = "0.21"
@@ -69,7 +69,7 @@ rsa = "0.9"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha1 = "0.10"
+sha1 = "0.11"
 sha2 = "0.11"
 socket2 = "0.6"
 subtle = "2.6"

@@ -2,8 +2,9 @@ use crate::engine::destination_policy::validate_tunnel_destination;
 use crate::engine::netstack::VirtualNetstack;
 use crate::engine::proxy::{NameResolver, ResolveFuture};
 use crate::{Error, Result};
-use rand::RngCore;
-use rand::rngs::OsRng;
+use rand::Rng;
+use rand::rand_core::UnwrapErr;
+use rand::rngs::SysRng;
 use std::collections::HashMap;
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -362,7 +363,7 @@ impl VpnDnsResolver {
     ) -> Result<(Ipv4Addr, u32)> {
         let endpoint = validated_dns_endpoint(server)?;
         let mut id_bytes = [0_u8; 2];
-        OsRng.fill_bytes(&mut id_bytes);
+        UnwrapErr(SysRng).fill_bytes(&mut id_bytes);
         let id = u16::from_be_bytes(id_bytes);
         let query = build_query(host, id)?;
         let socket = netstack.bind_udp().await?;

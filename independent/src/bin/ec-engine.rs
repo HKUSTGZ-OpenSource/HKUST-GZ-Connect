@@ -502,11 +502,11 @@ where
                         if let Err(error) = lifecycle.emit_control(&exchange) {
                             break ConnectionOperationCancellationCause::ControlOutputFailed(error);
                         }
-                        if let Some(action) = exchange.action {
-                            if pending_control_actions.apply(action, tokio::time::Instant::now()) {
-                                *control_receiver = None;
-                                break ConnectionOperationCancellationCause::UserRequested;
-                            }
+                        if let Some(action) = exchange.action
+                            && pending_control_actions.apply(action, tokio::time::Instant::now())
+                        {
+                            *control_receiver = None;
+                            break ConnectionOperationCancellationCause::UserRequested;
                         }
                     }
                     ControlInput::V3(request) => {

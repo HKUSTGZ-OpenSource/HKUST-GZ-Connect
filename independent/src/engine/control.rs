@@ -413,10 +413,10 @@ impl ControlSession {
     }
 
     fn remember_request_id(&mut self, request_id: u64) {
-        if self.request_order.len() == MAX_TRACKED_REQUEST_IDS {
-            if let Some(expired) = self.request_order.pop_front() {
-                self.recent_request_ids.remove(&expired);
-            }
+        if self.request_order.len() == MAX_TRACKED_REQUEST_IDS
+            && let Some(expired) = self.request_order.pop_front()
+        {
+            self.recent_request_ids.remove(&expired);
         }
         self.request_order.push_back(request_id);
         self.recent_request_ids.insert(request_id);

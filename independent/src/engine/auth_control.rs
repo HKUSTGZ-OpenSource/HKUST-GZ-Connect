@@ -325,10 +325,9 @@ impl<T: AuthTransaction> AuthControlSession<T> {
             ErrorKind::AuthenticationExpired
                 | ErrorKind::AuthenticationLimitExceeded
                 | ErrorKind::Lifecycle
-        ) {
-            if let Some(owner) = self.owner.take() {
-                let _ = owner.abort();
-            }
+        ) && let Some(owner) = self.owner.take()
+        {
+            let _ = owner.abort();
         }
         exchange_error(request_id, code)
     }

@@ -329,10 +329,10 @@ impl Drop for VirtualNetstack {
         self.shutdown_requested.store(true, Ordering::Release);
         self.healthy.store(false, Ordering::Release);
         let _ = self.transport_shutdown.shutdown();
-        if let Ok(mut runner) = self.runner.try_lock() {
-            if let Some(runner) = runner.take() {
-                runner.abort();
-            }
+        if let Ok(mut runner) = self.runner.try_lock()
+            && let Some(runner) = runner.take()
+        {
+            runner.abort();
         }
         // Socket shutdown and runner cancellation wake both bridges. Drop never
         // waits: normal process assembly must call `shutdown()` for proof of a

@@ -6,10 +6,12 @@ use crate::modern::{
 use crate::{Error, ErrorKind, Result};
 use hmac::{Hmac, Mac};
 use md5::Md5;
-use rand::RngCore;
-use rand::rngs::OsRng;
+use rand::Rng;
+use rand::rand_core::UnwrapErr;
+use rand::rngs::SysRng;
 use rc4::{KeyInit, Rc4, StreamCipher};
 use rsa::pkcs8::DecodePublicKey;
+use rsa::rand_core::OsRng as RsaOsRng;
 use rsa::{Pkcs1v15Encrypt, RsaPublicKey};
 use sha1::Sha1;
 use std::io::{Read, Write};
@@ -74,7 +76,7 @@ impl RecordCipher {
     }
 
     fn mac(&self, content_type: u8, plaintext: &[u8]) -> Result<[u8; SHA1_MAC_LEN]> {
-        let mut mac = <HmacSha1 as Mac>::new_from_slice(self.mac_key.as_ref())
+        let mut mac = <HmacSha1 as hmac::digest::KeyInit>::new_from_slice(self.mac_key.as_ref())
             .map_err(|_| Error("cannot initialize TLS record MAC".into()))?;
         mac.update(&self.sequence.to_be_bytes());
         mac.update(&[content_type]);
@@ -240,19 +242,19 @@ fn p_hash<M: Mac + Clone + hmac::digest::KeyInit>(
     length: usize,
 ) -> Result<Zeroizing<Vec<u8>>> {
     let mut a = {
-        let mut mac = <M as Mac>::new_from_slice(secret)
+        let mut mac = <M as hmac::digest::KeyInit>::new_from_slice(secret)
             .map_err(|_| Error("cannot initialize TLS PRF".into()))?;
         mac.update(seed);
         Zeroizing::new(mac.finalize().into_bytes().to_vec())
     };
     let mut output = Zeroizing::new(Vec::with_capacity(length));
     while output.len() < length {
-        let mut mac = <M as Mac>::new_from_slice(secret)
+        let mut mac = <M as hmac::digest::KeyInit>::new_from_slice(secret)
             .map_err(|_| Error("cannot initialize TLS PRF".into()))?;
         mac.update(&a);
         mac.update(seed);
         output.extend_from_slice(&mac.finalize().into_bytes());
-        let mut next_a = <M as Mac>::new_from_slice(secret)
+        let mut next_a = <M as hmac::digest::KeyInit>::new_from_slice(secret)
             .map_err(|_| Error("cannot initialize TLS PRF".into()))?;
         next_a.update(&a);
         a = Zeroizing::new(next_a.finalize().into_bytes().to_vec());
@@ -555,7 +557,7 @@ impl SpecialTls11Stream {
         configured_special_leaf_sha256: Option<&[u8; 32]>,
     ) -> Result<Self> {
         let mut client_random = [0_u8; 32];
-        OsRng.fill_bytes(&mut client_random);
+        UnwrapErr(SysRng).fill_bytes(&mut client_random);
         let client_hello = build_special_client_hello(client_random)?;
         stream.write_all(&client_hello)?;
         let mut transcript = Zeroizing::new(client_hello[5..].to_vec());
@@ -583,10 +585,10 @@ impl SpecialTls11Stream {
             .map_err(|_| Error("TLS server certificate has no supported RSA key".into()))?;
         let mut premaster = Zeroizing::new([0_u8; 48]);
         premaster[..2].copy_from_slice(&TLS11_VERSION);
-        OsRng.fill_bytes(&mut premaster[2..]);
+        UnwrapErr(SysRng).fill_bytes(&mut premaster[2..]);
         let encrypted_premaster = Zeroizing::new(
             public_key
-                .encrypt(&mut OsRng, Pkcs1v15Encrypt, premaster.as_ref())
+                .encrypt(&mut RsaOsRng, Pkcs1v15Encrypt, premaster.as_ref())
                 .map_err(|_| Error("TLS RSA key exchange failed".into()))?,
         );
         let mut key_exchange_body =
@@ -719,7 +721,7 @@ impl SpecialTls11Stream {
                     match parse_heartbeat(&plaintext)? {
                         HeartbeatMessage::Request(payload) => {
                             let mut padding = Zeroizing::new([0_u8; MIN_HEARTBEAT_PADDING]);
-                            OsRng.fill_bytes(padding.as_mut());
+                            UnwrapErr(SysRng).fill_bytes(padding.as_mut());
                             let response = build_heartbeat_response(payload, &padding)?;
                             let encrypted = self.client_cipher.encrypt(HEARTBEAT, &response)?;
                             write_record(&mut self.stream, HEARTBEAT, &encrypted)?;
@@ -784,6 +786,24 @@ mod tests {
         handle.shutdown().unwrap();
         let mut byte = [0_u8; 1];
         assert_eq!(server.read(&mut byte).unwrap(), 0);
+    }
+
+    #[test]
+    fn legacy_hmacs_retain_rfc2202_case_one_vectors() {
+        // RFC 2202 section 2/3 test case 1: public interoperability vectors,
+        // not credentials or a change to the vendor TLS algorithms.
+        let mut md5 = <HmacMd5 as hmac::digest::KeyInit>::new_from_slice(&[0x0b; 16]).unwrap();
+        md5.update(b"Hi There");
+        assert_eq!(
+            hex::encode(md5.finalize().into_bytes()),
+            "9294727a3638bb1c13f48ef8158bfc9d"
+        );
+        let mut sha1 = <HmacSha1 as hmac::digest::KeyInit>::new_from_slice(&[0x0b; 20]).unwrap();
+        sha1.update(b"Hi There");
+        assert_eq!(
+            hex::encode(sha1.finalize().into_bytes()),
+            "b617318655057264e28bc0b6fb378c8ef146be00"
+        );
     }
 
     #[test]

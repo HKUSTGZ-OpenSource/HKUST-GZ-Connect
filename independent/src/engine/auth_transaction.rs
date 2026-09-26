@@ -6,8 +6,9 @@
 //! implementation; only [`ChallengeView`] is safe to serialize outside Rust.
 
 use crate::{Error, ErrorKind, Result};
-use rand::RngCore;
-use rand::rngs::OsRng;
+use rand::Rng;
+use rand::rand_core::UnwrapErr;
+use rand::rngs::SysRng;
 use serde::Serialize;
 use std::collections::{BTreeSet, VecDeque};
 use std::fmt::{Debug, Formatter};
@@ -191,7 +192,7 @@ pub struct TransactionId([u8; 16]);
 impl TransactionId {
     pub fn generate() -> Self {
         let mut bytes = [0_u8; 16];
-        OsRng.fill_bytes(&mut bytes);
+        UnwrapErr(SysRng).fill_bytes(&mut bytes);
         Self(bytes)
     }
 
@@ -642,10 +643,10 @@ impl<T: AuthTransaction> AuthTransactionOwner<T> {
                 "duplicate auth request id",
             ));
         }
-        if self.request_order.len() == MAX_TRACKED_AUTH_REQUEST_IDS {
-            if let Some(expired) = self.request_order.pop_front() {
-                self.recent_request_ids.remove(&expired);
-            }
+        if self.request_order.len() == MAX_TRACKED_AUTH_REQUEST_IDS
+            && let Some(expired) = self.request_order.pop_front()
+        {
+            self.recent_request_ids.remove(&expired);
         }
         self.request_order.push_back(request_id);
         self.recent_request_ids.insert(request_id);

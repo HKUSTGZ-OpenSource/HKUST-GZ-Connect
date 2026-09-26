@@ -2,8 +2,9 @@ use crate::gateway_auth::{AUTHENTICATED_SESSION_ID_LEN, AuthenticatedSessionId};
 use crate::gateway_connector::GatewayConnectorGeneration;
 use crate::special_tls11::SpecialTls11Stream;
 use crate::{Error, ErrorKind, Result};
-use rand::RngCore;
-use rand::rngs::OsRng;
+use rand::Rng;
+use rand::rand_core::UnwrapErr;
+use rand::rngs::SysRng;
 use rustls::client::WebPkiServerVerifier;
 use rustls::client::danger::ServerCertVerifier;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
@@ -533,7 +534,7 @@ pub fn probe_special_tls_contract(
     let (host, address) = resolve_gateway(&url)?;
     let mut stream = connect_gateway_tcp(address, timeout)?;
     let mut random = [0_u8; 32];
-    OsRng.fill_bytes(&mut random);
+    UnwrapErr(SysRng).fill_bytes(&mut random);
     let hello = build_special_client_hello(random)?;
     random.zeroize();
     stream
