@@ -144,7 +144,13 @@ entrypoint. Main falls to 1,136 lines/34 dependencies; M3's dependency targets r
 adaptation and settings-read feedback into the existing Runtime. Main falls to
 1,084 lines/33 dependencies; journal recovery and final M3 targets remain separate.
 
-Move remaining settings/credential transaction, connection start/stop, browser-open and update
+[Credential transaction ownership](desktop-credential-transaction-owner.md) moves
+legacy journal recovery, its blocked/retry state, mutation dispatch and recovery
+feedback into that same Runtime. At the candidate tree Main falls to 1,008 lines,
+32 direct / 46 effective dependencies, with 170 transitive dependencies unchanged.
+The first-stage direct dependency target and remaining M3 composition work stay open.
+
+Move remaining settings-surface coordination, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 
 ```text

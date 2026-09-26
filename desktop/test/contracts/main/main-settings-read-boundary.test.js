@@ -23,7 +23,7 @@ function section(startText, endText) {
 test('Main injects persistence-read presentation and legacy files instead of owning their algorithms', () => {
   assert.match(source, /legacy: DesktopPersistenceRuntime\.createLegacyAdapter\(\{/u);
   assert.match(source, /settingsFile: SETTINGS, credentialFile: CRED, safeStorage, platform: process\.platform/u);
-  assert.match(source, /settingsPresentation: \{ getState: \(\) => state, translate: \(key\) => t\(key\), emit \}/u);
+  assert.match(source, /settingsPresentation: \{\s*getState: \(\) => state,\s*translate: \(key\) => t\(key\),\s*emit,\s*getAdditionalNotice: \(\) => settingsRecoveryNoticeText,\s*\}/u);
   assert.match(source, /return persistenceRuntime\.reportSettingsReadFailure\(cause, options\)/u);
   assert.match(source, /return persistenceRuntime\.loadSettingsOrReport\(options\)/u);
   assert.doesNotMatch(source, /function (?:loadLegacySettings|saveLegacySettings|openLegacyCredential)\(/u);
