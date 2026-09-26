@@ -108,3 +108,32 @@ test('revocation rejects stale generation and context before any side effect', (
   assert.deepEqual(f.calls, []);
   assert.equal(f.machine.isConnected(), true);
 });
+
+test('late Browser suspension errors cannot publish after generation context or intent retirement', async () => {
+  for (const action of ['close', 'revokeServing']) {
+    for (const retirement of ['generation', 'context', 'intent']) {
+      const f = fixture({ connected: true });
+      let reject, current = true;
+      f.owner.suspendBrowser = () => new Promise((_resolve, fail) => { reject = fail; });
+      const contextCurrent = () => current;
+      if (action === 'close') f.owner.close({ code: 1, generation: 7 }, '', null, 'network_unhealthy', 6180, contextCurrent);
+      else f.owner.revokeServing(7, contextCurrent);
+      const emissions = f.calls.filter(([name]) => name === 'emit').length;
+      if (retirement === 'generation') f.replaceGeneration(8);
+      else if (retirement === 'context') current = false;
+      else f.machine.beginStop(false);
+      reject(new Error('synthetic delayed policy failure'));
+      await new Promise(setImmediate);
+      assert.equal(f.presentation.browserNotice, null, `${action}/${retirement}`);
+      assert.equal(f.calls.filter(([name]) => name === 'emit').length, emissions);
+    }
+  }
+});
+
+test('a current Browser suspension failure retains its actionable notice', async () => {
+  const f = fixture({ connected: true });
+  f.owner.suspendBrowser = () => Promise.reject(new Error('synthetic current policy failure'));
+  f.owner.revokeServing(7);
+  await new Promise(setImmediate);
+  assert.equal(f.presentation.browserNotice, 'error.browserRoutingAfterSave');
+});

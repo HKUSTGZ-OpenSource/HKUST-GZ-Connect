@@ -257,12 +257,14 @@ class EngineServingCoordinator {
   finishConnected() {
     const wasConnected = this.connectionState.isConnected();
     if (!this.isCurrent(this.generation) ||
-        !this.connectionState.markConnected(this.generation)) return;
+        !this.connectionState.markConnected(this.generation)) return false;
     this.presentation.lastError = null;
     if (!wasConnected) {
       this.onFirstConnected();
     }
     this.emit();
+    return this.isCurrent(this.generation) && this.connectionState.isCurrentGeneration(this.generation) &&
+      this.connectionState.isConnected();
   }
   markConnected() {
     if (!this.isCurrent(this.generation) ||
@@ -282,7 +284,7 @@ class EngineServingCoordinator {
       if (!this.isCurrent(this.generation)) return;
       // The engine is usable by authenticated external clients, while the
       // built-in browser deliberately remains behind its request gate.
-      this.finishConnected();
+      if (!this.finishConnected()) return;
       this.presentation.browserNotice = this.t('error.browserRoutingAfterSave', { message: error.message });
       this.emit();
     });
@@ -321,7 +323,10 @@ class EngineTerminationCoordinator {
     // close event reaches JavaScript. Repoint the persistent browser Session at
     // its fail-closed PAC immediately; a later generation may restore it only
     // after reporting listener_ready.
+    const suspensionIntent = this.connectionState.snapshot().intent;
     this.suspendBrowser().catch((error) => {
+      if (!this.isGenerationCurrent(generation) || !isCurrentContext(generation) ||
+          this.connectionState.snapshot().intent !== suspensionIntent) return;
       this.presentation.browserNotice = this.t('error.browserRoutingAfterSave', { message: error.message });
       this.emit();
     });
@@ -394,7 +399,10 @@ class EngineTerminationCoordinator {
     if (!isCurrentContext(generation) || !this.isGenerationCurrent(generation) ||
         !this.connectionState.markEngineStopping(generation, { uptimeMs })) return false;
     // Its epoch and request gate synchronously defeat an awaiting activation.
+    const suspensionIntent = this.connectionState.snapshot().intent;
     this.suspendBrowser().catch((error) => {
+      if (!this.isGenerationCurrent(generation) || !isCurrentContext(generation) ||
+          this.connectionState.snapshot().intent !== suspensionIntent) return;
       this.presentation.browserNotice = this.t('error.browserRoutingAfterSave', { message: error.message });
       this.emit();
     });

@@ -94,6 +94,16 @@ test('current browser activation failure preserves existing connected-but-browse
   assert.equal(f.calls.filter(([name]) => name === 'first-connected').length, 1);
 });
 
+test('activation failure cannot publish into a context retired during connected promotion', async () => {
+  const f = fixture({ suspended: true });
+  f.serving.onFirstConnected = () => { f.stale(); f.machine.beginStop(false); };
+  ready(f);
+  f.reject();
+  await new Promise(setImmediate);
+  assert.equal(f.presentation.browserNotice, null);
+  assert.equal(f.calls.filter(([name]) => name === 'emit').length, 1);
+});
+
 test('fatal and listener failures revoke serving before requesting stop', async () => {
   for (const [handler, code, stops] of [
     ['onListenerMismatch', 'LOCAL_LISTENER_FAILED', true],
