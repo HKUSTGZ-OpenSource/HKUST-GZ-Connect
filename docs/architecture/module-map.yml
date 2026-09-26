@@ -137,6 +137,7 @@ modules:
     paths:
       - independent/src/engine/**
       - independent/src/bin/ec-engine.rs
+      - independent/src/bin/engine_app/**
       - independent/src/gateway_auth.rs
       - independent/src/gateway_connector.rs
       - independent/src/gateway_http.rs

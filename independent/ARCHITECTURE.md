@@ -32,6 +32,7 @@ editing the SOCKS frontend, desktop UI, or unrelated protocol generations.
 | `engine/socks.rs` | One-port protocol detection and dispatch; compatible, optional-auth, and strict SOCKS5 contracts plus the strict HTTP frontend | HTTP message rewriting or gateway protocol details |
 | `engine/socks/http_forward.rs` | Strict-only bounded ordinary HTTP/WS parsing, header rewriting, body framing, and streaming | DNS, destination authorization, credentials, or gateway protocol details |
 | `bin/ec-engine.rs` | Process assembly, signals, health shutdown, Control v2 action integration, logout and structured terminal state | Event/control encoding or desktop policy |
+| `bin/engine_app/arguments.rs` | Binary-private CLI validation, generation hints and compile-time fixture selection | Credential input, filesystem/environment reads, sockets, provider or gateway behavior |
 | `desktop/lib/campus-browser.js` | Isolated browser session, proxy policy and safe navigation | Gateway authentication or packet formats |
 | `desktop/lib/engine-connection-runtime.js` | Event/control stdout ownership, generation validation, hello deadline and typed Desktop callbacks | UI wording, credential persistence, Browser routing or Engine process policy |
 | `desktop/lib/{routing-rule,certificate-pin,campus-resource}-ipc.js` | Exact-key control-panel CRUD validation and injected transaction calls | Electron window ownership, authentication or transport state |
