@@ -30,15 +30,21 @@ fn normal_dependencies(laboratory: bool) -> BTreeSet<String> {
 #[test]
 fn laboratory_dependencies_require_explicit_opt_in() {
     let production = normal_dependencies(false);
-    let laboratory = normal_dependencies(true);
+    // Default-mode CI has not downloaded optional research crates. Requiring
+    // their offline graph here turns a production boundary test into a cache
+    // warm-up requirement. The explicit laboratory build downloads/compiles
+    // them and checks its positive graph without weakening the default check.
+    let laboratory = cfg!(feature = "compatibility-lab").then(|| normal_dependencies(true));
     for dependency in ["flate2", "iced-x86", "object", "tar", "xz2", "zstd"] {
         assert!(
             !production.contains(dependency),
             "production acquired {dependency}"
         );
-        assert!(
-            laboratory.contains(dependency),
-            "laboratory lost {dependency}"
-        );
+        if let Some(laboratory) = &laboratory {
+            assert!(
+                laboratory.contains(dependency),
+                "laboratory lost {dependency}"
+            );
+        }
     }
 }

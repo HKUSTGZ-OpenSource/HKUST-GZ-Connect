@@ -65,6 +65,12 @@ graph test pass. Desktop remains 1,538 total/1,524 passed/14 platform skips/0 fa
 source-location regressions and synthetic auth-control pipe pass. Native/required exact-head and
 package/performance checks remain separate gates before merging or closing #82.
 
+The dependency-graph regression is also exercised with an isolated production-only Cargo cache:
+the negative production graph and default-mode test pass while the old forced laboratory graph
+reproduces an offline missing-optional-crate failure. Positive laboratory assertions execute in
+the explicit laboratory build after its dependencies are compiled. No production exclusion,
+compile-fail, positive opt-in or required check is dropped to mask this cold-runner setup issue.
+
 Validate formatting, warning-free Clippy and full tests independently in production, laboratory
 and lifecycle-fixture modes. Run the synthetic Desktop/Engine auth pipe, 100-round process soak,
 offline performance guards, exact-tree architecture/governance/secret/syntax checks, native
