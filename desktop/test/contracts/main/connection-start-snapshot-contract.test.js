@@ -4,27 +4,27 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
 
 test('connect takes its final settings and credential snapshot after the last pre-spawn await', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
-  const functionStart = source.indexOf('async function connectOnce(');
-  const functionEnd = source.indexOf('\nfunction ensureEngineStopped()', functionStart);
+  assert.match(source, /engineAttempts\.run\(isRetry, intent\)/u);
+  const functionStart = attempt.indexOf('  async run(');
+  const functionEnd = attempt.indexOf('\n}\n\nmodule.exports', functionStart);
   assert.ok(functionStart >= 0 && functionEnd > functionStart);
-  const connectOnce = source.slice(functionStart, functionEnd);
+  const connectOnce = attempt.slice(functionStart, functionEnd);
 
-  const logAwait = connectOnce.indexOf('await logWriter.reset()');
+  const logAwait = connectOnce.indexOf('await this.logWriter.reset()');
   const finalSnapshot = connectOnce.indexOf('// FINAL_CONNECTION_SNAPSHOT:');
-  const spawn = connectOnce.indexOf('const started = engineSupervisor.start(');
+  const spawn = connectOnce.indexOf('const started = this.engineSupervisor.start(');
   assert.ok(logAwait >= 0 && finalSnapshot > logAwait && spawn > finalSnapshot);
 
   const snapshotToSpawn = connectOnce.slice(finalSnapshot, spawn);
-  assert.match(snapshotToSpawn, /s = loadSettings\(\);/);
+  assert.match(snapshotToSpawn, /s = this\.loadSettings\(\);/);
   assert.match(snapshotToSpawn,
-    /const credentialOwner = openVpnCredential\(\{/);
-  assert.match(snapshotToSpawn, /memoryBroker: oneShotVpnCredential/);
-  assert.match(snapshotToSpawn, /openPersistent: \(\) => persistenceRuntime\.openCredential\(\)/);
-  assert.match(snapshotToSpawn,
-    /profileId: activeSchoolProfile\.activeContextBinding\(\)\.profileId/);
+    /const credentialOwner = this\.openCredential\(this\.profile\.activeContextBinding\(\)\.profileId\)/);
+  assert.match(source, /openCredential: profileId => openVpnCredential\(\{ profileId, memoryBroker: oneShotVpnCredential/);
+  assert.match(source, /openPersistent: \(\) => persistenceRuntime\.openCredential\(\)/);
   assert.match(snapshotToSpawn, /credentialOwner\.withStrings\(\(account, password\)/);
   assert.match(snapshotToSpawn, /finally \{ credentialOwner\.destroy\(\); \}/);
   assert.doesNotMatch(snapshotToSpawn, /\bawait\b/);
@@ -32,9 +32,10 @@ test('connect takes its final settings and credential snapshot after the last pr
 
 test('the final snapshot is the one passed to engine arguments and credential stdin', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
-  const functionStart = source.indexOf('async function connectOnce(');
-  const functionEnd = source.indexOf('\nfunction ensureEngineStopped()', functionStart);
-  const connectOnce = source.slice(functionStart, functionEnd);
+  assert.match(source, /engineAttempts\.run\(isRetry, intent\)/u);
+  const functionStart = attempt.indexOf('  async run(');
+  const functionEnd = attempt.indexOf('\n}\n\nmodule.exports', functionStart);
+  const connectOnce = attempt.slice(functionStart, functionEnd);
   const finalSnapshot = connectOnce.indexOf('// FINAL_CONNECTION_SNAPSHOT:');
   const finalPath = connectOnce.slice(finalSnapshot);
 

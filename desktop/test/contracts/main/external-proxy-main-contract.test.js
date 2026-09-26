@@ -4,19 +4,20 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
 const integrationSuite = fs.readFileSync(
   path.join(__dirname, '..', '..', '..', 'lib', 'ipc', 'integration-center-suite.js'), 'utf8',
 );
-const connectStart = source.indexOf('async function connectOnce(');
-const connectEnd = source.indexOf('\nfunction ensureEngineStopped()', connectStart);
-const connectOnce = source.slice(connectStart, connectEnd);
+const connectOnce = attempt;
 
 test('strict and compatibility generations share one stable credential with distinct policies', () => {
+  assert.match(source, /engineAttempts\.run\(isRetry, intent\)/u);
   assert.match(source, /const PROXY_CREDENTIAL = runtimeStoragePaths\.proxyCredential/);
-  assert.match(connectOnce, /proxyCredential = generationProxyCredential\(Number\(s\.port\)\);\s*proxyCredentialMode = 'required'/);
-  assert.match(connectOnce, /stableProxyCredential \|\| fs\.existsSync\(PROXY_CREDENTIAL\)[\s\S]*proxyCredentialMode = 'optional'/);
+  assert.match(source, /hasStableProxyCredential: \(\) => !!stableProxyCredential, proxyCredentialFile: PROXY_CREDENTIAL/u);
+  assert.match(connectOnce, /proxyCredential = this\.generationProxyCredential\(Number\(s\.port\)\);\s*proxyCredentialMode = 'required'/);
+  assert.match(connectOnce, /this\.hasStableProxyCredential\(\) \|\| this\.fileSystem\.existsSync\(this\.proxyCredentialFile\)[\s\S]*proxyCredentialMode = 'optional'/);
   assert.match(connectOnce, /proxyCredentialMode === 'required'[^\n]+--socks-auth-stdin/);
   assert.match(connectOnce, /proxyCredentialMode === 'optional'[^\n]+--socks-auth-optional-stdin/);
   assert.match(

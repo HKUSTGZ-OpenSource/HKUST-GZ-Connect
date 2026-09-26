@@ -26,16 +26,13 @@ const {
 } = require('./lib/persistence/credentials/credential-settings-transaction');
 const { desktopRuntimeComposition } = require('./lib/app/desktop-runtime-composition');
 const { ActiveContextLease, assertActiveContextSwitchStartupClear, createLegacyRuntimeStoragePaths, createMainProfileSwitchComposition, createMultiSchoolStartupInitializer, createPageFavoriteController, customGatewayProductAvailability, DesktopPersistenceRuntime, LegacyMigrationCredentialOwner, ProfileWorkspaceStartupRuntime, relaunchAfterPersistenceMigration, ResourceLibraryRuntime, resolveUserDataOverride, selectProfileWorkspacePreReadyStorage, writePersistenceE2EMarker, writeProfileSwitchE2EMarker } = desktopRuntimeComposition;
-const { classifyEngineCode } = require('./lib/connection/engine/engine-output');
 const { AuthChallengeCoordinator, EngineControlRegistry } = require('./lib/connection/engine/engine-control-suite');
-const { EngineConnectionRuntime, EngineServingCoordinator, EngineTerminationCoordinator } = require('./lib/connection/engine/engine-connection-runtime');
+const { EngineTerminationCoordinator } = require('./lib/connection/engine/engine-connection-runtime');
 const { DesktopShell } = require('./lib/platform/shell/desktop-shell');
-const { SYNTHETIC_ENGINE_E2E_ENV, resolveEngineLaunch, resolveGatewayProbeLaunch, resolveNativeResourcePath } = require('./lib/connection/engine/engine-process');
+const { SYNTHETIC_ENGINE_E2E_ENV, EngineAttemptCoordinator, resolveGatewayProbeLaunch, resolveNativeResourcePath } = require('./lib/connection/engine/engine-process');
 const {
   EngineSupervisor,
   cleanupOrphanedEngine,
-  removeEngineOwnerRecord,
-  writeEngineOwnerRecord,
 } = require('./lib/connection/engine/engine-supervisor');
 const { ConnectionTelemetryCoordinator } = require('./lib/connection/telemetry/connection-telemetry-coordinator');
 const { DomainRoutePolicyStore } = require('./lib/routing/policy/domain-route-policy');
@@ -658,292 +655,33 @@ const engineTermination = new EngineTerminationCoordinator({
 function handleEngineClose(...args) { return engineTermination.close(...args); }
 function revokeEngineServing(...args) { return engineTermination.revokeServing(...args); }
 function handleEngineExitBoundary(...args) { return engineTermination.exit(...args); }
-function failConnectionStart(intent, errorKey, result = { ok: false }) {
-  connectionState.failIntent(intent); state.lastError = t(errorKey); emit(); return result;
-}
-async function connectOnce(isRetry, intent) {
-  if (engineSupervisor.hasActive || !connectionState.canContinue(intent)) {
-    return { ok: false, stale: true };
-  }
-  if (!connectionState.beginConnectAttempt(intent, { isRetry })) {
-    return { ok: false, stale: true };
-  }
-  // Platform inspection launches route/proxy/process helpers. Run it
-  // asynchronously before the final no-yield settings/credential snapshot so
-  // Electron's Main loop stays responsive and the Engine receives a current
-  // underlay binding without weakening the final spawn boundary below.
-  let underlaySelection = '';
-  try { underlaySelection = loadSettingsOrReport().underlaySourceAddress; } catch {}
-  await networkEnvironmentService.refresh(underlaySelection, { probePublicEgress: false });
-  if (!connectionState.canContinue(intent)) return { ok: false, stale: true };
-  if (credentialTransactionBlocked) {
-    const recovery = retryCredentialTransactionRecovery();
-    if (recovery.status === 'blocked') {
-      connectionState.failIntent(intent);
-      state.lastError = t('error.credentialRecoveryBlocked');
-      emit();
-      return { ok: false, blocked: true };
-    }
-  }
-  let s;
-  let username = '';
-  let pw;
-  let engineConfigBinding;
-  state.lastError = null; state.failureCode = null; state.failureKind = 'none';
-  state.clientIp = null;
-  state.dnsMode = 'unknown'; activeSchoolProfile.clearCapabilitySnapshot();
-  emit();
-  if (!connectionState.canAttempt(intent)) {
-    emit();
-    return { ok: false, stale: true };
-  }
-  try {
-    // Keep every attempt in one diagnostic session. Clearing the file on an
-    // automatic retry used to erase the failure that triggered that retry.
-    if (!isRetry) await logWriter.reset();
-    logWriter.append(`\n--- connection attempt ${connectionState.snapshot().attemptNumber} ---\n`);
-  } catch { reportLogFailure(); }
-  if (!connectionState.canAttempt(intent)) {
-    emit();
-    return { ok: false, stale: true };
-  }
-  if (credentialTransactionBlocked) {
-    const recovery = retryCredentialTransactionRecovery();
-    if (recovery.status === 'blocked') {
-      connectionState.failIntent(intent);
-      state.lastError = t('error.credentialRecoveryBlocked');
-      emit();
-      return { ok: false, blocked: true };
-    }
-  }
-  // FINAL_CONNECTION_SNAPSHOT: log reset above is connectOnce's last async yield
-  // before spawn. Re-read the matching settings/credential pair now, then keep
-  // the path through EngineSupervisor.start() and stdin synchronous. A settings
-  // save during log I/O therefore either lands in this snapshot, or runs after
-  // the child is active and follows the normal reconnect path.
-  try {
-    // Validate the immutable reviewed profile/config binding before touching
-    // the credential store. A missing or replaced package profile must never
-    // cause a password to be decrypted for an unverified target.
-    engineConfigBinding = activeSchoolProfile.verifyEngineLaunchBinding();
-  } catch {
-    return failConnectionStart(intent, 'error.engineConfigMissing', { ok: false, profileConfigInvalid: true });
-  }
-  const engineConfig = engineConfigBinding.path;
-  try {
-    s = loadSettings();
-    const credentialOwner = openVpnCredential({
-      profileId: activeSchoolProfile.activeContextBinding().profileId, memoryBroker: oneShotVpnCredential,
-      openPersistent: () => persistenceRuntime.openCredential() });
-    if (credentialOwner) {
-      try {
-        credentialOwner.withStrings((account, password) => {
-          username = account;
-          pw = password;
-        });
-      } finally { credentialOwner.destroy(); }
-    }
-  } catch (error) {
-    connectionState.failIntent(intent);
-    if (error?.credentialStatus) {
-      state.lastError = t(credentialLoadErrorKey(error.credentialStatus));
-      emit();
-      return { ok: false, credentialStatus: error.credentialStatus };
-    }
-    reportSettingsReadFailure(error, { emitState: false });
-    emit();
-    return { ok: false, settingsUnavailable: true };
-  }
-  if (!username || !pw) {
-    pw = '';
-    return failConnectionStart(intent, 'error.needCredentials');
-  }
-  try {
-    if (username.length > 256 || pw.length > 4096) throw new Error('credential too long');
-    parseCredentialField(username, '账号');
-    parseCredentialField(pw, '密码');
-  } catch {
-    pw = '';
-    return failConnectionStart(intent, 'error.invalidStoredCredentials', { ok: false, invalidCredentials: true });
-  }
-  const launch = resolveEngineLaunch({ appIsPackaged: app.isPackaged, baseDirectory: __dirname,
-    nativeEngine: enginePath(), execPath: process.execPath });
-  const bin = launch.command;
-  const underlayArgs = networkEnvironmentService.engineArguments(s.underlaySourceAddress);
-  if (!underlayArgs) {
-    pw = ''; return failConnectionStart(intent, 'error.underlayUnavailable', { ok: false, underlayUnavailable: true });
-  }
-  if (!fs.existsSync(bin)) return failConnectionStart(intent, 'error.engineMissing');
-  clearActiveProxyCredential();
-  let proxyCredential = null;
-  let proxyCredentialMode = 'none';
-  if (s.strictProxyAuth === true) {
-    try {
-      proxyCredential = generationProxyCredential(Number(s.port));
-      proxyCredentialMode = 'required';
-    } catch {
-      return failConnectionStart(intent, 'error.proxyCredentialUnavailable');
-    }
-  } else if (stableProxyCredential || fs.existsSync(PROXY_CREDENTIAL)) {
-    // The packaged SSH helper reads its endpoint from the sidecar and offers
-    // both NO_AUTH and RFC1929, so one copied ProxyCommand keeps working when
-    // the user later changes port or toggles strict mode. Do not create this
-    // optional credential for ordinary compatibility-mode users who have
-    // never requested an external configuration; that avoids unnecessary OS
-    // secure-storage access. Failure never blocks the core tunnel itself.
-    try {
-      proxyCredential = generationProxyCredential(Number(s.port));
-      proxyCredentialMode = 'optional';
-    } catch {}
-  }
-  let resolvedBin;
-  try { resolvedBin = fs.realpathSync(bin); } catch { resolvedBin = path.resolve(bin); }
-  if (!launch.synthetic && killStrayEngines(resolvedBin) !== true) {
-    proxyCredential?.destroy();
-    removeExternalProxySidecar();
-    pw = '';
-    return failConnectionStart(intent, 'error.engineCleanupUnconfirmed', {
-      ok: false,
-      cleanupUnconfirmed: true,
-    });
-  }
-  let engineGeneration = null;
-  let ownedEngine = null;
-  let engineRuntime = null;
-  let engineContextToken = null;
-  const isCurrentEngineContext = (generation) => activeEngineContextCurrent(generation, engineContextToken);
-  const serving = new EngineServingCoordinator({
-    getGeneration: () => engineGeneration, port: s.port, connectionState,
-    getBrowser: () => campusBrowserManager, getPresentation: () => state, getTranslator: () => t,
-    isCurrent: isCurrentEngineContext, emit, appendDiagnostic: chunk => logWriter.append(chunk),
-    revokeServing: () => revokeEngineServing(engineGeneration, isCurrentEngineContext),
-    stopEngine: () => engineSupervisor.stop({ graceMs: 1000, forceWaitMs: STOP_FORCE_WAIT_MS }),
-    observeCapabilities: report => activeSchoolProfile.observeCapabilityReport(report),
-    onFirstConnected: () => {
-      connectedAt = Date.now();
-      telemetryCoordinator.start(engineGeneration, engineContextToken);
-    },
-  });
-  connectionState.invalidateEngineGeneration();
-  const expectedEngineGeneration = engineSupervisor.currentGeneration + 1;
-  const engineArgs = [
-    '--config', engineConfig,
-    '--profile-binding-v1-stdin',
-    '--credentials-stdin',
-    '--socks-bind', `127.0.0.1:${Number(s.port)}`,
-    '--generation', String(expectedEngineGeneration),
-    '--control-api-v2-stdin',
-  ];
-  if (proxyCredentialMode === 'required') engineArgs.push('--socks-auth-stdin');
-  if (proxyCredentialMode === 'optional') engineArgs.push('--socks-auth-optional-stdin');
-  engineArgs.push(...underlayArgs);
-  const started = engineSupervisor.start({
-    command: bin,
-    args: [...launch.argsPrefix, ...engineArgs],
-    options: { stdio: ['pipe', 'pipe', 'pipe'], ...launch.options },
-    onError: ({ error, generation }) => {
-      if (!isCurrentEngineContext(generation)) return;
-      serving.fatalCode = 'EVENT_OUTPUT_FAILED';
-      state.lastError = t('error.engineStart', { message: error.message });
-      emit();
-    },
-    onExit: (result) => { engineRuntime?.beginExitDrain(); handleEngineExitBoundary(result, isCurrentEngineContext); },
-    onClose: (result) => {
-      const structuredStopReason = engineRuntime?.stoppedReason || null;
-      engineRuntime?.dispose();
-      if (ownedEngine) removeEngineOwnerRecord(ENGINE_OWNER, ownedEngine);
-      handleEngineClose(
-        result,
-        serving.diagnosticTail,
-        serving.fatalCode,
-        structuredStopReason,
-        Number(s.port), isCurrentEngineContext,
-      );
-    },
-  });
-  if (!started.ok) {
-    proxyCredential?.destroy();
-    removeExternalProxySidecar();
-    if (started.reason === 'spawn') {
-      connectionState.failIntent(intent);
-      state.lastError = t('error.engineStart', { message: started.error.message });
-      emit();
-    }
-    return { ok: false, error: started.error };
-  }
-  const child = started.child;
-  engineGeneration = started.generation;
-  connectionState.bindEngineGeneration(engineGeneration);
-  engineContextToken = activeContextLease.capture({ connectionIntent: intent, engineGeneration });
-  if (engineGeneration !== expectedEngineGeneration) {
-    proxyCredential?.destroy();
-    removeExternalProxySidecar();
-    serving.fatalCode = 'EVENT_OUTPUT_FAILED';
-    state.lastError = classifyEngineCode(serving.fatalCode, s.port, t);
-    emit();
-    await engineSupervisor.stop({ graceMs: 0, forceWaitMs: STOP_FORCE_WAIT_MS });
-    return { ok: false };
-  }
-  if (proxyCredential) {
-    if (!proxyCredential.bindGeneration(engineGeneration, Number(s.port))) {
-      proxyCredential.destroy();
-      removeExternalProxySidecar();
-      serving.fatalCode = 'EVENT_OUTPUT_FAILED';
-      state.lastError = t('error.proxyCredentialUnavailable');
-      emit();
-      await engineSupervisor.stop({ graceMs: 0, forceWaitMs: STOP_FORCE_WAIT_MS });
-      return { ok: false };
-    }
-    activeProxyCredential = proxyCredential;
-  }
-  if (!launch.synthetic && process.platform === 'win32' &&
-      Number.isInteger(child.pid) && child.pid > 0) {
-    ownedEngine = { pid: child.pid, executablePath: resolvedBin };
-    try {
-      writeEngineOwnerRecord(ENGINE_OWNER, ownedEngine);
-    } catch {
-      clearActiveProxyCredential(engineGeneration);
-      removeExternalProxySidecar();
-      state.lastError = t('error.engineCleanupUnconfirmed');
-      emit();
-      await engineSupervisor.stop({ graceMs: 0, forceWaitMs: STOP_FORCE_WAIT_MS });
-      return { ok: false, cleanupUnconfirmed: true };
-    }
-  }
-
-  engineRuntime = new EngineConnectionRuntime({
-    generation: engineGeneration,
-    contextToken: engineContextToken,
-    expectedPort: Number(s.port),
-    stdin: child.stdin,
-    controlRegistry: engineControlRegistry,
-    isCurrent: isCurrentEngineContext,
-    handlers: serving.handlers,
-  });
-  // An engine that dies before reading stdin (missing library, wrong
-  // architecture) makes this write emit EPIPE. Without a listener that would
-  // become an uncaught exception and take the whole application down, so the
-  // failure is left to the supervisor's final close handler instead.
-  child.stdin.on('error', () => {});
-  let proxyCredentialLines = proxyCredential
-    ? proxyCredential.stdinSuffix(engineGeneration)
-    : '';
-  // Keep the credential/control pipe open: EOF cancels active authentication;
-  // after connection it closes only the Control v2/v3 stream.
-  child.stdin.write(
-    `${engineConfigBinding.stdinFrame}\n${username}\n${pw}\n${proxyCredentialLines}`,
-  );
-  username = '';
-  pw = '';
-  proxyCredentialLines = '';
-  engineRuntime.start(child.stdout);
-  child.stderr.on('data', (data) => {
-    const chunk = data.toString();
-    logWriter.append(chunk);
-    serving.applyHumanDiagnostic(chunk);
-  });
-  return { ok: true, generation: engineGeneration };
-}
+const engineAttempts = new EngineAttemptCoordinator({
+  engineSupervisor, connectionState, appIsPackaged: app.isPackaged, baseDirectory: __dirname,
+  getState: () => state, getTranslator: () => t, getLogWriter: () => logWriter,
+  isCredentialTransactionBlocked: () => credentialTransactionBlocked, retryCredentialTransactionRecovery,
+  loadSettingsOrReport, loadSettings, reportSettingsReadFailure, reportLogFailure, emit,
+  networkEnvironment: {
+    refresh: (...args) => networkEnvironmentService.refresh(...args),
+    engineArguments: value => networkEnvironmentService.engineArguments(value),
+  },
+  profile: {
+    verifyEngineLaunchBinding: () => activeSchoolProfile.verifyEngineLaunchBinding(),
+    activeContextBinding: () => activeSchoolProfile.activeContextBinding(),
+    clearCapabilitySnapshot: () => activeSchoolProfile.clearCapabilitySnapshot(),
+    observeCapabilityReport: report => activeSchoolProfile.observeCapabilityReport(report),
+  },
+  openCredential: profileId => openVpnCredential({ profileId, memoryBroker: oneShotVpnCredential,
+    openPersistent: () => persistenceRuntime.openCredential() }),
+  credentialLoadErrorKey, parseCredentialField, enginePath,
+  clearActiveProxyCredential, generationProxyCredential, removeExternalProxySidecar, killStrayEngines,
+  hasStableProxyCredential: () => !!stableProxyCredential, proxyCredentialFile: PROXY_CREDENTIAL,
+  setActiveProxyCredential: value => { activeProxyCredential = value; }, engineOwnerFile: ENGINE_OWNER,
+  activeEngineContextCurrent, getBrowser: () => campusBrowserManager, revokeEngineServing,
+  handleEngineExitBoundary, handleEngineClose, controlRegistry: engineControlRegistry,
+  contextLease: { capture: options => activeContextLease.capture(options) },
+  onFirstConnected: (generation, token) => { connectedAt = Date.now(); telemetryCoordinator.start(generation, token); },
+});
+async function connectOnce(isRetry, intent) { return engineAttempts.run(isRetry, intent); }
 
 function ensureEngineStopped() {
   if (disconnectInFlight) return disconnectInFlight;

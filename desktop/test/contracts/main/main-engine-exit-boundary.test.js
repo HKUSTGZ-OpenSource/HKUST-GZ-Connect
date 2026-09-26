@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
 const servingSource = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-connection-runtime'), 'utf8');
@@ -20,8 +21,9 @@ test('engine exit closes the browser request boundary before stdio close cleanup
   assert.match(termination, /this\.clearCredential\(generation\)/);
   assert.match(termination, /this\.suspendBrowser\(\)/);
 
-  const startCall = source.slice(source.indexOf('const started = engineSupervisor.start({'));
-  assert.match(startCall, /onExit:\s*\(result\) => \{\s*engineRuntime\?\.beginExitDrain\(\);\s*handleEngineExitBoundary\(result, isCurrentEngineContext\);\s*\},\s*onClose:/);
+  const startCall = attempt.slice(attempt.indexOf('const started = this.engineSupervisor.start({'));
+  assert.match(source, /engineAttempts\.run\(isRetry, intent\)/u);
+  assert.match(startCall, /onExit:\s*\(result\) => \{\s*engineRuntime\?\.beginExitDrain\(\);\s*this\.handleEngineExitBoundary\(result, isCurrentEngineContext\);\s*\},\s*onClose:/);
   assert.match(startCall, /const structuredStopReason = engineRuntime\?\.stoppedReason \|\| null;\s*engineRuntime\?\.dispose\(\)/);
 });
 
@@ -32,9 +34,9 @@ test('fatal, stopping, and exit boundaries revoke in-flight serving promotion', 
   assert.match(revoke, /this\.suspendBrowser\(\)/);
   assert.match(revoke, /this\.clearPresentation\(\)/);
 
-  assert.match(source, /handlers: serving\.handlers/u);
-  assert.match(source, /revokeServing: \(\) => revokeEngineServing\(engineGeneration, isCurrentEngineContext\)/u);
-  assert.match(source, /stopEngine: \(\) => engineSupervisor\.stop\(\{ graceMs: 1000, forceWaitMs: STOP_FORCE_WAIT_MS \}\)/u);
+  assert.match(attempt, /handlers: serving\.handlers/u);
+  assert.match(attempt, /revokeServing: \(\) => this\.revokeEngineServing\(engineGeneration, isCurrentEngineContext\)/u);
+  assert.match(attempt, /stopEngine: \(\) => this\.engineSupervisor\.stop\(\{ graceMs: 1000, forceWaitMs: STOP_FORCE_WAIT_MS \}\)/u);
   const handlers = servingSource.slice(servingSource.indexOf('class EngineServingCoordinator'));
   assert.match(handlers, /onStopping:.*this\.revokeServing\(\)/);
   assert.match(handlers, /onListenerMismatch:[\s\S]*?this\.revokeServing\(\)[\s\S]*?this\.stopEngine\(\)/);
@@ -67,11 +69,13 @@ test('an unclean stop releases the local process but blocks automatic reconnect'
 });
 
 test('orphan cleanup and Windows owner recording are mandatory start boundaries', () => {
-  const connect = source.slice(source.indexOf('async function connectOnce('));
+  const connect = attempt;
+  assert.match(source, /engineOwnerFile: ENGINE_OWNER/u);
+  assert.match(attempt, /writeOwnerRecord: writeEngineOwnerRecord/u);
   assert.match(connect,
     /killStrayEngines\(resolvedBin\) !== true[\s\S]*cleanupUnconfirmed: true/u,
     'an unconfirmed orphan cleanup must stop before spawning a replacement Engine');
   assert.match(connect,
-    /writeEngineOwnerRecord\(ENGINE_OWNER, ownedEngine\);[\s\S]*catch \{[\s\S]*engineSupervisor\.stop/u,
+    /this\.writeOwnerRecord\(this\.engineOwnerFile, ownedEngine\);[\s\S]*catch \{[\s\S]*engineSupervisor\.stop/u,
     'a Windows Engine without a durable owner record must be stopped immediately');
 });

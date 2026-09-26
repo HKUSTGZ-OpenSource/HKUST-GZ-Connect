@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
 const { createT } = require('../../../lib/platform/i18n/i18n');
 
 const desktopRoot = path.join(__dirname, '..', '..', '..');
@@ -43,14 +44,16 @@ test('profile drives resources, routes and a Main-resolved official portal home'
 });
 
 test('reviewed profile and config binding is validated before credential decryption', () => {
-  const connect = section('async function connectOnce(', '\nfunction ensureEngineStopped(');
-  const profileConfig = connect.indexOf('engineConfigBinding = activeSchoolProfile.verifyEngineLaunchBinding();');
-  const credential = connect.indexOf('const credentialOwner = openVpnCredential(');
-  const spawn = connect.indexOf('const started = engineSupervisor.start(');
+  const connect = attempt;
+  assert.match(main, /engineAttempts\.run\(isRetry, intent\)/u);
+  const profileConfig = connect.indexOf('engineConfigBinding = this.profile.verifyEngineLaunchBinding();');
+  const credential = connect.indexOf('const credentialOwner = this.openCredential(');
+  const spawn = connect.indexOf('const started = this.engineSupervisor.start(');
   assert.ok(profileConfig >= 0 && credential > profileConfig && spawn > credential);
-  assert.match(main, /engineConfigBinding = activeSchoolProfile\.verifyEngineLaunchBinding\(\)/u);
+  assert.match(main, /verifyEngineLaunchBinding: \(\) => activeSchoolProfile\.verifyEngineLaunchBinding\(\)/u);
+  assert.match(main, /openCredential: profileId => openVpnCredential\(/u);
   assert.match(connect,
-    /profileId: activeSchoolProfile\.activeContextBinding\(\)\.profileId,[\s\S]*memoryBroker: oneShotVpnCredential/u);
+    /this\.openCredential\(this\.profile\.activeContextBinding\(\)\.profileId\)/u);
   assert.match(connect, /--profile-binding-v1-stdin/u);
   const bindingWrite = connect.indexOf('${engineConfigBinding.stdinFrame}\\n${username}\\n${pw}');
   assert.ok(bindingWrite > profileConfig && bindingWrite > credential && bindingWrite > spawn);

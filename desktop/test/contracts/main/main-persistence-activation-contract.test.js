@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
 
@@ -40,13 +41,14 @@ test('after-ready migration uses the bounded relaunch owner before services can 
 });
 
 test('settings credential IPC and connect use the immutable persistence adapter', () => {
-  const connect = section('async function connectOnce(', '\nfunction ensureEngineStopped()');
+  const connect = attempt;
+  assert.match(source, /engineAttempts\.run\(isRetry, intent\)/u);
+  assert.match(source, /openPersistent: \(\) => persistenceRuntime\.openCredential\(\)/u);
   assert.match(source, /function loadSettings\(\) \{ return persistenceRuntime\.loadSettings\(\); \}/u);
   assert.match(source, /persistenceRuntime\.saveCredential\(pw, username\)/u);
   assert.match(source, /removePassword: \(\) => persistenceRuntime\.clearCredential\(\)/u);
   assert.match(source, /hasAccountIdentity: \(\) => persistenceRuntime\.hasAccountIdentity\(\)/u);
-  assert.match(connect, /const credentialOwner = openVpnCredential\(\{/u);
-  assert.match(connect, /openPersistent: \(\) => persistenceRuntime\.openCredential\(\)/u);
+  assert.match(connect, /const credentialOwner = this\.openCredential\(/u);
   assert.match(connect, /finally \{ credentialOwner\.destroy\(\); \}/u);
   assert.match(connect, /\$\{engineConfigBinding\.stdinFrame\}\\n\$\{username\}\\n\$\{pw\}/u);
   assert.doesNotMatch(connect, /loadPasswordResult\(\)/u);
