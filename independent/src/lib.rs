@@ -1,5 +1,10 @@
+#![cfg_attr(not(feature = "compatibility-lab"), doc = include_str!("../tests/contracts/laboratory-api-disabled.md"))]
+#![cfg_attr(feature = "compatibility-lab", doc = include_str!("../tests/contracts/laboratory-api-enabled.md"))]
+
+#[cfg(feature = "compatibility-lab")]
 pub mod adapter;
 pub mod auth;
+#[cfg(feature = "compatibility-lab")]
 pub mod binary_watch;
 pub mod config;
 pub mod credentials;
@@ -9,11 +14,14 @@ pub mod gateway_connector;
 pub mod gateway_http;
 pub mod gateway_probe;
 pub mod modern;
+#[cfg(feature = "compatibility-lab")]
 pub mod probe;
+#[cfg(feature = "compatibility-lab")]
 pub mod protocol_map;
 pub mod resource_catalogue;
 pub mod special_tls11;
 pub mod tunnel;
+#[cfg(feature = "compatibility-lab")]
 pub mod watch;
 pub mod xml;
 

@@ -54,11 +54,11 @@ claim production retrieval support.
 
 ## Commands
 
-Install Rust with `rustup`, then build the native tools once:
+Install Rust with `rustup`, then explicitly build the native research tools:
 
 ```bash
 cd independent
-cargo build --locked --release
+cargo build --locked --release --no-default-features --features compatibility-lab
 cd ..
 ```
 
@@ -89,9 +89,15 @@ Run offline tests:
 ```bash
 cd independent
 cargo fmt --all -- --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked
+cargo clippy --locked --all-targets --no-default-features -- -D warnings
+cargo test --locked --no-default-features
+cargo clippy --locked --all-targets --no-default-features --features compatibility-lab -- -D warnings
+cargo test --locked --no-default-features --features compatibility-lab
 ```
+
+The five research commands require `compatibility-lab`; normal Engine/helper/public Gateway-probe
+builds do not. Research builds must not be staged into an application release. This opt-in does not
+authorize gateway access, credential use or vendor-package inspection.
 
 Run the credentialed behavior probe on macOS without putting either credential
 in process arguments or a repository file:

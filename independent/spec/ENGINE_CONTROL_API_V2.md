@@ -71,6 +71,11 @@ also treats loss of that owner connection as cancellation of the unfinished
 connection attempt. These produce `ControlAction::Cancel` and
 `ControlAction::Close`; the codec itself does not terminate processes or tasks.
 
+Once that shutdown deadline has elapsed, pre-listener process coordination treats it as committed
+state before polling a ready worker result or a later cancel frame. Timer-driver registration must
+not extend the cancellation window or allow an Auth/Transport result to advance after commitment.
+The existing bounded worker drain and domain-specific session cleanup still run.
+
 Known but unimplemented provider capabilities can be queried only through the
 closed enum in `ControlCapability`. They always fail explicitly, for example:
 

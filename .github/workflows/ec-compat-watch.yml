@@ -49,7 +49,7 @@ jobs:
       - name: Install pinned Rust toolchain
         run: rustup show active-toolchain
       - name: Build native observer
-        run: cargo build --locked --release --bin ec-watch
+        run: cargo build --locked --release --no-default-features --features compatibility-lab --bin ec-watch
       - name: Collect and compare sanitized metadata
         run: |
           target/release/ec-watch collect \

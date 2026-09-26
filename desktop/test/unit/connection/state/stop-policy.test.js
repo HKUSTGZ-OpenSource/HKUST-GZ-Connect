@@ -45,10 +45,11 @@ test('stop policy accounts for the optional Control v2 grace window', () => {
 
 test('Engine cancellation and logout retain one second inside the control grace', () => {
   const repository = path.resolve(__dirname, '..', '..', '..', '..', '..');
-  const engine = fs.readFileSync(path.join(repository, 'independent/src/bin/ec-engine.rs'), 'utf8');
+  const operation = fs.readFileSync(path.join(repository, 'independent/src/bin/engine_app/operation.rs'), 'utf8');
+  const control = fs.readFileSync(path.join(repository, 'independent/src/bin/engine_app/control.rs'), 'utf8');
   const session = fs.readFileSync(path.join(repository, 'independent/src/engine/session.rs'), 'utf8');
-  const reviewedWorstCase = rustDurationMs(engine, 'CONTROL_SHUTDOWN_CANCEL_WINDOW') +
-    rustDurationMs(engine, 'CONNECTION_OPERATION_CANCEL_DRAIN_TIMEOUT') +
+  const reviewedWorstCase = rustDurationMs(control, 'CONTROL_SHUTDOWN_CANCEL_WINDOW') +
+    rustDurationMs(operation, 'CONNECTION_OPERATION_CANCEL_DRAIN_TIMEOUT') +
     rustDurationMs(session, 'LOGOUT_TIMEOUT');
   assert.ok(reviewedWorstCase + 1000 <= STOP_CONTROL_GRACE_MS,
     'Rust cleanup budgets must not drift into Desktop force termination');

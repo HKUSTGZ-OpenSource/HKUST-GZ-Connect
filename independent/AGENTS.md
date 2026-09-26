@@ -25,5 +25,10 @@ cargo clippy --locked --all-targets --no-default-features -- -D warnings
 cargo test --locked --no-default-features
 ```
 
+Changes to compatibility tools or feature boundaries also run both Clippy and tests with
+`--no-default-features --features compatibility-lab`. Production/release commands never enable
+that feature. Default-mode compile-fail doctests and the dependency-graph test must remain enabled;
+laboratory-mode tests are additional coverage, not a replacement for production tests.
+
 Run the synthetic auth-control fixture for Auth/Control changes. Network-performance, package and
 authorized live compatibility evidence are separate gates and must be reported separately.

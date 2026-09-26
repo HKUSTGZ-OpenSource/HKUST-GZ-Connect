@@ -285,6 +285,10 @@ jobs:
         run: cargo clippy --locked --all-targets --no-default-features -- -D warnings
       - name: Run engine tests
         run: cargo test --locked --no-default-features
+      - name: Lint explicit compatibility laboratory
+        run: cargo clippy --locked --all-targets --no-default-features --features compatibility-lab -- -D warnings
+      - name: Preserve compatibility laboratory tests
+        run: cargo test --locked --no-default-features --features compatibility-lab
       - name: Lint the feature-gated Engine lifecycle fixture
         run: cargo clippy --locked --all-targets --no-default-features --features engine-lifecycle-fixture -- -D warnings
       - name: Exercise the successful Engine subprocess lifecycle
