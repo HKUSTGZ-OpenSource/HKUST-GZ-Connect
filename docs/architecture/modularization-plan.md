@@ -132,6 +132,15 @@ The first binary-private startup seam is documented in
 [Engine argument ownership](engine-argument-owner.md). It does not export a new library API or
 complete the runtime orchestration work below.
 
+The [process ownership receipt](engine-process-ownership.md) covers the private control, event,
+operation, startup, serving and failure owners together. The current-base candidate retains
+pre-password Gateway classification and reduces the root to 498 lines without adding public
+process APIs. Size is only one gate: three build modes, lifecycle, protocol, native, performance
+and package acceptance are still required.
+The default-production compiler boundary for research tools is defined in
+[ADR-0034](../adr/0034-compatibility-laboratory-feature-boundary.md). Laboratory opt-in retains
+separate coverage; this boundary does not replace platform/package verification.
+
 First reorganize inside the current crate:
 
 ```text

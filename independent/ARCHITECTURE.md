@@ -31,8 +31,14 @@ editing the SOCKS frontend, desktop UI, or unrelated protocol generations.
 | `engine/socks_auth.rs` | Bounded stdin proxy credentials, zeroizing constant-time RFC 1929/Basic verification | argv, events, logging, or gateway authentication |
 | `engine/socks.rs` | One-port protocol detection and dispatch; compatible, optional-auth, and strict SOCKS5 contracts plus the strict HTTP frontend | HTTP message rewriting or gateway protocol details |
 | `engine/socks/http_forward.rs` | Strict-only bounded ordinary HTTP/WS parsing, header rewriting, body framing, and streaming | DNS, destination authorization, credentials, or gateway protocol details |
-| `bin/ec-engine.rs` | Process assembly, signals, health shutdown, Control v2 action integration, logout and structured terminal state | Event/control encoding or desktop policy |
+| `bin/ec-engine.rs` | Process/configuration input, owner/provider/netstack assembly and terminal dispatch | Event/control encoding, worker coordination, serving implementation or desktop policy |
 | `bin/engine_app/arguments.rs` | Binary-private CLI validation, generation hints and compile-time fixture selection | Credential input, filesystem/environment reads, sockets, provider or gateway behavior |
+| `bin/engine_app/control.rs` | Binary-private inherited control delivery, provider context and pending shutdown deadlines | Credential input, phase-specific EOF/close policy, process termination or gateway/netstack cleanup |
+| `bin/engine_app/operation.rs` | Binary-private pre-listener worker coordination, cancellation/drain deadlines and shared signal adapters | Provider authentication, gateway/session cleanup, listener startup or process exit |
+| `bin/engine_app/events.rs` | Binary-private phase ordering and generation-bound Event/Control output | Provider transactions, credential input, transport or runtime cleanup |
+| `bin/engine_app/runtime.rs` | Binary-private prepared-netstack serving, health/control handling, ordered service/netstack/gateway cleanup | Credential input, authentication, gateway connector or transport acquisition |
+| `bin/engine_app/failure.rs` | Binary-private stable error-code mapping and primary/secondary cleanup status | Resource ownership, I/O or provider execution |
+| `bin/engine_app/startup.rs` | Binary-private initial handshake, password/Transport workers, deadlines and cancelled-result cleanup | Credential input/storage, concrete protocol implementation, listener/netstack construction or process exit |
 | `desktop/lib/campus-browser.js` | Isolated browser session, proxy policy and safe navigation | Gateway authentication or packet formats |
 | `desktop/lib/engine-connection-runtime.js` | Event/control stdout ownership, generation validation, hello deadline and typed Desktop callbacks | UI wording, credential persistence, Browser routing or Engine process policy |
 | `desktop/lib/{routing-rule,certificate-pin,campus-resource}-ipc.js` | Exact-key control-panel CRUD validation and injected transaction calls | Electron window ownership, authentication or transport state |
@@ -138,6 +144,12 @@ The provider-inactive interactive-auth schema and activation gates are documente
 [`spec/ENGINE_AUTH_CONTROL_API_V3.md`](spec/ENGINE_AUTH_CONTROL_API_V3.md).
 
 ## Compatibility laboratory
+
+The five research modules below are compiled only with the non-default `compatibility-lab`
+feature. Their CLI targets require that feature; default production builds have neither those
+exports nor their archive/disassembly dependencies. Explicit laboratory builds are not release
+inputs. See [ADR-0034](../docs/adr/0034-compatibility-laboratory-feature-boundary.md) for verification
+and the limits of this within-crate feature boundary.
 
 | Module | Purpose |
 | --- | --- |

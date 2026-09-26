@@ -70,6 +70,8 @@ cd ../independent
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets --no-default-features -- -D warnings
 cargo test --locked --no-default-features
+cargo clippy --locked --all-targets --no-default-features --features compatibility-lab -- -D warnings
+cargo test --locked --no-default-features --features compatibility-lab
 cargo clippy --locked --all-targets --no-default-features \
   --features engine-lifecycle-fixture -- -D warnings
 cargo test --locked --no-default-features \
@@ -198,6 +200,8 @@ cd ../independent
 cargo fmt --all -- --check
 cargo clippy --locked --all-targets --no-default-features -- -D warnings
 cargo test --locked --no-default-features
+cargo clippy --locked --all-targets --no-default-features --features compatibility-lab -- -D warnings
+cargo test --locked --no-default-features --features compatibility-lab
 cargo clippy --locked --all-targets --no-default-features \
   --features engine-lifecycle-fixture -- -D warnings
 cargo test --locked --no-default-features \

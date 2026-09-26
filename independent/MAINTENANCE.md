@@ -151,6 +151,14 @@ The reviewed baseline may be updated only after the associated change is
 classified and the required gates pass. A baseline update is an approval
 record, not a repair.
 
+## Compatibility laboratory build boundary
+
+Research tools (`ec-watch`, `ec-probe`, `ec-binary-watch`, `ec-protocol-map`, `ec-adapter-check`)
+require `--no-default-features --features compatibility-lab`. Their library APIs and six
+archive/disassembly dependencies are absent in default production builds. Run both production
+and explicit-laboratory Clippy/tests when changing this boundary. Laboratory builds are not
+release artifacts; shipped native commands continue using `--no-default-features` without it.
+
 ## Phase 6 offline performance guard
 
 Two explicitly ignored Rust tests provide a repeatable local regression matrix

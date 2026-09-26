@@ -11,6 +11,8 @@ unsafe_code = "forbid"
 
 [features]
 default = []
+# Explicit developer tools; never enabled by shipped native builds.
+compatibility-lab = ["dep:flate2", "dep:iced-x86", "dep:object", "dep:tar", "dep:xz2", "dep:zstd"]
 # Builds one explicitly selected, non-vendor post-Transport lifecycle seam into
 # ec-engine for the subprocess regression only. Release/package builds must not
 # enable this feature.
@@ -23,22 +25,27 @@ path = "src/lib.rs"
 [[bin]]
 name = "ec-watch"
 path = "src/bin/ec-watch.rs"
+required-features = ["compatibility-lab"]
 
 [[bin]]
 name = "ec-probe"
 path = "src/bin/ec-probe.rs"
+required-features = ["compatibility-lab"]
 
 [[bin]]
 name = "ec-binary-watch"
 path = "src/bin/ec-binary-watch.rs"
+required-features = ["compatibility-lab"]
 
 [[bin]]
 name = "ec-protocol-map"
 path = "src/bin/ec-protocol-map.rs"
+required-features = ["compatibility-lab"]
 
 [[bin]]
 name = "ec-adapter-check"
 path = "src/bin/ec-adapter-check.rs"
+required-features = ["compatibility-lab"]
 
 [[bin]]
 name = "ec-engine"
@@ -54,13 +61,13 @@ path = "src/bin/ec-auth-fixture.rs"
 
 [dependencies]
 base64 = "0.22"
-flate2 = "1.1"
+flate2 = { version = "1.1", optional = true }
 hex = "0.4"
 hmac = "0.13"
-iced-x86 = { version = "1.21", default-features = false, features = ["decoder", "std"] }
+iced-x86 = { version = "1.21", default-features = false, features = ["decoder", "std"], optional = true }
 libc = "0.2"
 md-5 = "0.11"
-object = { version = "0.37", default-features = false, features = ["read_core", "elf", "macho", "pe"] }
+object = { version = "0.37", default-features = false, features = ["read_core", "elf", "macho", "pe"], optional = true }
 rand = "0.10"
 rc4 = { version = "0.2", features = ["zeroize"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "cookies", "rustls-tls"] }
@@ -73,7 +80,7 @@ sha1 = "0.11"
 sha2 = "0.11"
 socket2 = "0.6"
 subtle = "2.6"
-tar = "0.4"
+tar = { version = "0.4", optional = true }
 time = { version = "0.3", features = ["formatting"] }
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 # Maintained API-compatible fork. It guards blocked UDP receives with socket
@@ -82,12 +89,12 @@ ts_netstack_smoltcp = { package = "geiserx_ts_netstack_smoltcp", version = "=0.4
 url = "2"
 webpki-roots = "1"
 x509-parser = "0.18"
-# Always build liblzma from the vendored source.  The default xz2/lzma-sys
+# Laboratory builds still use vendored static liblzma. The default xz2/lzma-sys
 # behavior prefers pkg-config, which can record a Homebrew-only absolute dylib
 # path in a packaged macOS Engine and make it fail before main() on another Mac.
-xz2 = { version = "0.1", features = ["static"] }
+xz2 = { version = "0.1", features = ["static"], optional = true }
 zeroize = "1"
-zstd = "0.14"
+zstd = { version = "0.14", optional = true }
 
 [profile.release]
 lto = "thin"
