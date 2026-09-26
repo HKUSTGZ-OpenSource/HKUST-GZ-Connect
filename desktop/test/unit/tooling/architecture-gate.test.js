@@ -201,6 +201,12 @@ test('current production graph has no cycle and stays within debt growth caps', 
   assert.deepEqual(snapshot.rootLibraryDebtErrors, []);
 });
 
+test('Main line budget preserves update notification ownership', () => {
+  assert.equal(BASELINE.mainLines, 1682);
+  assert.ok(architectureErrors({ cycles: [], mainLines: 1683 })
+    .some(error => error.includes('mainLines')));
+});
+
 test('growth beyond any explicit baseline fails the gate', () => {
   const snapshot = {
     cycles: [],

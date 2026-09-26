@@ -228,7 +228,85 @@ function shouldAutoCheck(lastCheckedAt, now = Date.now(), intervalMs = AUTO_CHEC
   return now - last >= intervalMs;
 }
 
+class UpdateNotificationRuntime {
+  constructor({ getVersion, check = checkForUpdate, readSettings, saveSettings, assertPersistence,
+    runTransaction, onAvailable, openExternal, now = Date.now,
+    setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout,
+    setIntervalFn = setInterval, clearIntervalFn = clearInterval } = {}) {
+    if (![getVersion, check, readSettings, saveSettings, assertPersistence, runTransaction,
+      onAvailable, openExternal, now, setTimeoutFn, clearTimeoutFn, setIntervalFn, clearIntervalFn]
+      .every(value => typeof value === 'function')) {
+      throw new TypeError('Update notification dependencies are incomplete');
+    }
+    Object.assign(this, { getVersion, check, readSettings, saveSettings, assertPersistence,
+      runTransaction, onAvailable, openExternal, now, setTimeoutFn, clearTimeoutFn, setIntervalFn, clearIntervalFn });
+    this.latest = null;
+    this.startupTimer = null;
+    this.interval = null;
+    this.timerEpoch = 0;
+    this.started = false;
+  }
+
+  snapshot() { return this.latest; }
+
+  async run(force = false) {
+    if (!force && !shouldAutoCheck(this.readSettings().updateCheckedAt, this.now())) return null;
+    const result = await this.check(this.getVersion());
+    if (result) {
+      // Keep the settings read inside the existing serialized context transaction:
+      // a preference changed during the request must not be overwritten.
+      await this.runTransaction(() => {
+        this.assertPersistence();
+        const settings = this.readSettings();
+        return {
+          commit: () => this.saveSettings({ ...settings, updateCheckedAt: this.now() }),
+          rollback: () => this.saveSettings(settings),
+        };
+      });
+    }
+    if (result && result.updateAvailable) {
+      this.latest = result;
+      this.onAvailable();
+    }
+    return result;
+  }
+
+  open(url) {
+    if (!isCurrentUpdateUrl(url, this.latest)) return { ok: false };
+    this.openExternal(url).catch(() => {});
+    return { ok: true };
+  }
+
+  startAutomatic(packaged) {
+    if (!packaged || this.started) return false;
+    this.started = true;
+    const epoch = ++this.timerEpoch;
+    const check = () => {
+      if (this.started && epoch === this.timerEpoch) this.run().catch(() => {});
+    };
+    this.startupTimer = this.setTimeoutFn(() => {
+      if (epoch !== this.timerEpoch) return;
+      this.startupTimer = null;
+      check();
+    }, 5000);
+    this.interval = this.setIntervalFn(check, AUTO_CHECK_INTERVAL_MS);
+    this.interval.unref?.();
+    return true;
+  }
+
+  stopAutomatic() {
+    this.started = false;
+    this.timerEpoch++;
+    if (this.startupTimer !== null) this.clearTimeoutFn(this.startupTimer);
+    if (this.interval !== null) this.clearIntervalFn(this.interval);
+    this.startupTimer = null;
+    this.interval = null;
+  }
+}
+
+
 module.exports = {
+  UpdateNotificationRuntime,
   AUTO_CHECK_INTERVAL_MS,
   REPOSITORY_API_URL,
   REPOSITORY_ID,
