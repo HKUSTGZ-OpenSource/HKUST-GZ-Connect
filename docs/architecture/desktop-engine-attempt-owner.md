@@ -39,6 +39,12 @@ reviewed binding and exact stdin ordering. Full Desktop, native synthetic lifecy
 Profile-switch, architecture, secret and package gates remain required. Offline fixtures
 do not prove live Gateway/MFA or native Windows acceptance from macOS mocks.
 
+The package verifier reads the attempt owner from the actual ASAR and checks Main's
+profile-verification injection, binding-before-credential/spawn ordering and private
+stdin prefix. Missing owner/injection/binding/frame and argv digest regressions fail
+closed. The original inline-owner flag/digest checks remain supported; moving a guard
+does not remove the package gate or substitute source-tree tests for packaged bytes.
+
 Rollback reverts this extraction, wiring, tests and matching ratchets together. The
 credential selector and callback-fence prerequisite fixes remain independent. No data,
 schema, new authentication capability, system-network or installed-App migration occurs.
