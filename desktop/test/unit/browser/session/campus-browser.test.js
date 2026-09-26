@@ -25,6 +25,13 @@ const {
 } = require('../../../../lib/browser/session/campus-browser');
 const { createCampusBrowserWindowOwner } = require('../../../../lib/browser/session/campus-browser-manager');
 const createWindowOwner = createCampusBrowserWindowOwner;
+
+test('Campus Browser createWindow keeps its existing void-return contract', async t => {
+  const { browser } = createFakeBrowser();
+  t.after(() => browser.close());
+  assert.equal(await browser.createWindow(), undefined);
+  assert.ok(browser.window, 'the native window remains available through its owner');
+});
 const {
   DIRECT_PARTITION,
   ROUTE_CAMPUS,

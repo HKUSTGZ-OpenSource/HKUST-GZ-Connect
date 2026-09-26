@@ -22,7 +22,8 @@ dependency is added. Direct native fixtures use the same factory.
 
 - The chrome keeps its existing dimensions, localized school/trust title, parent policy and
   toolbar query. Its WebPreferences remain sandboxed, context-isolated, web-secure and without
-  Node integration or DevTools.
+  Node integration or DevTools. The `CampusBrowser.createWindow()` wrapper retains
+  its existing void-return contract; only the new owner API returns a window.
 - Only `campus-toolbar-command` reaches the existing command handler. This does not add a channel,
   expand Preload, or change Renderer behavior.
 - The owner keeps the current window available while Browser cleanup detaches views, then clears
@@ -55,9 +56,12 @@ build from this checkout reused the existing target cache, then its three native
 and reviewed profile configuration were packaged with Electron 43.2.0 from the existing
 SDK. The actual arm64 Mac ASAR/package verifier, required Apple signature and deep strict
 codesign verification passed. No other checkout's App was substituted; the candidate was
-not installed or published. Integrated full Node results are 1,623 tests / 1,609 passed /
+not installed or published. Integrated full Node results are 1,624 tests / 1,610 passed /
 14 platform skips / zero failed; integrated native toolbar and popup-MFA fixtures passed.
 Native Windows/Linux package acceptance remains the required exact-head CI matrix.
+
+Offline review confirmed inherited pending-load cleanup and deadline-listener gaps;
+these are tracked separately in issue #162, not represented as fixed by extraction.
 
 The source-only candidate reduces `campus-browser.js` from the 1,502-line starting point to 1,476
 lines without changing its baseline Main's 34 direct / 170 transitive dependencies.

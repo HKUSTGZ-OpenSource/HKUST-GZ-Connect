@@ -1332,7 +1332,7 @@ class CampusBrowser {
     this.cancelScheduledUpdates();
     this.lastToolbarState = null;
     if (!this.windowOwner) throw new Error('Campus Browser window owner is unavailable');
-    return this.windowOwner.createWindow();
+    await this.windowOwner.createWindow();
   }
 
   handleWindowClosed() {
