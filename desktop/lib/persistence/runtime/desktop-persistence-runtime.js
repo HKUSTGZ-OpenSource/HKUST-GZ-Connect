@@ -2,6 +2,10 @@
 
 const util = require('node:util');
 const { projectRuntimeSettings } = require('../settings/profile-workspace-settings-bundle');
+const { loadSettings: readSettings, saveSettings: writeSettings } = require('../settings/settings-store');
+const { hasStoredPassword, loadPasswordResult: readPasswordResult,
+  restorePasswordSnapshot, savePassword: writePassword } = require('../credentials/credential-store');
+const { LegacyMigrationCredentialOwner } = require('../migration/legacy-hkust/legacy-migration-inputs');
 
 class ObservedCredentialOwner {
   #owner;
@@ -38,12 +42,45 @@ class ObservedCredentialOwner {
 }
 
 class DesktopPersistenceRuntime {
-  constructor({ preReadySelection, initializeAfterReady, legacy } = {}) {
+  static createLegacyAdapter({ settingsFile, credentialFile, safeStorage, platform,
+    getDefaultRouteDomains, onRecovery, stores = {} }) {
+    const io = { readSettings, writeSettings, readPasswordResult, writePassword,
+      restorePasswordSnapshot, hasStoredPassword, ...stores };
+    const loadSettings = () => io.readSettings(settingsFile, {
+      onRecovery, defaultRouteDomains: getDefaultRouteDomains(),
+    });
+    return Object.freeze({
+      loadSettings,
+      saveSettings: settings => io.writeSettings(settingsFile, settings, {
+        defaultRouteDomains: getDefaultRouteDomains(),
+      }),
+      saveCredential: password => io.writePassword(credentialFile, password, safeStorage, platform),
+      clearCredential: () => io.restorePasswordSnapshot(credentialFile, { existed: false, data: null }),
+      hasCredential: () => io.hasStoredPassword(credentialFile, platform),
+      openCredential: () => {
+        const settings = loadSettings();
+        const result = io.readPasswordResult(credentialFile, safeStorage, platform);
+        if (result.status === 'missing') return null;
+        if (result.status !== 'decrypted') {
+          const error = new Error('legacy credential is unavailable');
+          error.credentialStatus = result.status;
+          throw error;
+        }
+        return new LegacyMigrationCredentialOwner(settings.username, result.password);
+      },
+    });
+  }
+
+  constructor({ preReadySelection, initializeAfterReady, legacy, settingsPresentation = null } = {}) {
     if (!preReadySelection || !['legacy-flat', 'profile-workspace'].includes(preReadySelection.mode) ||
         !preReadySelection.paths || typeof initializeAfterReady !== 'function' || !legacy ||
         ['loadSettings', 'saveSettings', 'saveCredential', 'clearCredential',
           'openCredential', 'hasCredential'].some((name) => typeof legacy[name] !== 'function')) {
       throw new TypeError('desktop persistence runtime dependencies are invalid');
+    }
+    if (settingsPresentation && ['getState', 'translate', 'emit']
+      .some(name => typeof settingsPresentation[name] !== 'function')) {
+      throw new TypeError('settings presentation effects are invalid');
     }
     this.preReadySelection = preReadySelection;
     this.initializeRuntime = initializeAfterReady;
@@ -53,6 +90,8 @@ class DesktopPersistenceRuntime {
     this.ready = false;
     this.initializing = false;
     this.accountLabel = '';
+    this.settingsPresentation = settingsPresentation;
+    this.settingsReadErrorText = null;
   }
 
   get mode() { return this.preReadySelection.mode; }
@@ -106,6 +145,34 @@ class DesktopPersistenceRuntime {
     // Windows ACL checks). Security-sensitive consumers use currentAuthority
     // or the credential store, which still validate the files on disk.
     return projectRuntimeSettings(this.authority, { accountLabel: this.accountLabel });
+  }
+
+  reportSettingsReadFailure(cause, { emitState = true } = {}) {
+    if (cause?.code === 'SETTINGS_READ_FAILED') return cause;
+    const message = this.settingsPresentation.translate('error.settingsReadFailed');
+    const error = new Error(message, { cause });
+    error.code = 'SETTINGS_READ_FAILED'; error.userMessage = message;
+    this.settingsReadErrorText = message;
+    const state = this.settingsPresentation.getState();
+    if (state.settingsError !== message) {
+      state.settingsError = message;
+      if (emitState) this.settingsPresentation.emit();
+    }
+    return error;
+  }
+
+  loadSettingsOrReport(options) {
+    try {
+      const settings = this.loadSettings();
+      if (this.settingsReadErrorText) {
+        const state = this.settingsPresentation.getState();
+        const shouldEmit = options?.emitState !== false && state.settingsError === this.settingsReadErrorText;
+        if (state.settingsError === this.settingsReadErrorText) state.settingsError = null;
+        this.settingsReadErrorText = null;
+        if (shouldEmit) this.settingsPresentation.emit();
+      }
+      return settings;
+    } catch (error) { throw this.reportSettingsReadFailure(error, options); }
   }
 
   saveSettings(settings) {

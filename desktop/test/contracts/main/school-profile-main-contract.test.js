@@ -34,7 +34,9 @@ test('profile drives resources, routes and a Main-resolved official portal home'
   assert.match(main,
     /serverCampusResources = activeSchoolProfile\.mergeResourceLibrary\(\[\], \[\]\)/u,
     'reviewed per-site routes must feed the shared browser and external PAC policy');
-  assert.match(main, /defaultRouteDomains: activeSchoolProfile\.defaultRouteDomains/u);
+  assert.match(main, /getDefaultRouteDomains: \(\) => activeSchoolProfile\.defaultRouteDomains/u);
+  const persistence = fs.readFileSync(require.resolve('../../../lib/persistence/runtime/desktop-persistence-runtime'), 'utf8');
+  assert.match(persistence, /defaultRouteDomains: getDefaultRouteDomains\(\)/u);
   assert.match(main, /directPartnerDomains: \(\) => activeSchoolProfile\.directPartnerDomains/u);
   assert.match(main, /homeUrl: officialPortalHomeUrl\(activeSchoolProfile\.createPresentation/u);
   assert.doesNotMatch(main, /homeUrl: activeSchoolProfile\.browserHomeUrl/u);
