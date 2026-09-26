@@ -300,7 +300,7 @@ class CampusBrowser {
         typeof this.windowOwner.show !== 'function' ||
         typeof this.windowOwner.requestClose !== 'function' ||
         typeof this.windowOwner.closeForContextSwitch !== 'function' ||
-        typeof this.windowOwner.clear !== 'function' || !('window' in this.windowOwner))) {
+        typeof this.windowOwner.clear !== 'function' || typeof this.windowOwner.assertContextCurrent !== 'function' || !('window' in this.windowOwner))) {
       throw new TypeError('Campus Browser window owner is invalid');
     }
     // Only the active tab is attached to the native View hierarchy. Hiding a
@@ -487,7 +487,7 @@ class CampusBrowser {
 
   async ensureRoutingReady(resolution, port = this.configuredPort || 1080) {
     if (!resolution || ![ROUTE_CAMPUS, ROUTE_DIRECT].includes(resolution.route)) return false;
-    if (resolution.route === ROUTE_CAMPUS && !await this.ensureCampusReady()) return false;
+    if ((resolution.route === ROUTE_CAMPUS && !await this.ensureCampusReady()) || this.windowOwner?.contextRetired) return false;
     const activated = await this.activateRoutingPolicy(port);
     // A superseding suspend intent makes BrowserSessionManager activation
     // resolve null. Never start a navigation while its fail-closed gate remains
@@ -1247,7 +1247,7 @@ class CampusBrowser {
   }
 
   createTab(rawUrl = null, route = null, options = {}) {
-    if (!this.window || this.window.isDestroyed()) return null;
+    if (this.windowOwner?.contextRetired || !this.window || this.window.isDestroyed()) return null;
     const targetWindow = this.window;
     if (!this.tabManager.canAdd()) {
       if (this.onError) this.onError(this.t('tab.limit', { count: MAX_TABS }));
@@ -1270,7 +1270,7 @@ class CampusBrowser {
   }
 
   createWorkspaceTab() {
-    if (!this.workspaceController || !this.window || this.window.isDestroyed()) return null;
+    if (this.windowOwner?.contextRetired || !this.workspaceController || !this.window || this.window.isDestroyed()) return null;
     const existing = this.tabs.find((tab) => tab.kind === 'workspace');
     if (existing) { this.switchTab(existing.id); this.workspaceController.sendState(existing.view.webContents); return existing; }
     if (!this.tabManager.canAdd()) {
@@ -1397,7 +1397,7 @@ class CampusBrowser {
     }
     await this.showReadyWindow();
     if (url === BLANK_CAMPUS_HOME) {
-      const existing = this.tabs.find((tab) => tab.kind === 'workspace');
+      const existing = this.windowOwner.assertContextCurrent(this.tabs.find((tab) => tab.kind === 'workspace'));
       if (existing) {
         this.switchTab(existing.id);
         this.workspaceController.sendState(existing.view.webContents);
@@ -1407,7 +1407,7 @@ class CampusBrowser {
     } else {
       this.createTab(url, resolution.route, { displayName: options.displayName || '' });
     }
-    return url;
+    return this.windowOwner?.assertContextCurrent(url) ?? url;
   }
 
   async openWorkspace(port) {
@@ -1416,14 +1416,14 @@ class CampusBrowser {
     }
     if (!this.configuredPort && !this.routingSuspended) await this.configure(port);
     await this.showReadyWindow();
-    const existing = this.tabs.find((tab) => tab.kind === 'workspace');
+    const existing = this.windowOwner.assertContextCurrent(this.tabs.find((tab) => tab.kind === 'workspace'));
     if (existing) {
       this.switchTab(existing.id);
       this.workspaceController.sendState(existing.view.webContents);
     } else {
       this.createWorkspaceTab();
     }
-    return BLANK_CAMPUS_HOME;
+    return this.windowOwner?.assertContextCurrent(BLANK_CAMPUS_HOME) ?? BLANK_CAMPUS_HOME;
   }
 
   close() {

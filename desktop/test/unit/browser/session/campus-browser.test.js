@@ -78,6 +78,106 @@ test('concurrent Browser and Workspace opens wait for one shared toolbar load', 
   assert.ok(window.focusCalls >= 1);
 });
 
+test('context close retires a Browser.open waiting for routing readiness', async (t) => {
+  const routing = deferred();
+  const fixture = createFakeBrowser();
+  let readinessCalls = 0;
+  fixture.browser.ensureRoutingReady = () => {
+    readinessCalls++;
+    return routing.promise;
+  };
+  const opening = fixture.browser.open('late.example.internal', 1080, ROUTE_CAMPUS).then(
+    value => ({ value }), error => ({ error }),
+  );
+  t.after(async () => {
+    routing.resolve(true);
+    await opening;
+    fixture.browser.close();
+  });
+
+  assert.equal(readinessCalls, 1);
+  assert.equal(fixture.browserWindows.length, 0);
+  assert.equal(await fixture.browser.closeForContextSwitch(), true);
+  assert.equal(fixture.browser.windowOwner.contextRetired, true);
+  routing.resolve(true);
+  const result = await opening;
+
+  assert.ok(result.error, 'the retired context cannot report a successful late open');
+  assert.equal(fixture.browserWindows.length, 0, 'late readiness cannot create a BrowserWindow');
+  assert.equal(fixture.browser.tabs.length, 0, 'late readiness cannot create a tab');
+});
+
+test('context close retires a Workspace open waiting for routing configuration', async (t) => {
+  const configuration = deferred();
+  const fixture = createFakeBrowser();
+  let configureCalls = 0;
+  fixture.browser.configure = async () => {
+    configureCalls++;
+    await configuration.promise;
+    return {};
+  };
+  const opening = fixture.browser.openWorkspace(1080).then(
+    value => ({ value }), error => ({ error }),
+  );
+  t.after(async () => {
+    configuration.resolve();
+    await opening;
+    fixture.browser.close();
+  });
+
+  assert.equal(configureCalls, 1);
+  assert.equal(fixture.browserWindows.length, 0);
+  assert.equal(await fixture.browser.closeForContextSwitch(), true);
+  assert.equal(fixture.browser.windowOwner.contextRetired, true);
+  configuration.resolve();
+  const result = await opening;
+
+  assert.ok(result.error, 'the retired context cannot report a successful late Workspace open');
+  assert.equal(fixture.browserWindows.length, 0, 'late configuration cannot create a BrowserWindow');
+  assert.equal(fixture.browser.tabs.length, 0, 'late configuration cannot create a Workspace tab');
+});
+
+test('context close during campus readiness prevents late routing activation', async (t) => {
+  for (const suspended of [false, true]) {
+    const readiness = deferred();
+    const fixture = createFakeBrowser({ ensureCampusReady: () => readiness.promise });
+    let configureCalls = 0;
+    let resumeCalls = 0;
+    fixture.browser.configure = async () => { configureCalls++; return {}; };
+    fixture.browser.resumeRoutingPolicy = async () => { resumeCalls++; return {}; };
+    fixture.browser.browserSessionManager.suspended = suspended;
+    const opening = fixture.browser.open('late.example.internal', 1080, ROUTE_CAMPUS).then(
+      value => ({ value }), error => ({ error }),
+    );
+    t.after(async () => {
+      readiness.resolve(true);
+      await opening;
+      fixture.browser.close();
+    });
+
+    assert.equal(await fixture.browser.closeForContextSwitch(), true);
+    readiness.resolve(true);
+    const result = await opening;
+
+    assert.ok(result.error, 'retired readiness cannot authorize Browser.open');
+    assert.equal(configureCalls, 0, 'retired readiness cannot start a late PAC configure');
+    assert.equal(resumeCalls, 0, 'retired readiness cannot resume routing for the old Browser');
+    assert.equal(fixture.browserWindows.length, 0);
+    assert.equal(fixture.browser.tabs.length, 0);
+  }
+});
+
+test('an ordinary Browser close still allows a later explicit open', async () => {
+  const fixture = createFakeBrowser();
+  await fixture.browser.openWorkspace(1080);
+  fixture.browser.close();
+  assert.equal(fixture.browser.windowOwner.contextRetired, false);
+
+  assert.equal(await fixture.browser.openWorkspace(1080), BLANK_CAMPUS_HOME);
+  assert.equal(fixture.browserWindows.length, 2);
+  assert.equal(fixture.browser.tabs.filter(tab => tab.kind === 'workspace').length, 1);
+});
+
 test('a closed pending window cannot let its old Browser.open affect a replacement', async (t) => {
   const firstLoad = deferred();
   const replacementLoad = deferred();

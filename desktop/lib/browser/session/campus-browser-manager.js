@@ -89,9 +89,15 @@ class CampusBrowserWindowOwner {
       onToolbarCommand, onResize, onBeforeCreate, onClosed, onMissingWindow,
     });
     this.current = null;
+    this.contextRetired = false;
   }
 
   get window() { return this.current?.window || null; }
+
+  assertContextCurrent(value) {
+    if (this.contextRetired) throw new Error('Campus Browser context is retired');
+    return value;
+  }
 
   windowOptions() {
     const presentation = this.getProfilePresentation();
@@ -157,6 +163,7 @@ class CampusBrowserWindowOwner {
         return record.readyPromise;
       }
     }
+    if (this.contextRetired) throw new Error('Campus Browser context is retired');
 
     this.onBeforeCreate();
     const window = new this.BrowserWindow(this.windowOptions());
@@ -267,7 +274,7 @@ class CampusBrowserWindowOwner {
 
   show(window) {
     const record = this.current;
-    if (!record || record.window !== window || record.retired || record.state !== 'ready' ||
+    if (this.contextRetired || !record || record.window !== window || record.retired || record.state !== 'ready' ||
         window.isDestroyed()) throw new Error('Campus Browser window is no longer ready');
     if (window.isMinimized()) window.restore();
     window.show();
@@ -348,6 +355,7 @@ class CampusBrowserWindowOwner {
         typeof setTimeoutFn !== 'function' || typeof clearTimeoutFn !== 'function') {
       return Promise.reject(new TypeError('Campus Browser close deadline is invalid'));
     }
+    this.contextRetired = true;
     const record = this.current;
     if (!record) {
       this.onMissingWindow();

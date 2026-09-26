@@ -30,6 +30,10 @@ dependency is added. Direct native fixtures use the same factory.
   that exact window. Repeated or stale close events cannot tear down a replacement window.
 - Context switches still wait for the native `closed` event and fail closed at the existing bounded
   deadline. Missing/destroyed windows delegate cleanup to `CampusBrowser`.
+- A valid context-switch close request terminally retires this owner before its first asynchronous
+  wait, including when close confirmation or cleanup later fails. Retries may still finish that
+  close, but pending Browser/Workspace opens cannot show a window or create/switch tabs. Ordinary
+  user close does not retire the owner; an explicit later open remains available.
 - Managed MFA remains in the existing credential-popup path. It is not converted into a tab or
   moved to this owner; shared Electron Session, opener/postMessage/self-close behavior, and
   user-entered OTP handling are unchanged.

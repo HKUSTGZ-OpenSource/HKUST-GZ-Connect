@@ -508,6 +508,37 @@ test('context-switch close removes its observer when timer setup or native close
   assert.match(closeFailure.current.closeFailure.message, /native close failure/u);
 });
 
+test('a transient context close failure stays retired and permits only close retry', async () => {
+  let closeCalls = 0;
+  const { owner, windows } = createOwner({
+    windowBehavior: {
+      close: window => {
+        closeCalls++;
+        if (closeCalls === 1) throw new Error('synthetic transient close failure');
+        window.destroyed = true;
+        window.emit('closed');
+      },
+    },
+  });
+  const window = await owner.createWindow();
+  const closeOptions = {
+    setTimeoutFn: () => ({ unref() {} }),
+    clearTimeoutFn() {},
+  };
+
+  assert.equal(await owner.closeForContextSwitch(closeOptions), false);
+  assert.equal(owner.contextRetired, true);
+  await assert.rejects(owner.createWindow(), /not ready/u,
+    'a failed context close cannot reopen or replace its window');
+  assert.equal(await owner.closeForContextSwitch(closeOptions), true,
+    'the existing context close operation remains retryable');
+  assert.equal(closeCalls, 2);
+  assert.equal(owner.window, null);
+  assert.equal(owner.contextRetired, true, 'confirmed retry does not reactivate the retired owner');
+  assert.deepEqual(windows, [window]);
+  await assert.rejects(owner.createWindow(), /context is retired/u);
+});
+
 test('failed temporary close-observer removal retains the closed owner and blocks retries', async () => {
   const removeError = new Error('synthetic close observer removal failure');
   const { owner, windows } = createOwner({
