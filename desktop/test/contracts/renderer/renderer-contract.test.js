@@ -14,6 +14,9 @@ const scriptIndex = file => scriptEntries.findIndex(entry =>
 const css = fs.readFileSync(path.join(rendererDir, 'styles.css'), 'utf8')
   + fs.readFileSync(path.join(rendererDir, 'features/campus-data/view.css'), 'utf8');
 const appJs = fs.readFileSync(path.join(rendererDir, 'app.js'), 'utf8');
+const connectionOverviewJs = fs.readFileSync(
+  path.join(rendererDir, 'features/connection-overview/index.mjs'), 'utf8',
+);
 const updateNoticesJs = fs.readFileSync(
   path.join(rendererDir, 'features/update-notices/index.mjs'), 'utf8',
 );
@@ -103,8 +106,10 @@ test('connection detail rendering belongs to the existing owner while App retain
     'connection detail DOM is projected by the existing feature');
   assert.match(appJs, /if \(typeof s\.locale === 'string'\) applyLocale\(s\.locale\)/u,
     'effective locale remains app-level orchestration');
-  assert.match(appJs, /\$\('power'\)\.classList\.toggle\('on', s\.connected\)/u,
-    'the connection action remains in App');
+  assert.match(appJs, /\$\('power'\)\.addEventListener\('click'/u,
+    'the connection command remains in App');
+  assert.match(connectionOverviewJs, /power\.classList\.toggle\('on', state\.connected\)/u,
+    'the control card status is projected by the connection owner');
   assert.match(appJs, /window\.notificationView\.render/u,
     'notification rendering remains in its existing owner');
   assert.match(appJs, /updateLoginProgress\(s\)/u,

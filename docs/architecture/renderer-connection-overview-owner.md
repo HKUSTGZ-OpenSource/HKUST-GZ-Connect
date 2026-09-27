@@ -9,8 +9,9 @@
 It replaces the classic script and its legacy `window.connectionOverview` exception;
 the registry gains one known native definition, not another global or dynamic plugin.
 App injects the existing bounded API callbacks, translator, document and timer effects.
-The feature presents supplied connection state/telemetry and selects an underlay; it
-does not own connection authority, credentials, Engine protocol or routing policy.
+The feature presents supplied connection state/telemetry and the connection
+control card's status/labels, and selects an underlay. It does not own connection
+authority, credentials, Engine protocol or routing policy.
 
 The owner starts synchronously once and disposes terminally/idempotently. Disposal
 unsubscribes network-environment updates, removes its DOM listeners, clears feedback
@@ -22,8 +23,11 @@ bindings before surfacing the primary failure; cleanup failures are not hidden.
 Metrics/topology CSS moves beneath the existing `.connection-layout.connection-overview`
 root. `:where()` preserves selector specificity; DOM IDs, brand tokens, text, layout,
 keyboard/focus, underlay selection and reduced-motion behavior remain unchanged.
-The app bootstrap remains 562 lines; remaining legacy script/global/bootstrap debt
-keeps #79 open. No dependency, IPC/schema, Main/Browser/Engine or installed-App change.
+The control-card projection now follows the same supplied status into this owner,
+without moving its click command or changing the connection switch's behavior.
+The app bootstrap is 502 lines at this candidate tree; remaining legacy
+script/global/bootstrap debt keeps #79 open. No dependency, IPC/schema,
+Main/Browser/Engine or installed-App change.
 
 ## Validation and rollback
 

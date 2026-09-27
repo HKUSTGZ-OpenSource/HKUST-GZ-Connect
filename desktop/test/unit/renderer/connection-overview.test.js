@@ -106,6 +106,9 @@ test('connection overview exposes one compact adapter tree instead of duplicate 
   assert.match(app, /save:\s*\(patch\)\s*=>\s*window\.api\.save/u);
   assert.match(app, /refresh:\s*\(\)\s*=>\s*refreshState/u);
   assert.doesNotMatch(app, /window\.connectionOverview/u);
+  assert.doesNotMatch(app,
+    /\$\('(?:power|powerLabel|connStatus|connIp|connTop|connErr)'\)\.(?:classList|textContent|disabled|setAttribute)/u,
+    'the app bootstrap should not project connection card status');
   assert.doesNotMatch(html, /src="connection-overview\.js"/u);
 });
 

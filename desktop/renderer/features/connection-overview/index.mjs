@@ -229,6 +229,26 @@ function create({ document, translate = key => key, copy, save, refresh, getEnvi
 
   function renderStatus(state = {}, t = translate) {
     if (disposed) return;
+    // The connection card and network details consume the same supplied status.
+    // Commands and connection authority remain with the App/Preload boundary.
+    const power = byId('power');
+    power.classList.toggle('on', state.connected);
+    power.classList.toggle('busy', state.connecting);
+    const powerText = t(state.connecting ? 'connect.actionConnecting'
+      : state.connected ? 'connect.actionDisconnect' : 'connect.actionConnect');
+    power.disabled = state.connecting;
+    byId('powerLabel').textContent = powerText;
+    power.setAttribute('aria-label', powerText);
+    power.setAttribute('aria-checked', String(state.connected));
+    const cardStatus = document.querySelector('.conn-status');
+    cardStatus.classList.toggle('on', state.connected);
+    cardStatus.classList.toggle('busy', state.connecting);
+    byId('connStatus').textContent = state.connecting
+      ? t('connect.connecting') : state.connected ? t('connect.connected') : t('connect.disconnected');
+    byId('connIp').textContent = state.connected && state.clientIp ? state.clientIp : '—';
+    byId('connTop').classList.toggle('connected', state.connected);
+    byId('connErr').textContent = (!state.connected && !state.connecting && state.lastError)
+      ? state.lastError : '';
     connectedAt = state.connected ? (state.connectedAt || connectedAt) : null;
     const connected = state.connected === true;
     const busy = state.connecting === true;

@@ -86,21 +86,9 @@ function renderConnect(s) {
   if (typeof s.locale === 'string') applyLocale(s.locale);
   st = { ...st, ...s };
   usabilityFeature?.updateConnection(s);
-  $('power').classList.toggle('on', s.connected);
-  $('power').classList.toggle('busy', s.connecting);
-  const powerText = t(s.connecting ? 'connect.actionConnecting' : s.connected ? 'connect.actionDisconnect' : 'connect.actionConnect');
-  $('power').disabled = s.connecting; $('powerLabel').textContent = powerText; $('power').setAttribute('aria-label', powerText); $('power').setAttribute('aria-checked', String(s.connected));
-  const wrap = document.querySelector('.conn-status');
-  wrap.classList.toggle('on', s.connected); wrap.classList.toggle('busy', s.connecting);
-  $('connStatus').textContent = s.connecting
-    ? t('connect.connecting')
-    : s.connected ? t('connect.connected') : t('connect.disconnected');
-  $('connIp').textContent = s.connected && s.clientIp ? s.clientIp : '—';
-  $('connTop').classList.toggle('connected', s.connected);
-  $('connErr').textContent = (!s.connected && !s.connecting && s.lastError) ? s.lastError : '';
+  connectionOverviewFeature?.renderStatus(s, t);
   $('settingsNotice').hidden = !s.notice;
   $('settingsNotice').textContent = s.notice || ''; window.notificationView.render({ card: $('notificationCard'), title: $('notificationTitle'), summary: $('notificationSummary'), action: $('notificationAction'), state: s, translate: t });
-  connectionOverviewFeature?.renderStatus(s, t);
   updateLoginProgress(s);
 }
 
