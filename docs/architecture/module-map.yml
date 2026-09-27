@@ -6,10 +6,26 @@ enforcement: path-coverage-and-entrypoint-ownership
 dependencyEnforcement: inventory-only
 
 modules:
+  - id: desktop-main
+    paths: [desktop/main.js]
+    publicEntrypoints: []
+    allowedDependencies:
+      - desktop-app
+      - desktop-connection
+      - desktop-browser
+      - desktop-persistence
+      - desktop-profiles
+      - desktop-resources
+      - desktop-routing
+      - desktop-integrations
+      - desktop-ipc
+      - desktop-platform
+      - desktop-diagnostics
+    risk: critical
+    requiredChecks: [desktop, desktop-electron, architecture, secret-scan, package-verifier]
+
   - id: desktop-app
-    paths:
-      - desktop/main.js
-      - desktop/lib/app/**
+    paths: [desktop/lib/app/**]
     publicEntrypoints:
       - desktop/lib/app/desktop-runtime-composition.js
     allowedDependencies:

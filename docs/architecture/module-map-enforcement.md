@@ -2,7 +2,7 @@
 
 - Status: Path-coverage contract for M5; dependency enforcement remains incomplete
 - Owner: architecture and repository maintainers
-- Last verified: 2026-09-25
+- Last verified: 2026-09-27
 - Applies to: `module-map.yml` schema 2 and `desktop/scripts/module-map-coverage.js`
 - Scope: path coverage, ownership uniqueness, schema and public-entrypoint existence
 
@@ -45,6 +45,12 @@ is explicitly classified under `compatibility-lab` rather than silently omitted.
 These labels do not activate a protocol provider, alter Cargo feature selection, or prove that a
 test-support/compatibility module is unreachable from production. Those require the separate Rust
 visibility, feature and package gates.
+
+The Electron composition root is now the exact-path `desktop-main` owner. Reusable
+`desktop/lib/app/**` modules remain under `desktop-app`; only the root's inventory names IPC and
+diagnostics as allowed dependencies. This prevents the map from treating every App module as a
+composition root. It does not make Main's existing private IPC imports public or switch dependency
+enforcement on.
 
 ## What remains incomplete
 
