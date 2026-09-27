@@ -68,6 +68,7 @@ function documentFixture() {
     'currentNetworkExit', 'currentNetworkExitHint', 'networkPathDetailsSummary',
     'underlaySelectionStatus', 'latencySparkline', 'statGrid', 'appsCard', 'latencyMetric',
     'latencyHint', 'stDur', 'stPing', 'stConn', 'stDns', 'appList',
+    'power', 'powerLabel', 'connStatus', 'connIp', 'connTop', 'connErr',
   ]) {
     const node = fakeNode(document, id === 'copyTunnelIp' ? 'button' : 'div');
     node.id = id;
@@ -76,10 +77,12 @@ function documentFixture() {
   ids.get('stIp').textContent = '192.0.2.10';
   const topology = fakeNode(document, 'section');
   topology.dataset.status = 'inactive';
+  const controlStatus = fakeNode(document, 'div');
   document.getElementById = id => ids.get(id) || null;
-  document.querySelector = selector => selector === '[data-topology-node="tunnel"]' ? topology : null;
+  document.querySelector = selector => selector === '[data-topology-node="tunnel"]'
+    ? topology : selector === '.conn-status' ? controlStatus : null;
   document.createElement = tagName => fakeNode(document, tagName);
-  return { document, ids, topology };
+  return { document, ids, topology, controlStatus };
 }
 
 function environmentFixture() {
@@ -164,6 +167,39 @@ test('connection detail owner renders supplied status and telemetry with the exi
   assert.equal(f.ids.get('stDur').textContent, '1:00',
     'the existing ticker reads the latest telemetry timestamp');
   assert.equal(timers.intervals.has(firstTimer), true);
+});
+
+test('connection control card projects connected, busy and error states without owning commands', () => {
+  const f = documentFixture();
+  const { owner } = ownerFor(f.document);
+  owner.renderStatus({ connected: false, connecting: false, clientIp: '192.0.2.10',
+    lastError: 'Synthetic error' });
+  assert.equal(f.ids.get('powerLabel').textContent, 'connect.actionConnect');
+  assert.equal(f.ids.get('power').getAttribute('aria-checked'), 'false');
+  assert.equal(f.ids.get('connStatus').textContent, 'connect.disconnected');
+  assert.equal(f.ids.get('connIp').textContent, '—');
+  assert.equal(f.ids.get('connErr').textContent, 'Synthetic error');
+
+  owner.renderStatus({ connected: true, connecting: false, clientIp: '192.0.2.10' });
+  assert.equal(f.ids.get('powerLabel').textContent, 'connect.actionDisconnect');
+  assert.equal(f.ids.get('power').getAttribute('aria-checked'), 'true');
+  assert.equal(f.ids.get('power').disabled, false);
+  assert.equal(f.ids.get('connStatus').textContent, 'connect.connected');
+  assert.equal(f.ids.get('connIp').textContent, '192.0.2.10');
+  assert.equal(f.ids.get('connErr').textContent, '');
+  assert.equal(f.controlStatus.classList.contains('on'), true);
+  assert.equal(f.ids.get('connTop').classList.contains('connected'), true);
+
+  owner.renderStatus({ connected: false, connecting: true, lastError: 'Hidden while busy' });
+  assert.equal(f.ids.get('power').disabled, true);
+  assert.equal(f.ids.get('powerLabel').textContent, 'connect.actionConnecting');
+  assert.equal(f.ids.get('connStatus').textContent, 'connect.connecting');
+  assert.equal(f.ids.get('connErr').textContent, '');
+  assert.equal(f.controlStatus.classList.contains('busy'), true);
+  owner.dispose();
+  owner.renderStatus({ connected: false, connecting: false });
+  assert.equal(f.ids.get('connStatus').textContent, 'connect.connecting',
+    'a retired owner cannot repaint the card');
 });
 
 test('status owns duration interval replacement, disconnect reset, and terminal retirement', () => {
