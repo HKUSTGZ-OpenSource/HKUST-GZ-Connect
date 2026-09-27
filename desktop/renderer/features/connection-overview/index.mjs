@@ -87,12 +87,31 @@ function networkPathSummary(options, t = key => key) {
   });
 }
 
+function formatDuration(ms) {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  return (hours ? `${hours}:${String(minutes).padStart(2, '0')}` : minutes) +
+    `:${String(remainder).padStart(2, '0')}`;
+}
+
+function dnsModeLabel(mode, t) {
+  if (mode === 'gateway') return t('stats.dnsGateway');
+  if (mode === 'vpn_profile') return t('stats.dnsVpnProfile');
+  if (mode === 'gateway_profile') return t('stats.dnsGatewayProfile');
+  if (mode === 'system_fallback') return t('stats.dnsFallback');
+  if (mode === 'disabled') return t('stats.dnsDisabled');
+  return t('stats.dnsUnknown');
+}
+
 function create({ document, translate = key => key, copy, save, refresh, getEnvironment,
-  subscribeEnvironment, timers } = {}) {
+  subscribeEnvironment, timers, escapeHtml, now = Date.now } = {}) {
   if (!document || typeof document.getElementById !== 'function' ||
       typeof document.querySelector !== 'function' || typeof document.createElement !== 'function' ||
-      typeof translate !== 'function' || !timers || typeof timers.setTimeout !== 'function' ||
-      typeof timers.clearTimeout !== 'function') {
+      typeof translate !== 'function' || typeof escapeHtml !== 'function' || typeof now !== 'function' ||
+      !timers || typeof timers.setTimeout !== 'function' || typeof timers.clearTimeout !== 'function' ||
+      typeof timers.setInterval !== 'function' || typeof timers.clearInterval !== 'function') {
     throw new TypeError('connection overview dependencies are incomplete');
   }
 
@@ -105,8 +124,22 @@ function create({ document, translate = key => key, copy, save, refresh, getEnvi
   let environmentRequest = null;
   let environmentGeneration = 0;
   let unsubscribeEnvironment = null;
+  let connectedAt = null;
+  let durationTimer = null;
 
   const byId = id => document.getElementById(id);
+  function stopDuration() {
+    if (durationTimer !== null) timers.clearInterval(durationTimer);
+    durationTimer = null;
+  }
+
+  function startDuration() {
+    stopDuration();
+    durationTimer = timers.setInterval(() => {
+      if (!disposed && connectedAt) byId('stDur').textContent = formatDuration(now() - connectedAt);
+    }, 1000);
+  }
+
   const listen = (target, type, handler) => {
     if (!target?.addEventListener || !target?.removeEventListener) {
       throw new TypeError('connection overview listener target is invalid');
@@ -196,6 +229,7 @@ function create({ document, translate = key => key, copy, save, refresh, getEnvi
 
   function renderStatus(state = {}, t = translate) {
     if (disposed) return;
+    connectedAt = state.connected ? (state.connectedAt || connectedAt) : null;
     const connected = state.connected === true;
     const busy = state.connecting === true;
     const tunnelNode = document.querySelector('[data-topology-node="tunnel"]');
@@ -203,16 +237,48 @@ function create({ document, translate = key => key, copy, save, refresh, getEnvi
     byId('tunnelSummary').textContent = t(connected ? 'connect.tunnelReady' : busy ? 'connect.tunnelConnecting' : 'connect.tunnelInactive');
     byId('notificationAttention').hidden = !state.lastError && !state.notice;
     if (state.networkEnvironment) renderEnvironment(state.networkEnvironment, t);
+
+    byId('statGrid').hidden = false;
+    byId('appsCard').hidden = !state.connected;
+    byId('stIp').textContent = state.clientIp || '—';
+    byId('latencyMetric').classList.toggle('is-empty', !state.connected);
+    byId('latencyHint').hidden = state.connected || state.connecting;
+    byId('stDns').textContent = dnsModeLabel(state.dnsMode, t);
+    if (state.connected && connectedAt) {
+      startDuration();
+      byId('stDur').textContent = formatDuration(now() - connectedAt);
+    } else {
+      stopDuration();
+      byId('stDur').textContent = '0:00';
+      byId('stPing').textContent = '—';
+      byId('stConn').textContent = '0';
+      byId('appList').innerHTML = '';
+    }
   }
 
-  function renderTelemetry(telemetry = {}) {
+  function renderTelemetry(telemetry = {}, t = translate) {
     if (disposed) return;
+    if (telemetry.connectedAt) connectedAt = telemetry.connectedAt;
     if (Number.isFinite(telemetry.latencyMs)) {
       latencyHistory.push(telemetry.latencyMs);
       if (latencyHistory.length > 24) latencyHistory.shift();
     }
     const svg = byId('latencySparkline');
     if (svg) svg.innerHTML = `<path d="${sparkline(latencyHistory)}"/>`;
+
+    const latencyAvailable = telemetry.latencyMs != null;
+    byId('stPing').textContent = latencyAvailable ? Math.round(telemetry.latencyMs) + ' ms' : '—';
+    byId('latencyMetric').classList.toggle('is-empty', !latencyAvailable);
+    byId('latencyHint').hidden = latencyAvailable;
+    byId('stConn').textContent = telemetry.connCount || 0;
+    const list = byId('appList');
+    if (!telemetry.apps || !telemetry.apps.length) {
+      list.innerHTML = `<div class="app-empty">${escapeHtml(t('stats.appsEmpty'))}</div>`;
+      return;
+    }
+    list.innerHTML = telemetry.apps.map(app =>
+      `<div class="app-row"><span class="app-dot"></span><span class="app-name">${escapeHtml(app.name)}</span>` +
+      `<span class="app-meta">${escapeHtml(t('stats.connectionCount', { count: app.count }))}</span></div>`).join('');
   }
 
   function refreshEnvironment(enabled = true) {
@@ -288,6 +354,7 @@ function create({ document, translate = key => key, copy, save, refresh, getEnvi
     const attempt = cleanup => { try { cleanup(); } catch (error) { errors.push(error); } };
     if (unsubscribeEnvironment) attempt(unsubscribeEnvironment);
     unsubscribeEnvironment = null;
+    attempt(stopDuration);
     for (const remove of unlisten.splice(0).reverse()) attempt(remove);
     for (const timer of pendingTimers) attempt(() => timers.clearTimeout(timer));
     pendingTimers.clear();

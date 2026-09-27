@@ -13,8 +13,6 @@ let st = {
   lastError: null,
 };
 let settings = {};
-let connectedAt = null;
-let durTimer = null;
 let campusActionBusy = false;
 let campusResources = [], resourceGroups = [], serviceDeskData = null, portalServiceDeskData = null;
 let serviceDeskProfileId = null;
@@ -68,18 +66,6 @@ function setPage(page) {
   if (page === 'connect') connectionOverviewFeature?.refreshEnvironment(st.loggedIn === true);
 }
 window.api.onOpenSettings?.(() => { show('dash'); setPage('settings'); refreshState(); });
-function fmtDur(ms) { const s = Math.max(0, Math.floor(ms / 1000)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); }
-function startDur() { stopDur(); durTimer = setInterval(() => { if (connectedAt) $('stDur').textContent = fmtDur(Date.now() - connectedAt); }, 1000); }
-function stopDur() { if (durTimer) clearInterval(durTimer); durTimer = null; }
-
-function dnsModeLabel(mode) {
-  if (mode === 'gateway') return t('stats.dnsGateway');
-  if (mode === 'vpn_profile') return t('stats.dnsVpnProfile');
-  if (mode === 'gateway_profile') return t('stats.dnsGatewayProfile');
-  if (mode === 'system_fallback') return t('stats.dnsFallback');
-  if (mode === 'disabled') return t('stats.dnsDisabled');
-  return t('stats.dnsUnknown');
-}
 
 function updateLoginProgress(s) {
   if (!loginPending) return;
@@ -100,7 +86,6 @@ function renderConnect(s) {
   if (typeof s.locale === 'string') applyLocale(s.locale);
   st = { ...st, ...s };
   usabilityFeature?.updateConnection(s);
-  connectedAt = s.connected ? (s.connectedAt || connectedAt) : null;
   $('power').classList.toggle('on', s.connected);
   $('power').classList.toggle('busy', s.connecting);
   const powerText = t(s.connecting ? 'connect.actionConnecting' : s.connected ? 'connect.actionDisconnect' : 'connect.actionConnect');
@@ -116,29 +101,11 @@ function renderConnect(s) {
   $('settingsNotice').hidden = !s.notice;
   $('settingsNotice').textContent = s.notice || ''; window.notificationView.render({ card: $('notificationCard'), title: $('notificationTitle'), summary: $('notificationSummary'), action: $('notificationAction'), state: s, translate: t });
   connectionOverviewFeature?.renderStatus(s, t);
-  $('statGrid').hidden = false;
-  $('appsCard').hidden = !s.connected;
-  $('stIp').textContent = s.clientIp || '—';
-  $('latencyMetric').classList.toggle('is-empty', !s.connected);
-  $('latencyHint').hidden = s.connected || s.connecting;
-  $('stDns').textContent = dnsModeLabel(s.dnsMode);
-  if (s.connected && connectedAt) { startDur(); $('stDur').textContent = fmtDur(Date.now() - connectedAt); }
-  else { stopDur(); $('stDur').textContent = '0:00'; $('stPing').textContent = '—'; $('stConn').textContent = '0'; $('appList').innerHTML = ''; }
   updateLoginProgress(s);
 }
 
 function renderTelemetry(tele) {
   connectionOverviewFeature?.renderTelemetry(tele, t);
-  if (tele.connectedAt) connectedAt = tele.connectedAt;
-  const latencyAvailable = tele.latencyMs != null;
-  $('stPing').textContent = latencyAvailable ? Math.round(tele.latencyMs) + ' ms' : '—';
-  $('latencyMetric').classList.toggle('is-empty', !latencyAvailable);
-  $('latencyHint').hidden = latencyAvailable;
-  $('stConn').textContent = tele.connCount || 0;
-  const list = $('appList');
-  if (!tele.apps || !tele.apps.length) { list.innerHTML = `<div class="app-empty">${esc(t('stats.appsEmpty'))}</div>`; return; }
-  list.innerHTML = tele.apps.map((a) =>
-    `<div class="app-row"><span class="app-dot"></span><span class="app-name">${esc(a.name)}</span><span class="app-meta">${esc(t('stats.connectionCount', { count: a.count }))}</span></div>`).join('');
 }
 
 function renderResources() {
@@ -521,7 +488,24 @@ window.campusCategoryStacks.start({
   document,
   onAddSite: () => addWebsiteFeature.open(),
   onRenameCard: ({ card }) => { if (card?.id) groupDialogFeature.open({ id: card.id, name: card.name }); },
-}); connectionOverviewFeature = rendererFeatures.mount('connection-overview', { document, translate: (key, vars) => t(key, vars), copy: (value) => window.api.copy(value), save: (patch) => window.api.save(patch), refresh: () => refreshState({ preserveTower: true }), getEnvironment: () => window.api.getNetworkEnvironment(), subscribeEnvironment: (callback) => window.api.onNetworkEnvironment?.(callback), timers: { setTimeout: (callback, delay) => window.setTimeout(callback, delay), clearTimeout: (handle) => window.clearTimeout(handle) } });
+});
+connectionOverviewFeature = rendererFeatures.mount('connection-overview', {
+  document,
+  translate: (key, vars) => t(key, vars),
+  escapeHtml: esc,
+  now: () => Date.now(),
+  copy: (value) => window.api.copy(value),
+  save: (patch) => window.api.save(patch),
+  refresh: () => refreshState({ preserveTower: true }),
+  getEnvironment: () => window.api.getNetworkEnvironment(),
+  subscribeEnvironment: (callback) => window.api.onNetworkEnvironment?.(callback),
+  timers: {
+    setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+    clearTimeout: (handle) => window.clearTimeout(handle),
+    setInterval: (callback, delay) => window.setInterval(callback, delay),
+    clearInterval: (handle) => window.clearInterval(handle),
+  },
+});
 window.notificationDrawer.start({ document, loadLogs, runAction: (action) => window.notificationView.runAction(action, { openPage: setPage, reconnect: () => (!st.connected && !st.connecting ? window.api.connect() : null) }) });
 usabilityFeature = window.usabilityController.create({ window, document, translate: (key) => t(key), openPage: setPage, clearResourceFilter: () => {
   if (window.campusCategoryStacks.isEditing()) { window.campusCategoryStacks.cancelEdit(); return; }

@@ -8,13 +8,19 @@ function fakeNode(document, tagName = 'div') {
   const listeners = new Map();
   const attributes = new Map();
   const classes = new Set();
+  let textContent = '';
   const node = {
-    tagName: tagName.toUpperCase(), id: '', dataset: {}, children: [], textContent: '', innerHTML: '',
+    tagName: tagName.toUpperCase(), id: '', dataset: {}, children: [], innerHTML: '',
     hidden: false, disabled: false, focusCount: 0, replaceChildrenCount: 0,
     classList: {
       add(value) { classes.add(value); },
       remove(value) { classes.delete(value); },
       contains(value) { return classes.has(value); },
+      toggle(value, force) {
+        if (force === undefined ? !classes.has(value) : force) classes.add(value);
+        else classes.delete(value);
+        return classes.has(value);
+      },
     },
     addEventListener(type, callback) {
       const current = listeners.get(type) || [];
@@ -47,6 +53,10 @@ function fakeNode(document, tagName = 'div') {
     },
     focus() { node.focusCount += 1; document.activeElement = node; },
   };
+  Object.defineProperty(node, 'textContent', {
+    get() { return textContent; },
+    set(value) { textContent = String(value); },
+  });
   return node;
 }
 
@@ -56,7 +66,8 @@ function documentFixture() {
   for (const id of [
     'copyTunnelIp', 'stIp', 'underlayTreeOptions', 'tunnelSummary', 'notificationAttention',
     'currentNetworkExit', 'currentNetworkExitHint', 'networkPathDetailsSummary',
-    'underlaySelectionStatus', 'latencySparkline',
+    'underlaySelectionStatus', 'latencySparkline', 'statGrid', 'appsCard', 'latencyMetric',
+    'latencyHint', 'stDur', 'stPing', 'stConn', 'stDns', 'appList',
   ]) {
     const node = fakeNode(document, id === 'copyTunnelIp' ? 'button' : 'div');
     node.id = id;
@@ -93,11 +104,15 @@ function deferred() {
 
 function ownerFor(document, overrides = {}) {
   const scheduled = new Map();
+  const intervals = new Map();
   let nextTimer = 0;
   const timers = {
     setTimeout(callback) { const id = ++nextTimer; scheduled.set(id, callback); return id; },
     clearTimeout(id) { scheduled.delete(id); },
+    setInterval(callback, delay) { const id = ++nextTimer; intervals.set(id, { callback, delay }); return id; },
+    clearInterval(id) { intervals.delete(id); },
     scheduled,
+    intervals,
   };
   const owner = create({
     document,
@@ -108,10 +123,113 @@ function ownerFor(document, overrides = {}) {
     getEnvironment: async () => environmentFixture(),
     subscribeEnvironment: () => () => {},
     timers,
+    escapeHtml: value => String(value).replace(/[&<>\"]/g, character => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;',
+    }[character])),
     ...overrides,
   });
   return { owner, timers };
 }
+
+test('connection detail owner renders supplied status and telemetry with the existing timer contract', () => {
+  const f = documentFixture();
+  let now = 91_000;
+  const t = (key, values = {}) => key === 'stats.connectionCount' ? `${key}:${values.count}` : key;
+  const { owner, timers } = ownerFor(f.document, { now: () => now });
+
+  owner.renderStatus({
+    connected: true, connecting: false, clientIp: '192.0.2.10', dnsMode: 'gateway', connectedAt: 1_000,
+  }, t);
+  assert.equal(f.ids.get('statGrid').hidden, false);
+  assert.equal(f.ids.get('appsCard').hidden, false);
+  assert.equal(f.ids.get('stIp').textContent, '192.0.2.10');
+  assert.equal(f.ids.get('stDns').textContent, 'stats.dnsGateway');
+  assert.equal(f.ids.get('stDur').textContent, '1:30');
+  assert.equal(timers.intervals.size, 1);
+  const [firstTimer, interval] = [...timers.intervals.entries()][0];
+  assert.equal(interval.delay, 1_000);
+
+  owner.renderTelemetry({
+    connectedAt: 25_000, latencyMs: 32.4, connCount: 3,
+    apps: [{ name: '<sample&"app>', count: 2 }],
+  }, t);
+  assert.equal(f.ids.get('stPing').textContent, '32 ms');
+  assert.equal(f.ids.get('stConn').textContent, '3');
+  assert.match(f.ids.get('appList').innerHTML, /&lt;sample&amp;&quot;app&gt;/u);
+  assert.match(f.ids.get('appList').innerHTML, /stats\.connectionCount:2/u);
+  assert.equal(timers.intervals.size, 1, 'telemetry alone does not start or replace the duration ticker');
+
+  now = 85_000;
+  interval.callback();
+  assert.equal(f.ids.get('stDur').textContent, '1:00',
+    'the existing ticker reads the latest telemetry timestamp');
+  assert.equal(timers.intervals.has(firstTimer), true);
+});
+
+test('status owns duration interval replacement, disconnect reset, and terminal retirement', () => {
+  const f = documentFixture();
+  let now = 95_000;
+  const { owner, timers } = ownerFor(f.document, { now: () => now });
+  owner.renderTelemetry({ connectedAt: 3_000 });
+  assert.equal(timers.intervals.size, 0, 'telemetry alone does not create a duration ticker');
+  owner.renderStatus({ connected: true, connectedAt: 5_000, clientIp: '192.0.2.10' });
+  const firstTimer = [...timers.intervals.keys()][0];
+  owner.renderStatus({ connected: true, clientIp: '192.0.2.10' });
+  assert.equal(timers.intervals.size, 1);
+  const [currentTimer] = [...timers.intervals.entries()][0];
+  assert.notEqual(currentTimer, firstTimer, 'each connected status update restarts the original interval');
+
+  owner.renderTelemetry({ connectedAt: 15_000, latencyMs: 20, connCount: 4, apps: [{ name: 'app', count: 4 }] });
+  assert.equal(timers.intervals.has(currentTimer), true, 'telemetry does not re-arm the interval');
+  owner.renderStatus({ connected: false, connecting: false });
+  assert.equal(timers.intervals.size, 0);
+  assert.equal(f.ids.get('stDur').textContent, '0:00');
+  assert.equal(f.ids.get('stPing').textContent, '—');
+  assert.equal(f.ids.get('stConn').textContent, '0');
+  assert.equal(f.ids.get('appList').innerHTML, '');
+  assert.equal(f.ids.get('appsCard').hidden, true);
+  assert.equal(f.ids.get('latencyHint').hidden, false,
+    'the disconnected non-connecting hint follows the original status projection');
+
+  owner.renderStatus({ connected: true, connectedAt: 20_000 });
+  const retired = [...timers.intervals.values()][0];
+  owner.dispose();
+  const duration = f.ids.get('stDur').textContent;
+  now = 99_000;
+  retired.callback();
+  assert.equal(timers.intervals.size, 0);
+  assert.equal(f.ids.get('stDur').textContent, duration,
+    'a captured ticker callback is inert after owner disposal');
+});
+
+test('zero-valued duration interval handles are replaced and cleared on disposal', () => {
+  const f = documentFixture();
+  const { owner, timers } = ownerFor(f.document);
+  const cleared = [];
+  timers.setInterval = (callback, delay) => {
+    timers.intervals.set(0, { callback, delay });
+    return 0;
+  };
+  timers.clearInterval = handle => {
+    cleared.push(handle);
+    timers.intervals.delete(handle);
+  };
+
+  owner.renderStatus({ connected: true, connectedAt: 1_000 });
+  const firstCallback = timers.intervals.get(0).callback;
+  owner.renderStatus({ connected: true });
+  assert.deepEqual(cleared, [0]);
+  assert.equal(timers.intervals.size, 1);
+  assert.equal(timers.intervals.has(0), true);
+
+  const activeCallback = timers.intervals.get(0).callback;
+  owner.dispose();
+  assert.deepEqual(cleared, [0, 0]);
+  const duration = f.ids.get('stDur').textContent;
+  firstCallback();
+  activeCallback();
+  assert.equal(f.ids.get('stDur').textContent, duration);
+});
 
 test('connection overview preserves underlay focus and renders only while mounted', () => {
   const f = documentFixture();
