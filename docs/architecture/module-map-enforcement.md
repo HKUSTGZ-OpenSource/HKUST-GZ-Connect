@@ -49,6 +49,8 @@ same reviewable change; the debt list is not a blanket permission for another ed
 This is an explicit migration ratchet, not a claim that all current imports already respect the
 module map. A reviewed policy change can alter the debt manifest, so its diff and the resulting
 edge inventory must be inspected rather than treating a green check as self-authenticating proof.
+Quoted specifiers and no-substitution template-literal specifiers are included in the static graph;
+computed template substitutions remain outside this ratchet.
 The map keeps `dependencyEnforcement: inventory-only` until the old debt is eliminated and the
 dynamic Renderer and Rust visibility boundaries are separately covered.
 

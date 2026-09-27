@@ -120,8 +120,19 @@ function edgeCountForSources(graph, sources) {
 }
 
 function relativeRequires(source) {
-  return [...String(source).matchAll(/(?:require|import)\(\s*['"]([^'"]+)['"]\s*\)/g),
-    ...String(source).matchAll(/^\s*(?:import|export)\s+(?:[^'";]*?\s+from\s*)?['"]([^'"]+)['"]/gm)]
+  const text = String(source);
+  const hasTemplateSubstitution = raw => {
+    for (let index = 0; index < raw.length - 1; index += 1) {
+      if (raw[index] === '\\') { index += 1; continue; }
+      if (raw[index] === '$' && raw[index + 1] === '{') return true;
+    }
+    return false;
+  };
+  const staticTemplates = [...text.matchAll(/(?:require|import)\(\s*`((?:\\.|[^`\\])*)`\s*\)/g)]
+    .filter(match => !hasTemplateSubstitution(match[1]));
+  return [...text.matchAll(/(?:require|import)\(\s*['"]([^'"]+)['"]\s*\)/g),
+    ...staticTemplates,
+    ...text.matchAll(/^\s*(?:import|export)\s+(?:[^'";]*?\s+from\s*)?['"]([^'"]+)['"]/gm)]
     .map((match) => match[1])
     .filter((specifier) => specifier.startsWith('.'));
 }

@@ -10,7 +10,7 @@ const {
   moduleMapErrors, parseModuleMap, sourceInScope,
 } = require('../../scripts/module-map-coverage');
 const {
-  architectureErrors, architectureSnapshot, moduleEdgeRatchetErrors,
+  architectureErrors, architectureSnapshot, moduleEdgeRatchetErrors, relativeRequires,
 } = require('../../scripts/check-architecture');
 
 function fixture() {
@@ -177,6 +177,15 @@ test('static module imports distinguish undeclared edges from private entrypoint
   assert.ok(moduleImportViolations(source,
     [['desktop/lib/a/private.js', 'desktop/lib/missing/unsafe.js']]).errors
     .includes('unowned import target: desktop/lib/missing/unsafe.js'));
+});
+
+test('static relative template specifiers cannot bypass the import graph', () => {
+  assert.deepEqual(relativeRequires([
+    'const owner = require(`../b/private.js`);',
+    'const module = import(`../b/index.js`);',
+    'const dollar = require(`../b/$special.js`);',
+    'const computed = import(`../b/${name}.js`);',
+  ].join('\n')), ['../b/private.js', '../b/index.js', '../b/$special.js']);
 });
 
 test('exact static-edge debt rejects new bypasses and stale exceptions', () => {
