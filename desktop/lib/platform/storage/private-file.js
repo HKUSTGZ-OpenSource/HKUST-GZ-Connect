@@ -119,6 +119,7 @@ function createPrivateStorageEffects({
   platform = process.platform,
   windowsAcl = {
     protect: protectWindowsFileOwnerOnly,
+    tighten: tightenWindowsFileOwnerOnly,
     verify: verifyWindowsFileOwnerOnly,
   },
 } = {}) {
@@ -159,6 +160,11 @@ function createPrivateStorageEffects({
     readPrivateFileBounded: (file, { maxBytes, minBytes = 1 } = {}) => (
       readPrivateFileBounded(file, { maxBytes, minBytes, platform, fileSystem })
     ),
+    ensureOwnerOnly: (file) => ensureOwnerOnly(file, {
+      fileSystem,
+      platform,
+      windowsAcl: { tighten: windowsAcl.tighten, verify: windowsAcl.verify },
+    }),
   });
 }
 

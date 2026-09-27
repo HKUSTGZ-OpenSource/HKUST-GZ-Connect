@@ -66,9 +66,7 @@ function createExternalIntegrationRuntime({
   helperPath,
   credentialFile,
   selectTarget,
-  fileSystem,
-  platform,
-  windowsAcl,
+  privateStorageEffects,
 } = {}) {
   if (enabled !== true) return createDisabledIntegrationCenterRuntime();
   for (const dependency of [
@@ -86,9 +84,7 @@ function createExternalIntegrationRuntime({
     ensureSidecar,
     writeClipboard,
     selectTarget,
-    fileSystem,
-    platform,
-    windowsAcl,
+    privateStorageEffects,
     getContext: (adapterId) => withProfileDocument((profileDocument) => createIntegrationRuntimeContext({
       adapterId,
       authority: getAuthority(),

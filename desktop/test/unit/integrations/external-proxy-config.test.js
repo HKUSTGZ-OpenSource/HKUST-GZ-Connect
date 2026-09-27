@@ -11,6 +11,10 @@ const {
   externalProxyHelperPath,
   helperExecutableName,
 } = require('../../../lib/integrations/external-proxy-config');
+const {
+  createPrivateStorageEffects,
+  ensureOwnerOnly,
+} = require('../../../lib/platform/storage/private-file');
 
 const material = Object.freeze({
   username: 'A'.repeat(32),
@@ -22,11 +26,19 @@ const credential = {
   },
 };
 
+function sidecarWithStorage(options) {
+  const { platform = process.platform, fileSystem = fs, windowsAcl, ...sidecar } = options;
+  return ensureProxyCredentialSidecar({
+    ...sidecar,
+    privateStorageEffects: createPrivateStorageEffects({ fileSystem, platform, windowsAcl }),
+  });
+}
+
 test('helper sidecar is owner-only, exactly three lines, and not rewritten when unchanged', (t) => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-proxy-sidecar-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const filePath = path.join(directory, 'proxy-helper-credential.txt');
-  const first = ensureProxyCredentialSidecar({ filePath, port: 6180, credential });
+  const first = sidecarWithStorage({ filePath, port: 6180, credential });
   assert.equal(first.changed, true);
   const stat = fs.statSync(filePath);
   // POSIX mode bits are not the Windows authorization boundary. On Windows
@@ -39,11 +51,11 @@ test('helper sidecar is owner-only, exactly three lines, and not rewritten when 
     material.password,
   ]);
 
-  const second = ensureProxyCredentialSidecar({ filePath, port: 6180, credential });
+  const second = sidecarWithStorage({ filePath, port: 6180, credential });
   assert.equal(second.changed, false);
   assert.equal(fs.statSync(filePath).ino, stat.ino, 'unchanged sidecar keeps its inode');
 
-  const changed = ensureProxyCredentialSidecar({ filePath, port: 6280, credential });
+  const changed = sidecarWithStorage({ filePath, port: 6280, credential });
   assert.equal(changed.changed, true);
   assert.equal(fs.readFileSync(filePath, 'utf8').split('\n')[0], '127.0.0.1:6280');
 });
@@ -52,7 +64,7 @@ test('Profile-bound sidecar and SSH command carry identity but never credential 
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-proxy-sidecar-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const filePath = path.join(directory, 'proxy-helper-credential.txt');
-  ensureProxyCredentialSidecar({
+  sidecarWithStorage({
     filePath, port: 6180, credential, profileId: 'school-a',
   });
   assert.deepEqual(fs.readFileSync(filePath, 'utf8').split('\n'), [
@@ -77,7 +89,7 @@ test('Windows sidecar is ACL-protected before commit and reverified when unchang
     protect: (file) => { calls.push(['protect', file]); return true; },
     verify: (file) => { calls.push(['verify', file]); return true; },
   };
-  const first = ensureProxyCredentialSidecar({
+  const first = sidecarWithStorage({
     filePath, port: 6180, credential, platform: 'win32', windowsAcl,
   });
   assert.equal(first.changed, true);
@@ -85,7 +97,7 @@ test('Windows sidecar is ACL-protected before commit and reverified when unchang
   assert.deepEqual(calls[1], ['verify', filePath]);
 
   calls.length = 0;
-  const second = ensureProxyCredentialSidecar({
+  const second = sidecarWithStorage({
     filePath, port: 6180, credential, platform: 'win32', windowsAcl,
   });
   assert.equal(second.changed, false);
@@ -97,7 +109,7 @@ test('Windows sidecar protection or verification failure removes untrusted plain
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const filePath = path.join(directory, 'proxy-helper-credential.txt');
 
-  assert.throws(() => ensureProxyCredentialSidecar({
+  assert.throws(() => sidecarWithStorage({
     filePath,
     port: 6180,
     credential,
@@ -106,7 +118,7 @@ test('Windows sidecar protection or verification failure removes untrusted plain
   }), /could not write/u);
   assert.equal(fs.existsSync(filePath), false);
 
-  assert.throws(() => ensureProxyCredentialSidecar({
+  assert.throws(() => sidecarWithStorage({
     filePath,
     port: 6180,
     credential,
@@ -116,7 +128,7 @@ test('Windows sidecar protection or verification failure removes untrusted plain
   assert.equal(fs.existsSync(filePath), false);
 
   fs.writeFileSync(filePath, `127.0.0.1:6180\n${material.username}\n${material.password}`);
-  assert.throws(() => ensureProxyCredentialSidecar({
+  assert.throws(() => sidecarWithStorage({
     filePath,
     port: 6180,
     credential,
@@ -124,6 +136,59 @@ test('Windows sidecar protection or verification failure removes untrusted plain
     windowsAcl: { protect: () => true, verify: () => false },
   }), /verify/u);
   assert.equal(fs.existsSync(filePath), false);
+});
+
+test('sidecar uses the injected private storage filesystem and ACL effects', (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-proxy-sidecar-effects-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const filePath = path.join(directory, 'proxy-helper-credential.txt');
+  const operations = [];
+  const aclCalls = [];
+  const windowsAcl = {
+    protect(file) { aclCalls.push(['protect', file]); return true; },
+    verify(file) { aclCalls.push(['verify', file]); return true; },
+  };
+  const storage = createPrivateStorageEffects({
+    fileSystem: fs,
+    platform: 'win32',
+    windowsAcl,
+  });
+  const privateStorageEffects = Object.freeze({
+    ...storage,
+    readPrivateFileBounded(file, options) {
+      operations.push('read');
+      return storage.readPrivateFileBounded(file, options);
+    },
+    atomicWritePrivateFile(file, contents, options) {
+      operations.push('write');
+      return storage.atomicWritePrivateFile(file, contents, options);
+    },
+    ensureOwnerOnly(file) {
+      operations.push('owner-only');
+      return ensureOwnerOnly(file, { fileSystem: fs, platform: 'darwin' });
+    },
+  });
+
+  const result = ensureProxyCredentialSidecar({
+    filePath,
+    port: 6180,
+    credential,
+    privateStorageEffects,
+  });
+
+  assert.equal(result.changed, true);
+  assert.deepEqual(operations, ['read', 'write']);
+  assert.deepEqual(aclCalls.map(([kind]) => kind), ['protect', 'verify']);
+  assert.equal(fs.readFileSync(filePath, 'utf8').split('\n').length, 3);
+});
+
+test('sidecar fails before materializing a credential without bound storage effects', () => {
+  let credentialRead = false;
+  assert.throws(() => ensureProxyCredentialSidecar({
+    filePath: '/synthetic/sidecar', port: 6180,
+    credential: { withStrings() { credentialRead = true; } },
+  }), /storage effects are invalid/u);
+  assert.equal(credentialRead, false);
 });
 
 test('one SSH ProxyCommand contains only stable paths and targets the packaged helper', () => {

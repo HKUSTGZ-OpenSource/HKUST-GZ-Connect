@@ -11,6 +11,7 @@ const { createProfileNetworkRules } = require('../../../lib/integrations/profile
 const { ensureProxyCredentialSidecar } = require('../../../lib/integrations/external-proxy-config');
 const { validateGenericExportPayload } = require('../../../lib/integrations/generic-export-adapters');
 const { verifyWindowsFileOwnerOnly } = require('../../../lib/platform/storage/windows-private-file');
+const { createPrivateStorageEffects } = require('../../../lib/platform/storage/private-file');
 const profile = require('../../../assets/profiles/hkustgz/school-profile.json');
 
 test('native export roundtrip supports spaced Unicode paths for YAML and SSH', async (t) => {
@@ -23,12 +24,13 @@ test('native export roundtrip supports spaced Unicode paths for YAML and SSH', a
   const helper = path.join(directory, `ec-proxy-command${process.platform === 'win32' ? '.exe' : ''}`);
   const rules = createProfileNetworkRules({ profileDocument: profile });
   const credential = { withStrings: fn => fn('A'.repeat(32), 'B'.repeat(32)) };
+  const privateStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
   let copied = '';
   const runtime = createIntegrationCenterRuntime({
-    helperPath: helper, credentialFile,
+    helperPath: helper, credentialFile, privateStorageEffects,
     selectTarget: async () => target,
     ensureSidecar: () => ensureProxyCredentialSidecar({ filePath: credentialFile, port: 6180,
-      credential, profileId: 'hkustgz' }),
+      credential, profileId: 'hkustgz', privateStorageEffects }),
     writeClipboard: text => { copied = text; return true; },
     getContext: adapterId => ({ networkRules: rules, port: 6180, credential,
       bindingFor: () => createIntegrationBinding({
