@@ -127,3 +127,26 @@ test('actual repository inventory is covered without treating the dependency inv
   assert.equal(result.owners['independent/src/bin/ec-proxy-command.rs'], 'engine-helpers');
   assert.equal(result.owners['independent/src/bin/ec-auth-fixture.rs'], 'engine-test-support');
 });
+
+test('Main composition has a narrower owner than reusable App modules', () => {
+  const root = path.resolve(__dirname, '../../..');
+  const source = fs.readFileSync(path.join(root, 'docs/architecture/module-map.yml'), 'utf8');
+  const map = parseModuleMap(source);
+  const main = map.modules.find(module => module.id === 'desktop-main');
+  const app = map.modules.find(module => module.id === 'desktop-app');
+  const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' }).split('\0').filter(Boolean);
+  const coverage = moduleCoverage(source, files);
+
+  assert.deepEqual(coverage.errors, []);
+  assert.equal(coverage.owners['desktop/main.js'], 'desktop-main');
+  assert.equal(coverage.owners['desktop/lib/app/desktop-runtime-composition.js'], 'desktop-app');
+  assert.deepEqual(main.paths, ['desktop/main.js']);
+  assert.deepEqual(main.publicEntrypoints, [], 'composition root is not imported by another module');
+  assert.deepEqual(app.paths, ['desktop/lib/app/**']);
+  assert.ok(main.allowedDependencies.includes('desktop-ipc'));
+  assert.ok(main.allowedDependencies.includes('desktop-diagnostics'));
+  assert.ok(!app.allowedDependencies.includes('desktop-ipc'));
+  assert.ok(!app.allowedDependencies.includes('desktop-diagnostics'));
+  assert.equal(map.dependencyEnforcement, 'inventory-only',
+    'ownership split must not be misreported as full dependency enforcement');
+});
