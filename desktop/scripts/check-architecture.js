@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { checkRendererBoundaries } = require('./renderer-boundaries');
+const { moduleEdgeDebtErrors, moduleImportViolations } = require('./module-map-coverage');
 const RENDERER_SHARED_SOURCES = Object.freeze([
   'lib/browser/auth/login-flow.js',
   'lib/resources/presentation/resource-view.js',
@@ -119,8 +120,19 @@ function edgeCountForSources(graph, sources) {
 }
 
 function relativeRequires(source) {
-  return [...String(source).matchAll(/(?:require|import)\(\s*['"]([^'"]+)['"]\s*\)/g),
-    ...String(source).matchAll(/^\s*(?:import|export)\s+(?:[^'";]*?\s+from\s*)?['"]([^'"]+)['"]/gm)]
+  const text = String(source);
+  const hasTemplateSubstitution = raw => {
+    for (let index = 0; index < raw.length - 1; index += 1) {
+      if (raw[index] === '\\') { index += 1; continue; }
+      if (raw[index] === '$' && raw[index + 1] === '{') return true;
+    }
+    return false;
+  };
+  const staticTemplates = [...text.matchAll(/(?:require|import)\(\s*`((?:\\.|[^`\\])*)`\s*\)/g)]
+    .filter(match => !hasTemplateSubstitution(match[1]));
+  return [...text.matchAll(/(?:require|import)\(\s*['"]([^'"]+)['"]\s*\)/g),
+    ...staticTemplates,
+    ...text.matchAll(/^\s*(?:import|export)\s+(?:[^'";]*?\s+from\s*)?['"]([^'"]+)['"]/gm)]
     .map((match) => match[1])
     .filter((specifier) => specifier.startsWith('.'));
 }
@@ -211,6 +223,24 @@ function transitiveDependencies(graph, start) {
   };
   visit(start);
   return visited;
+}
+
+function moduleEdgeRatchetErrors(root, productionGraph) {
+  const repositoryRoot = path.resolve(root, '..');
+  const moduleMap = path.join(repositoryRoot, 'docs/architecture/module-map.yml');
+  // Synthetic architecture fixtures without the repository map exercise the
+  // other gates independently; governance checks require the map in the repo.
+  if (!fs.existsSync(moduleMap)) return [];
+  const debtFile = path.join(root, 'scripts/module-edge-debt.json');
+  if (!fs.existsSync(debtFile)) return ['module edge debt manifest is missing'];
+  let debt;
+  try { debt = JSON.parse(fs.readFileSync(debtFile, 'utf8')); }
+  catch { return ['module edge debt manifest is invalid']; }
+  const relative = file => path.relative(repositoryRoot, file).replaceAll(path.sep, '/');
+  const imports = [...productionGraph].flatMap(([from, targets]) =>
+    targets.map(to => [relative(from), relative(to)]));
+  const audit = moduleImportViolations(fs.readFileSync(moduleMap, 'utf8'), imports);
+  return audit.errors.length ? audit.errors : moduleEdgeDebtErrors(audit.violations, debt);
 }
 
 function graphFanMetrics(graph, root) {
@@ -416,6 +446,7 @@ function architectureSnapshot(root = path.resolve(__dirname, '..')) {
     rendererBoundaryErrors: checkRendererBoundaries(root, files, RENDERER_SHARED_SOURCES),
     layerErrors: dependencyLayerErrors(graph, root),
     domainLayerErrors: domainDependencyErrors(graph, root),
+    moduleEdgeRatchetErrors: moduleEdgeRatchetErrors(root, productionGraph),
     rootLibraryDebtErrors: rootLibraryDebtErrors(rootFiles, rootDebt),
     edgeCount: edgeCount(graph),
     fileCount: files.length,
@@ -455,6 +486,7 @@ function architectureErrors(snapshot) {
   errors.push(...(snapshot.rendererBoundaryErrors || []));
   errors.push(...(snapshot.layerErrors || []));
   errors.push(...(snapshot.domainLayerErrors || []));
+  errors.push(...(snapshot.moduleEdgeRatchetErrors || []));
   errors.push(...(snapshot.rootLibraryDebtErrors || []));
   for (const key of [
     'mainDirectDependencies', 'mainTransitiveDependencies', 'mainLines', 'rendererLines',
@@ -516,6 +548,7 @@ module.exports = {
   findCycles,
   graphFanMetrics,
   loadRootLibraryDebt,
+  moduleEdgeRatchetErrors,
   moduleExportNames,
   namedFrozenObjectMemberNames,
   JAVASCRIPT_SCOPE,
