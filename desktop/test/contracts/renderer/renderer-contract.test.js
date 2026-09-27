@@ -93,6 +93,26 @@ test('Connection keeps student essentials visible and progressively discloses ne
   assert.match(overviewCss, /:where\(\.connection-overview\) \.latency-metric\.is-empty \.latency-sparkline\s*\{[^}]*display:\s*none/u);
 });
 
+test('connection detail rendering belongs to the existing owner while App retains orchestration', () => {
+  assert.match(appJs, /rendererFeatures\.mount\('connection-overview'/u);
+  assert.match(appJs, /connectionOverviewFeature\?\.renderStatus\(s, t\)/u);
+  assert.match(appJs, /connectionOverviewFeature\?\.renderTelemetry\(tele, t\)/u);
+  assert.doesNotMatch(appJs, /\b(?:connectedAt|durTimer|fmtDur|startDur|stopDur|dnsModeLabel)\b/u,
+    'duration state, ticker and DNS display formatting have one Renderer owner');
+  assert.doesNotMatch(appJs, /\$\('(stDur|stDns|stPing|stConn|appList|appsCard|statGrid|latencyMetric|latencyHint)'\)/u,
+    'connection detail DOM is projected by the existing feature');
+  assert.match(appJs, /if \(typeof s\.locale === 'string'\) applyLocale\(s\.locale\)/u,
+    'effective locale remains app-level orchestration');
+  assert.match(appJs, /\$\('power'\)\.classList\.toggle\('on', s\.connected\)/u,
+    'the connection action remains in App');
+  assert.match(appJs, /window\.notificationView\.render/u,
+    'notification rendering remains in its existing owner');
+  assert.match(appJs, /updateLoginProgress\(s\)/u,
+    'login progression remains in App');
+  assert.match(appJs, /document\.querySelectorAll\('\.nav'\)\.forEach/u,
+    'navigation remains in App');
+});
+
 test('Campus Workspace exposes plain-language actions without a nested surface shell', () => {
   assert.match(html, /id="openCampusWorkspace"[^>]*data-i18n="browser\.openWindow"[^>]*>打开校园浏览器</u);
   assert.match(html, /id="addWebsite"[^>]*data-i18n="browser\.addWebsite"[^>]*>添加网站</u);
