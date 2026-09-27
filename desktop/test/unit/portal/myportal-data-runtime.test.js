@@ -48,9 +48,9 @@ test('HKUST calendar local timestamps represent campus UTC+08 time on any host',
         ['2027-01-15T02:00:00Z', '2027-01-15T04:00:00Z'],
         ['2027-01-15T03:00:00+01:00', '2027-01-15T05:00:00+01:00'],
       ]) {
-        let requestUrl;
+        const requestUrls = [];
         const value = await hkustMyPortalSources.schedule.read({
-          session: { fetch: async (url) => { requestUrl = new URL(url); return ({ status: 200, headers: headers(),
+          session: { fetch: async (url) => { requestUrls.push(new URL(url)); return ({ status: 200, headers: headers(),
             text: async () => JSON.stringify([{ title: 'Campus time fixture', startsAt: start, endsAt: end }]),
           }); } },
           portalUrl: 'https://myportal.hkust-gz.edu.cn/', sessionUrl: 'https://myportal.hkust-gz.edu.cn/',
@@ -58,8 +58,11 @@ test('HKUST calendar local timestamps represent campus UTC+08 time on any host',
         });
         assert.equal(value.items[0].startsAt, Date.parse('2027-01-15T02:00:00Z'), zone);
         assert.equal(value.items[0].endsAt, Date.parse('2027-01-15T04:00:00Z'), zone);
-        assert.equal(requestUrl.searchParams.get('fromDate'), '2027-01-17T16:00:00.000Z');
-        assert.equal(requestUrl.searchParams.get('endDate'), '2027-01-24T15:59:59.999Z');
+        assert.equal(value.items.length, 1, 'the same occurrence returned on several days is not duplicated');
+        assert.equal(requestUrls.length, 7);
+        assert.equal(requestUrls[0].searchParams.get('fromDate'), '2027-01-17T16:00:00.000Z');
+        assert.equal(requestUrls[0].searchParams.get('endDate'), '2027-01-18T15:59:59.000Z');
+        assert.equal(requestUrls[6].searchParams.get('endDate'), '2027-01-24T15:59:59.000Z');
       }
     }
   } finally {
@@ -327,14 +330,15 @@ test('reviewed HKUST sources map bounded JSONP data without copying the page non
   assert.equal(snapshot.modules.loans.state, 'source-unavailable');
   const sourceCalls = calls.slice(1);
   assert.equal(sourceCalls.every((url) => !String(url).includes('tt=')), true);
-  const calendarUrl = new URL(sourceCalls.find((url) => String(url).includes('calendarList.rst')));
-  assert.match(calendarUrl.href, /categoryIds=-3%2C-2%2C1%2C-4/u);
-  const from = new Date(calendarUrl.searchParams.get('fromDate'));
-  const through = new Date(calendarUrl.searchParams.get('endDate'));
+  const calendarUrls = sourceCalls.filter(url => String(url).includes('calendarList.rst')).map(url => new URL(url));
+  assert.equal(calendarUrls.length, 7);
+  assert.ok(calendarUrls.every(url => /categoryIds=-3%2C-2%2C1%2C-4/u.test(url.href)));
+  const from = new Date(calendarUrls[0].searchParams.get('fromDate'));
+  const through = new Date(calendarUrls[6].searchParams.get('endDate'));
   const campusWeekday = new Intl.DateTimeFormat('en', { weekday: 'short', timeZone: 'Asia/Shanghai' });
   assert.equal(campusWeekday.format(from), 'Mon');
   assert.equal(campusWeekday.format(through), 'Sun');
-  assert.equal(through.getTime() - from.getTime(), 7 * 86_400_000 - 1);
+  assert.equal(through.getTime() - from.getTime(), 7 * 86_400_000 - 1_000);
   assert.equal(sourceOptions.every(({ redirect, headers }) => (
     redirect === 'follow' && headers.Accept === '*/*'
   )), true);
