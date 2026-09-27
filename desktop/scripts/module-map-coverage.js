@@ -13,6 +13,7 @@ const RISK = new Set(['low', 'medium', 'high', 'critical', 'restricted-evidence'
 const ID = /^[a-z][a-z0-9-]{0,63}$/u;
 const MAX_SOURCE_BYTES = 128 * 1024;
 const MAX_FILES = 10000;
+const MAX_LEGACY_EDGE_DEBT = 124;
 // Reviewed check vocabulary, not execution evidence or permission to run a check.
 // Includes existing local acceptance aliases as well as required GitHub contexts.
 const REQUIRED_CHECKS = new Set([
@@ -143,4 +144,53 @@ function moduleCoverage(source, files) {
   return { errors: [...new Set(errors)].sort(), sourceCount, owners };
 }
 
-module.exports = { moduleCoverage, moduleMapErrors, parseModuleMap, schemaErrors, sourceInScope };
+// This is deliberately limited to already-resolved static JavaScript imports.
+// Dynamic Renderer edges and Rust visibility remain separate M5 obligations.
+function moduleImportViolations(source, imports) {
+  let document;
+  try { document = parseModuleMap(source); }
+  catch { return { errors: ['module map YAML is invalid'], violations: [] }; }
+  const errors = schemaErrors(document);
+  if (errors.length) return { errors, violations: [] };
+  if (!Array.isArray(imports) || imports.length > MAX_FILES || imports.some(edge => (
+    !Array.isArray(edge) || edge.length !== 2 || !validPath(edge[0]) || !validPath(edge[1])
+  ))) return { errors: ['module import inventory is invalid'], violations: [] };
+  const ownerFor = file => document.modules.find(module =>
+    module.paths.some(pattern => matches(pattern, file)));
+  const violations = new Set();
+  for (const [from, to] of imports) {
+    const sourceOwner = ownerFor(from);
+    const targetOwner = ownerFor(to);
+    if (!sourceOwner) errors.push(`unowned import source: ${from}`);
+    if (!targetOwner) errors.push(`unowned import target: ${to}`);
+    if (!sourceOwner || !targetOwner || sourceOwner.id === targetOwner.id) continue;
+    const reasons = [];
+    if (!sourceOwner.allowedDependencies.includes(targetOwner.id)) {
+      reasons.push('undeclared-dependency');
+    }
+    if (!targetOwner.publicEntrypoints.includes(to)) reasons.push('private-entrypoint');
+    if (reasons.length) violations.add(`${from} -> ${to} [${reasons.join('+')}]`);
+  }
+  return { errors: [...new Set(errors)].sort(), violations: [...violations].sort() };
+}
+
+function moduleEdgeDebtErrors(violations, debt) {
+  if (!exactKeys(debt, ['schemaVersion', 'baseSha', 'exceptions']) ||
+      debt.schemaVersion !== 1 || !/^[0-9a-f]{40}$/u.test(debt.baseSha) ||
+      !strings(debt.exceptions, MAX_LEGACY_EDGE_DEBT) ||
+      debt.exceptions.some(value => !/^desktop\/[^\n]+ -> desktop\/[^\n]+ \[(?:undeclared-dependency\+)?(?:private-entrypoint|undeclared-dependency)\]$/u.test(value)) ||
+      debt.exceptions.some((value, index) => index > 0 && debt.exceptions[index - 1] >= value) ||
+      !strings(violations, MAX_FILES)) {
+    return ['module edge debt manifest is invalid'];
+  }
+  const old = new Set(debt.exceptions), current = new Set(violations);
+  return [
+    ...[...current].filter(edge => !old.has(edge)).map(edge => `new module edge bypass: ${edge}`),
+    ...debt.exceptions.filter(edge => !current.has(edge)).map(edge => `stale module edge debt: ${edge}`),
+  ].sort();
+}
+
+module.exports = {
+  moduleCoverage, moduleEdgeDebtErrors, moduleImportViolations,
+  moduleMapErrors, parseModuleMap, schemaErrors, sourceInScope,
+};

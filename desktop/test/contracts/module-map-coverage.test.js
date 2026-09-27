@@ -5,7 +5,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { moduleCoverage, moduleMapErrors, parseModuleMap, sourceInScope } = require('../../scripts/module-map-coverage');
+const {
+  moduleCoverage, moduleEdgeDebtErrors, moduleImportViolations,
+  moduleMapErrors, parseModuleMap, sourceInScope,
+} = require('../../scripts/module-map-coverage');
+const {
+  architectureErrors, architectureSnapshot, moduleEdgeRatchetErrors,
+} = require('../../scripts/check-architecture');
 
 function fixture() {
   const record = id => ({ id, paths: [`desktop/lib/${id}/**`],
@@ -149,4 +155,54 @@ test('Main composition has a narrower owner than reusable App modules', () => {
   assert.ok(!app.allowedDependencies.includes('desktop-diagnostics'));
   assert.equal(map.dependencyEnforcement, 'inventory-only',
     'ownership split must not be misreported as full dependency enforcement');
+});
+
+test('static module imports distinguish undeclared edges from private entrypoints', () => {
+  const f = fixture();
+  f.document.modules[0].allowedDependencies = ['b'];
+  const source = JSON.stringify(f.document);
+  const imports = [
+    ['desktop/lib/a/private.js', 'desktop/lib/b/index.js'],
+    ['desktop/lib/a/private.js', 'desktop/lib/b/private.js'],
+  ];
+  assert.deepEqual(moduleImportViolations(source, imports), {
+    errors: [],
+    violations: ['desktop/lib/a/private.js -> desktop/lib/b/private.js [private-entrypoint]'],
+  });
+  f.document.modules[0].allowedDependencies = [];
+  assert.deepEqual(moduleImportViolations(JSON.stringify(f.document), imports).violations, [
+    'desktop/lib/a/private.js -> desktop/lib/b/index.js [undeclared-dependency]',
+    'desktop/lib/a/private.js -> desktop/lib/b/private.js [undeclared-dependency+private-entrypoint]',
+  ]);
+  assert.ok(moduleImportViolations(source,
+    [['desktop/lib/a/private.js', 'desktop/lib/missing/unsafe.js']]).errors
+    .includes('unowned import target: desktop/lib/missing/unsafe.js'));
+});
+
+test('exact static-edge debt rejects new bypasses and stale exceptions', () => {
+  const old = 'desktop/lib/a/private.js -> desktop/lib/b/private.js [private-entrypoint]';
+  const next = 'desktop/lib/a/index.js -> desktop/lib/b/private.js [private-entrypoint]';
+  const debt = { schemaVersion: 1, baseSha: 'a'.repeat(40), exceptions: [old] };
+  assert.deepEqual(moduleEdgeDebtErrors([old], debt), []);
+  assert.deepEqual(moduleEdgeDebtErrors([old, next], debt), [`new module edge bypass: ${next}`]);
+  assert.deepEqual(moduleEdgeDebtErrors([], debt), [`stale module edge debt: ${old}`]);
+  for (const invalid of [null, { ...debt, exceptions: [old, old] },
+    { ...debt, extra: true }, { ...debt, baseSha: 'short' },
+    { ...debt, exceptions: Array.from({ length: 125 }, (_, index) =>
+      `desktop/lib/a/${index}.js -> desktop/lib/b/private.js [private-entrypoint]`) }]) {
+    assert.deepEqual(moduleEdgeDebtErrors([old], invalid), ['module edge debt manifest is invalid']);
+  }
+});
+
+test('the production architecture gate includes the reviewed static-edge ratchet', () => {
+  const desktopRoot = path.resolve(__dirname, '../..');
+  const snapshot = architectureSnapshot(desktopRoot);
+  assert.deepEqual(snapshot.moduleEdgeRatchetErrors, []);
+  const failure = 'new module edge bypass: desktop/lib/a/x.js -> desktop/lib/b/y.js [private-entrypoint]';
+  assert.ok(architectureErrors({ ...snapshot, moduleEdgeRatchetErrors: [failure] }).includes(failure));
+  const added = new Map([[path.join(desktopRoot, 'lib/app/card-board-main-runtime.js'), [
+    path.join(desktopRoot, 'lib/browser/session/campus-browser.js'),
+  ]]]);
+  assert.ok(moduleEdgeRatchetErrors(desktopRoot, added).some(error =>
+    error.startsWith('new module edge bypass: desktop/lib/app/card-board-main-runtime.js')));
 });
