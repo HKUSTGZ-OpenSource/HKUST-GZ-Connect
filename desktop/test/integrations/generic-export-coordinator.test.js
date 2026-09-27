@@ -14,6 +14,7 @@ const {
 const {
   AtomicExportFileTransaction,
 } = require('../../lib/integrations/atomic-export-file-transaction');
+const { createPrivateStorageEffects } = require('../../lib/platform/storage/private-file');
 const {
   createProfileNetworkRules,
 } = require('../../lib/integrations/profile-network-rules');
@@ -46,7 +47,9 @@ function fixture(t, { writeClipboard = null, beforePerform = null } = {}) {
   const output = path.join(root, 'output');
   fs.mkdirSync(output, { mode: 0o700 });
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const fileTransaction = new AtomicExportFileTransaction();
+  const fileTransaction = new AtomicExportFileTransaction({
+    privateStorageEffects: createPrivateStorageEffects({ fileSystem: fs, platform: process.platform }),
+  });
   let entropy = 0;
   const clipboard = [];
   const coordinator = createGenericExportCoordinator({

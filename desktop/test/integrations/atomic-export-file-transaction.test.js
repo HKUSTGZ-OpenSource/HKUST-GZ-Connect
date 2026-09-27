@@ -7,13 +7,17 @@ const path = require('node:path');
 const test = require('node:test');
 const {
   AtomicExportFileTransaction,
+  readAtomicExportTarget,
 } = require('../../lib/integrations/atomic-export-file-transaction');
+const { createPrivateStorageEffects } = require('../../lib/platform/storage/private-file');
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atomic-export-'));
   fs.chmodSync(root, 0o700);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  return { root, transaction: new AtomicExportFileTransaction() };
+  return { root, transaction: new AtomicExportFileTransaction({
+    privateStorageEffects: createPrivateStorageEffects({ fileSystem: fs, platform: process.platform }),
+  }) };
 }
 
 test('explicit single-file export is owner-only, validated, and idempotent', (t) => {
@@ -49,4 +53,37 @@ test('target drift links and invalid generated payload never overwrite user cont
     code: 'INTEGRATION_EXPORT_FAILED',
   });
   assert.equal(fs.existsSync(path.join(f.root, 'invalid.yaml')), false);
+});
+
+test('export transaction delegates only its low-level write to injected storage effects', (t) => {
+  const f = fixture(t);
+  const storage = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
+  let writes = 0;
+  const privateStorageEffects = Object.freeze({
+    ...storage,
+    atomicWritePrivateFile(file, contents, options) {
+      writes += 1;
+      return storage.atomicWritePrivateFile(file, contents, options);
+    },
+  });
+  const transaction = new AtomicExportFileTransaction({ privateStorageEffects });
+  const file = path.join(f.root, 'injected.yaml');
+  const payload = Buffer.from('synthetic export\n');
+
+  const plan = transaction.inspect(file, payload);
+  assert.equal(transaction.apply(plan, payload, (value) => value.equals(payload)).changed, true);
+  assert.equal(writes, 1, 'the injected primitive writes once; transaction still owns validation');
+  assert.equal(fs.readFileSync(file).equals(payload), true);
+});
+
+test('standalone export read helper retains its node:fs default', (t) => {
+  const f = fixture(t);
+  const file = path.join(f.root, 'default-read.txt');
+  fs.writeFileSync(file, 'synthetic default read\n', { mode: 0o600 });
+
+  assert.equal(readAtomicExportTarget(file).toString('utf8'), 'synthetic default read\n');
+});
+
+test('export transaction fails closed without bound storage effects', () => {
+  assert.throws(() => new AtomicExportFileTransaction(), /dependencies are invalid/u);
 });

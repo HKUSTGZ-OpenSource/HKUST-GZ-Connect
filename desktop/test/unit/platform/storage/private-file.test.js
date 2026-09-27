@@ -121,6 +121,31 @@ test('private storage effects bind injected filesystem, platform and Windows ACL
   assert.deepEqual(calls[1], ['verify', file]);
 });
 
+test('private storage owner-only effect uses its bound filesystem and platform', (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-private-effects-owner-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const file = path.join(directory, 'private.json');
+  fs.writeFileSync(file, '{}', { mode: 0o644 });
+  const calls = [];
+  const fileSystem = new Proxy(fs, {
+    get(target, property) {
+      if (property === 'lstatSync') {
+        return (candidate, options) => {
+          calls.push(['lstat', candidate]);
+          return fs.lstatSync(candidate, options);
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  const storage = createPrivateStorageEffects({ fileSystem, platform: 'darwin' });
+
+  assert.equal(storage.ensureOwnerOnly(file), true);
+  assert.ok(calls.some(([name, candidate]) => name === 'lstat' && candidate === file));
+  if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o077, 0);
+});
+
 test('private storage effects reject unsupported platform and incomplete Windows ACLs', () => {
   assert.throws(() => createPrivateStorageEffects({ platform: 'unknown' }), /dependencies are invalid/u);
   assert.throws(() => createPrivateStorageEffects({

@@ -169,11 +169,9 @@ function createIntegrationCenterRuntime({
   writeClipboard,
   helperPath,
   credentialFile,
-  fileSystem,
-  platform = process.platform,
-  windowsAcl,
+  privateStorageEffects,
 } = {}) {
-  const fileTransaction = new AtomicExportFileTransaction({ fileSystem, platform, windowsAcl });
+  const fileTransaction = new AtomicExportFileTransaction({ privateStorageEffects });
   const genericCoordinator = createGenericExportCoordinator({
     fileTransaction, writeClipboard,
     beforePerform: ({ adapterId }) => {

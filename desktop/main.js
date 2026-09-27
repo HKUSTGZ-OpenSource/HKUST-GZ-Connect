@@ -309,7 +309,7 @@ function ensureExternalProxyAccess(port) {
     filePath: PROXY_HELPER_CREDENTIAL,
     port,
     credential, profileId: activeSchoolProfile.activeContextBinding().profileId,
-    platform: process.platform,
+    privateStorageEffects: profileStorageEffects,
   });
   return credential;
 }
@@ -615,6 +615,7 @@ const externalIntegrationRuntime = createExternalIntegrationRuntime({
   getProxyCredential: loadStableProxyCredential, getPacSource: () => domainRoutePolicy.buildPac(Number(loadSettingsOrReport().port), { defaultRoute: 'direct', campusPrivateIpv4: true }),
   ensureSidecar: () => ensureExternalProxyAccess(socksPort()), writeClipboard: (text) => (clipboard.writeText(text), true),
   helperPath: proxyHelperPath(), credentialFile: PROXY_HELPER_CREDENTIAL, selectTarget: integrationTargetSelector,
+  privateStorageEffects: profileStorageEffects,
 });
 const profileSwitching = createMainProfileSwitchComposition({
   enabled: preReadyStorage.mode === 'profile-workspace',
