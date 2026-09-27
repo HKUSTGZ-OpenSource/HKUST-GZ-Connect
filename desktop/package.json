@@ -51,7 +51,7 @@
   "devDependencies": {
     "acorn": "8.18.0",
     "@electron/asar": "^3.4.1",
-    "electron": "^43.2.0",
+    "electron": "^44.4.5",
     "electron-builder": "^26.15.3",
     "js-yaml": "4.3.2"
   },
