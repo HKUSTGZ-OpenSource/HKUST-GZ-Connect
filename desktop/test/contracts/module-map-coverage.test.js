@@ -197,8 +197,8 @@ test('exact static-edge debt rejects new bypasses and stale exceptions', () => {
   assert.deepEqual(moduleEdgeDebtErrors([], debt), [`stale module edge debt: ${old}`]);
   for (const invalid of [null, { ...debt, exceptions: [old, old] },
     { ...debt, extra: true }, { ...debt, baseSha: 'short' },
-    { ...debt, exceptions: Array.from({ length: 125 }, (_, index) =>
-      `desktop/lib/a/${index}.js -> desktop/lib/b/private.js [private-entrypoint]`) }]) {
+    { ...debt, exceptions: Array.from({ length: 117 }, (_, index) =>
+      `desktop/lib/a/${index}.js -> desktop/lib/b/private.js [private-entrypoint]`).sort() }]) {
     assert.deepEqual(moduleEdgeDebtErrors([old], invalid), ['module edge debt manifest is invalid']);
   }
 });
@@ -214,4 +214,28 @@ test('the production architecture gate includes the reviewed static-edge ratchet
   ]]]);
   assert.ok(moduleEdgeRatchetErrors(desktopRoot, added).some(error =>
     error.startsWith('new module edge bypass: desktop/lib/app/card-board-main-runtime.js')));
+});
+
+test('the existing campus route module is a declared file-level Routing entrypoint', () => {
+  const root = path.resolve(__dirname, '../../..');
+  const source = fs.readFileSync(path.join(root, 'docs/architecture/module-map.yml'), 'utf8');
+  const routing = parseModuleMap(source).modules.find(module => module.id === 'desktop-routing');
+  const entry = 'desktop/lib/routing/policy/campus-route.js';
+  assert.ok(routing.publicEntrypoints.includes(entry));
+  assert.ok(!routing.publicEntrypoints.includes('desktop/lib/routing/rules/routing-rule-store.js'));
+  assert.ok(!routing.publicEntrypoints.includes('desktop/lib/routing/policy/host-safety.js'));
+  const imports = [
+    ['desktop/lib/browser/session/browser-session-manager.js', entry],
+    ['desktop/lib/browser/session/campus-browser-manager.js', entry],
+    ['desktop/lib/browser/session/campus-browser.js', entry],
+    ['desktop/lib/browser/tabs/tab-manager.js', entry],
+    ['desktop/lib/browser/workspace/campus-workspace-controller.js', entry],
+    ['desktop/lib/integrations/profile-network-rules.js', entry],
+    ['desktop/lib/resources/runtime/campus-resources.js', entry],
+    ['desktop/lib/resources/schema/campus-resource-contract.js', entry],
+  ];
+  assert.equal(imports.length, 8);
+  assert.deepEqual(moduleImportViolations(source, imports), { errors: [], violations: [] });
+  const debt = JSON.parse(fs.readFileSync(path.join(root, 'desktop/scripts/module-edge-debt.json'), 'utf8'));
+  assert.ok(debt.exceptions.every(value => !value.includes(` -> ${entry} [`)));
 });
