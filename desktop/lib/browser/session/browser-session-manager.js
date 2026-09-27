@@ -710,18 +710,34 @@ const hkustMyPortalSources = Object.freeze({
       campusDay.setUTCHours(0, 0, 0, 0);
       campusDay.setUTCDate(campusDay.getUTCDate() - ((campusDay.getUTCDay() + 6) % 7));
       const start = new Date(campusDay.getTime() - campusOffsetMs);
-      const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
-      const payload = await fetchPortalJsonp(context,
-        '/calendar/mgr/api/hkust/calendarList.rst', {
-          _p: 'YXM9MiZ0PTUmZD05NyZwPTEmZj0yMiZtPU4m',
-          queryType: 2,
-          categoryIds: '-3,-2,1,-4',
-          fromDate: start.toISOString(),
-          endDate: end.toISOString(),
-          type: 0,
-          t: context.checkedAt,
-        }, 'hkustgzConnectSchedule');
-      return scheduleProjection(payload, context);
+      // myPortal requests personal categories for one campus day at a time.
+      // Its separate seven-day -1000 request is not interchangeable with the
+      // personal-event response. A broad personal-category request can return
+      // an empty week even while a day in that week contains a course.
+      const days = await Promise.all(Array.from({ length: 7 }, async (_, index) => {
+        const dayStart = new Date(start.getTime() + index * DAY_MS);
+        const dayEnd = new Date(dayStart.getTime() + DAY_MS - 1_000);
+        const payload = await fetchPortalJsonp(context,
+          '/calendar/mgr/api/hkust/calendarList.rst', {
+            _p: 'YXM9MiZ0PTUmZD05NyZwPTEmZj0yMiZtPU4m',
+            queryType: 2,
+            categoryIds: '-3,-2,1,-4',
+            fromDate: dayStart.toISOString(),
+            endDate: dayEnd.toISOString(),
+            type: 0,
+            t: context.checkedAt,
+          }, 'hkustgzConnectSchedule');
+        return scheduleProjection(payload, context);
+      }));
+      const seen = new Set();
+      const items = days.flatMap(day => day.items).filter(item => {
+        const key = JSON.stringify([item.id, item.startsAt, item.endsAt]);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).sort((left, right) => left.startsAt - right.startsAt).slice(0, 64);
+      return { state: items.length ? 'ready' : 'empty', source: 'myportal-calendar',
+        fetchedAt: context.checkedAt, stale: false, items };
     },
   }),
   news: Object.freeze({

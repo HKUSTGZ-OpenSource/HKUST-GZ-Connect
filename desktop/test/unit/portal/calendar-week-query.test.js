@@ -13,17 +13,64 @@ test('arbitrary calendar selection is exact, campus-time and not a URL/query pas
 });
 
 test('reviewed adapter requests the selected week instead of the fetch-time week', async () => {
-  let requested;
+  const requested = [];
   await hkustMyPortalSources.schedule.read({
     checkedAt: Date.parse('2026-09-07T00:00:00Z'),
     scheduleWeekStart: calendarWeekQuery({ date: '2027-01-13' }).start,
     portalUrl: 'https://myportal.hkust-gz.edu.cn/',
-    session: { fetch: async url => { requested = new URL(url); return { status: 200,
+    session: { fetch: async url => { requested.push(new URL(url)); return { status: 200,
       headers: { get: () => null }, text: async () => JSON.stringify({ total: 0, items: [] }) }; } },
   });
-  assert.equal(requested.searchParams.get('fromDate'), '2027-01-10T16:00:00.000Z');
-  assert.equal(requested.searchParams.get('endDate'), '2027-01-17T15:59:59.999Z');
-  assert.equal(requested.pathname, '/calendar/mgr/api/hkust/calendarList.rst');
+  assert.equal(requested.length, 7, 'the portal uses bounded day requests for personal events');
+  assert.equal(requested[0].searchParams.get('fromDate'), '2027-01-10T16:00:00.000Z');
+  assert.equal(requested[0].searchParams.get('endDate'), '2027-01-11T15:59:59.000Z');
+  assert.equal(requested[6].searchParams.get('fromDate'), '2027-01-16T16:00:00.000Z');
+  assert.equal(requested[6].searchParams.get('endDate'), '2027-01-17T15:59:59.000Z');
+  assert.ok(requested.every(url => url.pathname === '/calendar/mgr/api/hkust/calendarList.rst' &&
+    url.searchParams.get('queryType') === '2' &&
+    url.searchParams.get('categoryIds') === '-3,-2,1,-4'));
+});
+
+test('a Sep-30 My Course item returned by the portal day request survives weekly projection', async () => {
+  const requested = [];
+  const result = await hkustMyPortalSources.schedule.read({
+    checkedAt: Date.parse('2026-09-27T00:00:00Z'),
+    scheduleWeekStart: calendarWeekQuery({ date: '2026-09-30' }).start,
+    portalUrl: 'https://myportal.hkust-gz.edu.cn/',
+    session: { fetch: async url => {
+      const query = new URL(url);
+      requested.push(query);
+      const day = new Date(Date.parse(query.searchParams.get('fromDate')) + 28_800_000)
+        .toISOString().slice(0, 10);
+      const events = day === '2026-09-30' ? [{
+        schedule: { id: 'synthetic-course', title: 'Synthetic class', cateGory: { name: 'My Course' } },
+        beginTime: '2026-09-30 18:00:00', endTime: '2026-09-30 18:50:00',
+      }] : [];
+      return { status: 200, headers: { get: () => null },
+        text: async () => `portalProbe(${JSON.stringify([{ day: `${day} 00:00:00`,
+          isHoliday: false, teachingWeek: 4, events }])});` };
+    } },
+  });
+
+  assert.equal(requested.length, 7);
+  assert.equal(result.state, 'ready');
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].kind, 'My Course');
+  assert.equal(new Date(result.items[0].startsAt).toISOString(), '2026-09-30T10:00:00.000Z');
+});
+
+test('one failed day never turns an incomplete week into an empty timetable', async () => {
+  await assert.rejects(hkustMyPortalSources.schedule.read({
+    checkedAt: Date.parse('2026-09-27T00:00:00Z'),
+    scheduleWeekStart: calendarWeekQuery({ date: '2026-09-30' }).start,
+    portalUrl: 'https://myportal.hkust-gz.edu.cn/',
+    session: { fetch: async url => {
+      const day = new Date(Date.parse(new URL(url).searchParams.get('fromDate')) + 28_800_000)
+        .toISOString().slice(0, 10);
+      return { status: day === '2026-09-30' ? 503 : 200,
+        headers: { get: () => null }, text: async () => JSON.stringify({ total: 0, items: [] }) };
+    } },
+  }), (error) => error?.code === 'PORTAL_RESPONSE_INVALID');
 });
 
 function fixture() {
