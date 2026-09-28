@@ -107,6 +107,7 @@ modules:
   - id: desktop-routing
     paths: [desktop/lib/routing/**]
     publicEntrypoints:
+      - desktop/lib/routing/policy/campus-route.js
       - desktop/lib/routing/policy/domain-route-policy.js
       - desktop/lib/routing/rules/routing-policy-transaction.js
     allowedDependencies: [desktop-profiles, desktop-platform]

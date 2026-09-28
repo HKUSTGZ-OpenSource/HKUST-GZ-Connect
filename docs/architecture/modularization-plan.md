@@ -216,7 +216,8 @@ The schema-2 path/entrypoint subset is defined in
 [module map coverage](module-map-enforcement.md). Dependency enforcement and Rust visibility are
 explicitly not promoted to complete by this coverage check.
 The static-JS ratchet now rejects new resolved cross-module bypasses against 124 exact legacy
-edges at `main@381c5f29`; those exceptions remain M5 migration work, not accepted public APIs.
+edges at `main@381c5f29`. Declaring the existing shared campus-route contract public reduces
+the candidate inventory to 116; the rest remain M5 migration work, not accepted public APIs.
 
 - Move remaining root Desktop tests into `test/unit/<domain>`, `test/contracts` or
   `test/integrations`; reject new root-test debt.
