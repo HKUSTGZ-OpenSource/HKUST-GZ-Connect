@@ -105,6 +105,11 @@ The staged [Browser toolbar owner](browser-toolbar-owner.md) moves toolbar state
 coalesced updates and teardown cancellation out of the Browser orchestrator. It is based on the
 certificate-entrypoint candidate and is not a full M2 completion or a shipped Browser change.
 
+The staged [Browser navigation owner](browser-navigation-owner.md) gives tab-bound intent, Home,
+New Tab, address navigation and reload to a distinct class co-located with the existing tab
+lifecycle module. The Browser orchestrator falls from 1,437 to 1,368 lines; the tab file remains
+below 600 and the transitive dependency budget remains unchanged. M2 is still open.
+
 Extract tested owners for:
 
 ```text

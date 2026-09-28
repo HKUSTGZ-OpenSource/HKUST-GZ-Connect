@@ -24,7 +24,7 @@ const {
   createMemoryRoutingPolicy,
   pacDataUrl,
 } = require('./browser-session-manager');
-const { DEFAULT_MAX_TABS, BrowserTabLifecycle } = require('../tabs/tab-manager');
+const { DEFAULT_MAX_TABS, BrowserNavigationOwner, BrowserTabLifecycle } = require('../tabs/tab-manager');
 const { createT } = require('../../platform/i18n/i18n');
 const TOOLBAR_HEIGHT = 108;
 const FIND_BAR_HEIGHT = 34;
@@ -373,6 +373,20 @@ class CampusBrowser {
       t: (key, vars) => this.t(key, vars), onError: message => this.onError?.(message),
       updateToolbar: () => this.updateToolbar(),
     });
+    this.navigationOwner = new BrowserNavigationOwner({
+      blankUrl: BLANK_CAMPUS_HOME, normalizeUrl: normalizeCampusUrl,
+      getHomeUrl: () => this.homeUrl, getNewTabUrl: () => this.getNewTabUrl(),
+      getTranslator: () => this.t, reportError: (message) => this.onError?.(message),
+      getActiveTab: () => this.activeTab(), containsTab: (tab) => this.tabManager.contains(tab),
+      getConfiguredPort: () => this.configuredPort,
+      resolveRoute: (url) => this.resolveRoute(url),
+      ensureRoutingReady: (resolution, port) => this.ensureRoutingReady(resolution, port),
+      createTab: (...args) => this.createTab(...args),
+      focusWorkspaceSearch: () => this.focusWorkspaceSearch(),
+      currentUrl: (tab) => this.currentUrl(tab),
+      updateTabRoute: (tab, url, route) => this.updateTabRoute(tab, url, route),
+      scheduleToolbarUpdate: () => this.scheduleToolbarUpdate(),
+    });
     this.findOpen = false;
     this.lastFindQuery = '';
     this.scheduledLayout = null;
@@ -451,54 +465,18 @@ class CampusBrowser {
   }
 
   beginNavigationIntent(tab = this.activeTab()) {
-    if (!tab || tab.view.webContents.isDestroyed()) return null;
-    tab.navigationIntent = (tab.navigationIntent || 0) + 1;
-    return tab.navigationIntent;
+    return this.navigationOwner.beginNavigationIntent(tab);
   }
 
   navigationIntentCurrent(tab, intent) {
-    return Number.isSafeInteger(intent) && this.tabManager.contains(tab) &&
-      tab.navigationIntent === intent && !tab.view.webContents.isDestroyed();
+    return this.navigationOwner.navigationIntentCurrent(tab, intent);
   }
 
-  async openHome() {
-    if (this.homeUrl === BLANK_CAMPUS_HOME) {
-      return this.focusWorkspaceSearch();
-    }
-    const active = this.activeTab();
-    const intent = active ? this.beginNavigationIntent(active) : null;
-    const port = this.configuredPort || 1080;
-    const resolution = this.resolveRoute(this.homeUrl);
-    if (!await this.ensureRoutingReady(resolution, port)) return false;
-    if (active && !this.navigationIntentCurrent(active, intent)) return false;
-    if (active && active.kind !== 'workspace') {
-      return this.navigate(this.homeUrl, active);
-    }
-    return !!this.createTab(this.homeUrl);
-  }
+  async openHome() { return this.navigationOwner.openHome(); }
 
-  openBlankTab() {
-    return !!this.createTab(BLANK_CAMPUS_HOME, ROUTE_DIRECT, { blankPage: true });
-  }
+  openBlankTab() { return this.navigationOwner.openBlankTab(); }
 
-  async openNewTab() {
-    let url;
-    try { url = normalizeCampusUrl(this.getNewTabUrl(), BLANK_CAMPUS_HOME, this.t); }
-    catch (error) {
-      this.onError?.(error.message);
-      return false;
-    }
-    if (url === BLANK_CAMPUS_HOME) return this.openBlankTab();
-    const port = this.configuredPort || 1080;
-    // The saved new-tab URL is a destination preference, not an implicit
-    // routing override. Resolve it through the same policy that generates the
-    // Session PAC so the toolbar can never claim Direct while Chromium is
-    // actually using the fail-safe Campus default. Users can persist an exact
-    // Direct choice through the routing-rule UI, where it becomes PAC input.
-    const resolution = this.resolveRoute(url);
-    if (!await this.ensureRoutingReady(resolution, port)) return false;
-    return !!this.createTab(url);
-  }
+  async openNewTab() { return this.navigationOwner.openNewTab(); }
 
   async ensureRoutingReady(resolution, port = this.configuredPort || 1080) {
     if (!resolution || ![ROUTE_CAMPUS, ROUTE_DIRECT].includes(resolution.route)) return false;
@@ -532,36 +510,11 @@ class CampusBrowser {
   }
 
   async navigateWhenReady(rawUrl, tab = this.activeTab()) {
-    let url;
-    try {
-      url = normalizeCampusUrl(rawUrl, this.homeUrl, this.t);
-    } catch (error) {
-      this.onError?.(error.message);
-      return false;
-    }
-    if (!tab || tab.view.webContents.isDestroyed()) return false;
-    const intent = this.beginNavigationIntent(tab);
-    const resolution = this.resolveRoute(url);
-    if (!await this.ensureRoutingReady(resolution)) return false;
-    if (!this.navigationIntentCurrent(tab, intent)) return false;
-    if (tab.kind === 'workspace') return !!this.createTab(url);
-    return this.navigate(url, tab);
+    return this.navigationOwner.navigateWhenReady(rawUrl, tab);
   }
 
   async reloadWhenReady(tab = this.activeTab()) {
-    if (!tab || tab.kind === 'workspace' || tab.view.webContents.isDestroyed()) return false;
-    const url = tab.failedUrl || this.currentUrl(tab);
-    if (!url || url === BLANK_CAMPUS_HOME) {
-      tab.view.webContents.reload();
-      return true;
-    }
-    const intent = this.beginNavigationIntent(tab);
-    const resolution = this.resolveRoute(url);
-    if (!await this.ensureRoutingReady(resolution)) return false;
-    if (!this.navigationIntentCurrent(tab, intent)) return false;
-    if (tab.failedUrl) return this.navigate(url, tab);
-    tab.view.webContents.reload();
-    return true;
+    return this.navigationOwner.reloadWhenReady(tab);
   }
 
   pageFavoriteState(tab = this.activeTab()) { return this.workspaceOwner.pageFavoriteState(tab); }
@@ -1322,29 +1275,7 @@ class CampusBrowser {
   }
 
   navigate(rawUrl, tab = this.activeTab(), requestedRoute = null) {
-    let url;
-    try {
-      url = normalizeCampusUrl(rawUrl, this.homeUrl, this.t);
-    } catch (error) {
-      if (this.onError) this.onError(error.message);
-      return false;
-    }
-    if (!tab || tab.view.webContents.isDestroyed()) return false;
-    // `open()` may carry a route already resolved from the active Profile or
-    // an ID-only WebResource. Keep that decision through the first load when
-    // the generic policy has no matching rule; later user navigation resolves
-    // afresh from the live Profile-backed policy.
-    this.updateTabRoute(tab, url, requestedRoute);
-    tab.failedUrl = '';
-    tab.renderingError = false;
-    tab.crashed = false;
-    const loading = tab.view.webContents.loadURL(url);
-    loading.catch(() => {
-      // did-fail-load renders a local error page. A superseded navigation can
-      // reject this promise even though the newer page loaded successfully.
-    });
-    this.scheduleToolbarUpdate();
-    return true;
+    return this.navigationOwner.navigate(rawUrl, tab, requestedRoute);
   }
 
   async open(rawUrl, port, route = null, options = {}) {
