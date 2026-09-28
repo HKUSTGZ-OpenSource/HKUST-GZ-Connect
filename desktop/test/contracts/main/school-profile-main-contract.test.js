@@ -30,7 +30,15 @@ test('composition root resolves one active Profile before persistence-owned cred
 });
 
 test('profile drives resources, routes and a Main-resolved official portal home', () => {
-  assert.match(main, /resourceLibraryRuntime\.resolveRoutes\(activeSchoolProfile\.mergeResourceLibrary\(\s*settings\.customResources, settings\.hiddenBuiltinResourceIds,/u);
+  const resourceRuntime = fs.readFileSync(require.resolve('../../../lib/resources/runtime/resource-library-runtime'), 'utf8');
+  assert.match(main, /loadResources: ResourceLibraryRuntime\.createSource\(/u);
+  assert.match(main, /mergeResources: \(custom, hidden\) => activeSchoolProfile\.mergeResourceLibrary\(custom, hidden\)/u);
+  assert.match(main, /resolveRoute: \(url\) => domainRoutePolicy\.resolve\(url\)/u);
+  assert.match(main, /onOpenResource: \(resourceId\) => resourceLibraryRuntime\.openByIdSerialized\(\{ resourceId \}\)/u);
+  assert.match(main, /openResource: \(request\) => resourceLibraryRuntime\.openByIdSerialized\(request\)/u);
+  assert.doesNotMatch(main, /function openCampusResourceById\(/u);
+  assert.match(resourceRuntime, /current\.customResources, current\.hiddenBuiltinResourceIds/u);
+  assert.match(resourceRuntime, /projectEffectiveRoutes\(mergeResources\(/u);
   assert.match(main,
     /serverCampusResources = activeSchoolProfile\.mergeResourceLibrary\(\[\], \[\]\)/u,
     'reviewed per-site routes must feed the shared browser and external PAC policy');

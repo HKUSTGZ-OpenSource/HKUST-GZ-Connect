@@ -35,6 +35,102 @@ const resources = [{
   route: 'direct', category: 'common', keywords: [], builtin: true,
 }];
 
+test('resource source merges the active Profile and resolves effective routes once', () => {
+  const settings = { customResources: [{ id: 'custom' }], hiddenBuiltinResourceIds: ['hidden'] };
+  const calls = [];
+  const source = ResourceLibraryRuntime.createSource({
+    loadSettings: () => settings,
+    mergeResources: (custom, hidden) => {
+      calls.push({ custom, hidden });
+      return resources;
+    },
+    resolveRoute: (url) => {
+      calls.push({ url });
+      return { route: 'campus', source: 'user-exact' };
+    },
+    onReadFailure: () => assert.fail('healthy source must not report a read failure'),
+  });
+  const result = source();
+  assert.deepEqual(calls, [
+    { custom: settings.customResources, hidden: settings.hiddenBuiltinResourceIds },
+    { url: resources[0].url },
+  ]);
+  assert.equal(result[0].route, 'campus');
+  assert.equal(result[0].routeSource, 'user-exact');
+  assert.ok(Object.isFrozen(result));
+});
+
+test('resource source reports unreadable settings and falls back to the Profile library', () => {
+  const failure = new Error('synthetic settings failure');
+  const reports = [];
+  const merges = [];
+  const source = ResourceLibraryRuntime.createSource({
+    loadSettings: () => { throw failure; },
+    mergeResources: (...args) => { merges.push(args); return resources; },
+    resolveRoute: () => assert.fail('fallback must not guess an effective route'),
+    onReadFailure: (error) => reports.push(error),
+  });
+  assert.equal(source(), resources);
+  assert.deepEqual(reports, [failure]);
+  assert.deepEqual(merges, [[]]);
+});
+
+test('resource source also falls back if effective route projection fails', () => {
+  const failure = new Error('synthetic routing failure');
+  const reports = [];
+  let mergeCalls = 0;
+  const source = ResourceLibraryRuntime.createSource({
+    loadSettings: () => assert.fail('explicit settings must be used'),
+    mergeResources: () => { mergeCalls += 1; return resources; },
+    resolveRoute: () => { throw failure; },
+    onReadFailure: (error) => reports.push(error),
+  });
+  assert.equal(source({ customResources: [], hiddenBuiltinResourceIds: [] }), resources);
+  assert.equal(mergeCalls, 2);
+  assert.deepEqual(reports, [failure]);
+});
+
+test('resource open uses the injected context transaction and locale', async () => {
+  const order = [];
+  const runtime = new ResourceLibraryRuntime({
+    favoritesFile: '/fixture/favorites.json', recentFile: '/fixture/recent.json',
+    platform: 'darwin', loadResources: () => resources,
+    captureContext: () => ({ epoch: 1 }), isContextCurrent: () => true,
+    openRequest: async () => { order.push('open'); return { ok: true }; },
+    runTransaction: async (prepare) => {
+      order.push('begin');
+      const transaction = await prepare();
+      const result = await transaction.commit();
+      order.push('end');
+      return result;
+    },
+    getLocale: () => 'en', translate: () => 'unavailable',
+    ActivityStoreClass: FakeActivityStore, GroupStoreClass: EmptyGroupStore,
+  });
+  const result = await runtime.openByIdSerialized({ resourceId: 'outlook' });
+  assert.deepEqual(order, ['begin', 'open', 'end']);
+  assert.equal(result.resources[0].name, 'Outlook');
+  assert.equal(result.resourceId, 'outlook');
+});
+
+test('resource open localizes transaction failures without opening or recording', async () => {
+  let openCount = 0;
+  const runtime = new ResourceLibraryRuntime({
+    favoritesFile: '/fixture/favorites.json', recentFile: '/fixture/recent.json',
+    platform: 'darwin', loadResources: () => resources,
+    captureContext: () => ({ epoch: 1 }), isContextCurrent: () => true,
+    openRequest: async () => { openCount += 1; return { ok: true }; },
+    runTransaction: async () => { throw new Error('synthetic stale context'); },
+    getLocale: () => 'zh', translate: (key) => key === 'error.resourceUnavailable' ? '不可用' : '',
+    ActivityStoreClass: FakeActivityStore, GroupStoreClass: EmptyGroupStore,
+  });
+  assert.deepEqual(await runtime.openByIdSerialized({ resourceId: 'outlook' }), {
+    ok: false, error: '不可用',
+  });
+  assert.equal(openCount, 0);
+  assert.deepEqual(runtime.snapshot().recent.entries, []);
+});
+
 test('ID-only open resolves inside Main ownership and records activity after success', async () => {
   const requests = [];
   const context = { epoch: 1 };
