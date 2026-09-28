@@ -42,7 +42,8 @@ test('VS Code snippet sidecar follows the connection and Profile lifecycle', () 
   assert.match(source, /helperPath: proxyHelperPath\(\), credentialFile: PROXY_HELPER_CREDENTIAL/u);
   assert.match(source, /ensureSidecar: \(\) => ensureExternalProxyAccess\(socksPort\(\)\)/u);
   const disconnectStart = source.indexOf('async function disconnect(');
-  const reconnectStart = source.indexOf('\nfunction waitForConnected(', disconnectStart);
+  const reconnectStart = source.indexOf('\nasync function reconnect(', disconnectStart);
+  assert.ok(reconnectStart > disconnectStart, 'the disconnect contract must have an exact source boundary');
   assert.match(source.slice(disconnectStart, reconnectStart), /connectionOperations\.disconnect\(\)/);
   const disconnect = operations.slice(operations.indexOf('  async disconnect('), operations.indexOf('  async reconnect('));
   assert.match(disconnect, /this\.removeSidecar\(\)/);

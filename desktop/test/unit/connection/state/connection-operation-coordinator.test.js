@@ -16,7 +16,8 @@ function deferred() {
 function fixture() {
   const f = { quitting: false, active: false, generation: 1, trace: [], launches: 0,
     state: {}, fsm: new ConnectionStateMachine(), stopResult: { ok: true, cleanExit: true },
-    settings: { autoReconnect: true }, settingsReads: 0 };
+    settings: { autoReconnect: true }, settingsReads: 0,
+    browserWaitResult: true, browserWaits: [] };
   f.owner = new ConnectionOperationCoordinator({
     connectionState: f.fsm,
     engineSupervisor: {
@@ -44,6 +45,10 @@ function fixture() {
       f.active = true;
       return { ok: true, generation: f.generation };
     },
+    waitForConnected: async intent => {
+      f.browserWaits.push(intent);
+      return f.browserWaitResult;
+    },
     stopEngine: async () => {
       f.trace.push('stop');
       if (f.stopWait) await f.stopWait.promise;
@@ -53,6 +58,57 @@ function fixture() {
   });
   return f;
 }
+
+test('Boolean Browser readiness preserves connected and failed-connect admission', async () => {
+  const f = fixture();
+  let connectCalls = 0;
+  f.fsm.isConnected = () => true;
+  f.owner.connect = async () => { connectCalls++; return { ok: true, intent: 1 }; };
+  assert.equal(await f.owner.ensureBrowserReady(), true);
+  assert.equal(connectCalls, 0);
+  assert.deepEqual(f.browserWaits, []);
+
+  f.fsm.isConnected = () => false;
+  f.fsm.isConnecting = () => false;
+  f.owner.connect = async () => ({ ok: false, intent: 2 });
+  assert.equal(await f.owner.ensureBrowserReady(), false);
+  assert.deepEqual(f.browserWaits, [], 'terminal failure must not await a dead intent');
+
+  f.fsm.isConnecting = () => true;
+  f.owner.connect = async () => ({ ok: false, intent: 3 });
+  assert.equal(await f.owner.ensureBrowserReady(), true);
+  assert.deepEqual(f.browserWaits, [3], 'a still-connecting intent may become ready');
+});
+
+test('Browser open connection result waits for its intent and keeps the same error fallback', async () => {
+  const f = fixture();
+  f.fsm.isConnected = () => false;
+  f.owner.connect = async () => ({ ok: false, intent: 4 });
+  f.browserWaitResult = false;
+  f.state.lastError = 'synthetic gateway failure';
+  assert.deepEqual(await f.owner.ensureBrowserConnected(),
+    { ok: false, error: 'synthetic gateway failure' });
+  f.state.lastError = null;
+  assert.deepEqual(await f.owner.ensureBrowserConnected(),
+    { ok: false, error: 'error.connectTimeout' });
+  assert.deepEqual(f.browserWaits, [4, 4]);
+  f.browserWaitResult = true;
+  assert.deepEqual(await f.owner.ensureBrowserConnected(), { ok: true });
+  assert.deepEqual(f.browserWaits, [4, 4, 4]);
+  f.fsm.isConnected = () => true;
+  assert.deepEqual(await f.owner.ensureBrowserConnected(), { ok: true });
+  assert.deepEqual(f.browserWaits, [4, 4, 4]);
+});
+
+test('Browser wait failures propagate rather than inventing a connected state', async () => {
+  const f = fixture();
+  f.fsm.isConnected = () => false;
+  f.fsm.isConnecting = () => true;
+  f.owner.connect = async () => ({ ok: true, intent: 5 });
+  f.owner.waitForConnected = async () => { throw new Error('synthetic wait failure'); };
+  await assert.rejects(f.owner.ensureBrowserReady(), /synthetic wait failure/u);
+  await assert.rejects(f.owner.ensureBrowserConnected(), /synthetic wait failure/u);
+});
 
 test('operation owner stays in the existing public state entrypoint below 600 lines', () => {
   const source = fs.readFileSync(require.resolve('../../../../lib/connection/state/connection-state-machine'), 'utf8');
