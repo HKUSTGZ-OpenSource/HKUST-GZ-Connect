@@ -11,6 +11,7 @@ const {
 const { resolveDomainRouteForUrl } = require('../../routing/policy/domain-route-policy');
 const { normalizeRuleHost } = require('../../routing/rules/routing-rule-store');
 const { normalizeToolbarCommand } = require('../toolbar/campus-toolbar-contract');
+const { BrowserToolbarOwner } = require('../toolbar/browser-toolbar-owner');
 const { BrowserWorkspaceOwner, projectBrowserWorkspaceResources, MAX_WORKSPACE_HOME_RESOURCES } =
   require('../workspace/campus-workspace-controller');
 const { CertificateController } = require('../certificates/certificate-controller');
@@ -291,7 +292,7 @@ class CampusBrowser {
         windowChrome: campusWindowChrome,
         onToolbarCommand: payload => this.handleToolbarCommand(payload),
         onResize: () => this.scheduleLayout(),
-        onBeforeCreate: () => { this.cancelScheduledUpdates(); this.lastToolbarState = null; },
+        onBeforeCreate: () => { this.cancelScheduledUpdates(); this.toolbarOwner?.reset(); },
         onClosed: () => this.handleWindowClosed(),
         onMissingWindow: () => this.close(),
       })
@@ -375,14 +376,28 @@ class CampusBrowser {
     this.findOpen = false;
     this.lastFindQuery = '';
     this.scheduledLayout = null;
-    this.scheduledToolbarUpdate = null;
     this.routingActivationInFlight = null;
-    this.lastToolbarState = null;
+    this.toolbarOwner = new BrowserToolbarOwner({
+      getWindow: () => this.window,
+      getActiveTab: () => this.activeTab(),
+      getTabs: () => this.tabs,
+      getActiveTabId: () => this.activeTabId,
+      getFindOpen: () => this.findOpen,
+      getDownloadState: () => this.downloadState,
+      currentUrl: tab => this.currentUrl(tab),
+      bookmarkBarState: () => this.bookmarkBarState(),
+      pageFavoriteState: tab => this.pageFavoriteState(tab),
+      navigationForContents,
+      translate: (key, vars) => this.t(key, vars),
+      campusRoute: ROUTE_CAMPUS,
+      directRoute: ROUTE_DIRECT,
+    });
   }
 
   // Keep the existing CampusBrowser diagnostics/test surface while all state
   // mutations flow through the dedicated managers.
   get window() { return this.windowOwner?.window || null; }
+  get scheduledToolbarUpdate() { return this.toolbarOwner.scheduledUpdate; }
   get downloadSessions() { return this.downloadController.downloadSessions; }
   get downloadState() { return this.downloadController.downloadState; }
   get view() { return this.tabManager.view; }
@@ -680,21 +695,11 @@ class CampusBrowser {
   }
 
   cancelScheduledToolbarUpdate() {
-    if (this.scheduledToolbarUpdate === null) return;
-    clearImmediate(this.scheduledToolbarUpdate);
-    this.scheduledToolbarUpdate = null;
+    this.toolbarOwner.cancel();
   }
 
   scheduleToolbarUpdate() {
-    if (this.scheduledToolbarUpdate !== null ||
-        !this.window || this.window.isDestroyed()) return;
-    const scheduledWindow = this.window;
-    this.scheduledToolbarUpdate = setImmediate(() => {
-      this.scheduledToolbarUpdate = null;
-      if (this.window !== scheduledWindow || scheduledWindow.isDestroyed()) return;
-      this.sendToolbarState();
-    });
-    this.scheduledToolbarUpdate.unref?.();
+    this.toolbarOwner.schedule();
   }
 
   cancelScheduledUpdates() {
@@ -703,55 +708,11 @@ class CampusBrowser {
   }
 
   sendToolbarState() {
-    if (!this.window || this.window.isDestroyed()) return;
-    const active = this.activeTab();
-    // A crashed or closed renderer (e.g. the page died while the slow-load
-    // timer was pending) must not take the main process down with it.
-    if (active && active.view.webContents.isDestroyed()) return;
-    const activeTitle = active?.view.webContents.getTitle() || '';
-    const navigation = navigationForContents(active?.view.webContents);
-    const state = {
-      url: this.currentUrl(active),
-      title: activeTitle,
-      loading: !!active?.loading,
-      loadingLabel: active?.loading ? active.loadingLabel || '' : '',
-      slow: !!active?.slow,
-      findOpen: this.findOpen,
-      route: active?.route || ROUTE_CAMPUS,
-      routeSource: active?.routeSource || 'default',
-      routeLabel: active?.route === ROUTE_DIRECT ? this.t('route.direct') : this.t('route.campus'),
-      canGoBack: !!active && navigation.canGoBack(),
-      canGoForward: !!active && navigation.canGoForward(),
-      activeTabId: this.activeTabId,
-      tabs: this.tabs.map((tab) => ({
-        id: tab.id,
-        title: tab.view.webContents.isDestroyed()
-          ? this.t('tab.new')
-          : tab.view.webContents.getTitle() || tab.loadingLabel || this.t('tab.new'),
-        loading: tab.loading,
-        route: tab.route,
-      })),
-      download: this.downloadState,
-      workspace: active?.kind === 'workspace',
-      bookmarks: this.bookmarkBarState(),
-      ...this.pageFavoriteState(active),
-    };
-    const serialized = JSON.stringify(state);
-    if (serialized === this.lastToolbarState) return;
-    const send = this.window.webContents?.send;
-    if (typeof send !== 'function') return;
-    try {
-      send.call(this.window.webContents, 'campus-toolbar-state', state);
-      this.lastToolbarState = serialized;
-    } catch {
-      // Window teardown can race the final page event. The closed handler also
-      // cancels future updates, so there is nothing useful to surface here.
-    }
+    this.toolbarOwner.send();
   }
 
   updateToolbar() {
-    this.cancelScheduledToolbarUpdate();
-    this.sendToolbarState();
+    this.toolbarOwner.update();
   }
 
   handleToolbarCommand(input) {
@@ -1357,7 +1318,7 @@ class CampusBrowser {
     this.attachedView = null;
     this.routingActivationInFlight = null;
     this.findOpen = false;
-    this.lastToolbarState = null;
+    this.toolbarOwner.reset();
   }
 
   navigate(rawUrl, tab = this.activeTab(), requestedRoute = null) {
@@ -1438,7 +1399,7 @@ class CampusBrowser {
     this.routingActivationInFlight = null;
     this.tabManager.clear();
     this.findOpen = false;
-    this.lastToolbarState = null;
+    this.toolbarOwner.reset();
   }
 
   closeForContextSwitch(options = {}) {

@@ -98,6 +98,10 @@ The proposed [Campus Browser window owner](browser-window-owner.md) isolates the
 creation, toolbar event binding and close confirmation in the existing Browser manager module,
 without adding a production dependency node or changing credential-popup ownership.
 
+The staged [Browser toolbar owner](browser-toolbar-owner.md) moves toolbar state projection,
+coalesced updates and teardown cancellation out of the Browser orchestrator. It is based on the
+certificate-entrypoint candidate and is not a full M2 completion or a shipped Browser change.
+
 Extract tested owners for:
 
 ```text
