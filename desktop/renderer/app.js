@@ -16,11 +16,10 @@ let settings = {};
 let campusActionBusy = false;
 let campusResources = [], resourceGroups = [], serviceDeskData = null, portalServiceDeskData = null;
 let serviceDeskProfileId = null;
-let towerDirty = false;
-let towerSaving = false;
 let loginPending = false;
 let usabilityFeature = null, serviceWorkspace = null, groupDialogFeature = null, favoriteDialogFeature = null, campusDataFeature = null;
 let proxyAuthFeature = null, browserNewTabSettings = null, addWebsiteFeature = null, connectionOverviewFeature = null;
+let controlTowerFeature = null;
 ['auth-challenge', 'integration-center'].forEach(id => rendererFeatures.mount(id, { api: window.api, document, i18n: window.I18N, target: window }));
 const updateNoticesFeature = rendererFeatures.mount('update-notices', {
   document,
@@ -111,23 +110,6 @@ async function openDeepLink(resourceId, fallbackUrl) {
   if (fallbackUrl) await openCampus(fallbackUrl);
 }
 
-function populateTowerForm() {
-  $('towerPort').value = settings.port || 1080;
-  $('strictProxyAuth').checked = settings.strictProxyAuth === true;
-  $('autoReconnect').checked = settings.autoReconnect !== false;
-  $('maxAttempts').value = settings.maxAttempts ?? 3;
-  $('startAtLogin').checked = !!settings.startAtLogin;
-  $('autoConnect').checked = settings.autoConnect !== false;
-  proxyAuthFeature?.render();
-  if (!towerDirty && !$('towerSaved').textContent) $('towerActions').hidden = true;
-}
-
-function setTowerDirty(value) {
-  towerDirty = value === true;
-  if (towerDirty) $('towerActions').hidden = false;
-  else if (!$('towerSaved').textContent) $('towerActions').hidden = true;
-}
-
 async function refreshState({ preserveTower = false } = {}) {
   const s = await window.api.getState();
   applyLocale(s.locale);
@@ -141,8 +123,7 @@ async function refreshState({ preserveTower = false } = {}) {
   serviceDeskData = s.serviceDesk || null;
   renderConnect(s);
   renderResources();
-  $('socksEndpoint').textContent = '127.0.0.1:' + (Number(settings.port) || 1080);
-  if (!preserveTower || !towerDirty) populateTowerForm();
+  controlTowerFeature?.render(settings, { preserve: preserveTower });
   $('acct').textContent = settings.username || '—';
   $('ver').textContent = s.version ? `v${s.version}` : '—';
   if (s.update) updateNoticesFeature.renderResult(s.update);
@@ -263,83 +244,6 @@ function handleCardBoardResourceAction(event) {
 }
 $('campusResources').addEventListener('click', handleCardBoardResourceAction);
 $('connectCardBoardHost').addEventListener('click', handleCardBoardResourceAction);
-// control tower
-async function saveTower() {
-  if (towerSaving || proxyAuthFeature?.isBusy()) return { ok: false, busy: true };
-  const port = Number($('towerPort').value);
-  const maxAttempts = Number($('maxAttempts').value);
-  if (!Number.isInteger(port) || port < 1025 || port > 65535) {
-    flashSaved(t('tower.portInvalid'), true);
-    $('towerPort').focus();
-    return { ok: false };
-  }
-  if (!Number.isInteger(maxAttempts) || maxAttempts < 0 || maxAttempts > 10) {
-    flashSaved(t('tower.attemptsInvalid'), true);
-    $('maxAttempts').focus();
-    return { ok: false };
-  }
-
-  towerSaving = true;
-  $('towerSave').disabled = true;
-  $('strictProxyAuth').disabled = true;
-  try {
-    const result = await window.api.save({
-      port,
-      strictProxyAuth: $('strictProxyAuth').checked,
-      autoReconnect: $('autoReconnect').checked,
-      maxAttempts,
-      startAtLogin: $('startAtLogin').checked,
-      autoConnect: $('autoConnect').checked,
-    });
-    if (!result?.ok) {
-      flashSaved(result?.error || t('tower.saveFailed'), true);
-      return result || { ok: false };
-    }
-    settings = result.settings || settings;
-    setTowerDirty(false);
-    await refreshState();
-    return result;
-  } catch (error) {
-    flashSaved(error?.message || t('tower.saveFailed'), true);
-    return { ok: false };
-  } finally {
-    towerSaving = false;
-    $('towerSave').disabled = false;
-    $('strictProxyAuth').disabled = false;
-    proxyAuthFeature?.render();
-  }
-}
-let flashTimer = null;
-function flashSaved(msg, isError = false) {
-  clearTimeout(flashTimer);
-  $('towerActions').hidden = false;
-  $('towerSaved').textContent = msg || t('tower.saved');
-  $('towerSaved').classList.toggle('error', isError);
-  flashTimer = setTimeout(() => {
-    $('towerSaved').textContent = '';
-    $('towerSaved').classList.remove('error');
-    if (!towerDirty && !towerSaving) $('towerActions').hidden = true;
-  }, isError ? 3500 : 1800);
-}
-$('towerSave').addEventListener('click', async () => {
-  const result = await saveTower();
-  if (result?.ok) {
-    const reconnectWarning = result.outcome === 'saved_reconnect_failed'
-      ? `${t('tower.saved')} · ${result.warning || ''}`.replace(/\s*·\s*$/u, '')
-      : null;
-    flashSaved(
-      reconnectWarning || result.warning ||
-        (result.reconnected ? t('tower.savedApplied') : t('tower.saved')),
-      !!result.warning,
-    );
-  }
-});
-for (const id of [
-  'towerPort', 'strictProxyAuth', 'autoReconnect', 'maxAttempts', 'startAtLogin', 'autoConnect',
-]) {
-  $(id).addEventListener('input', () => setTowerDirty(true));
-  $(id).addEventListener('change', () => setTowerDirty(true));
-}
 $('closeAction').addEventListener('change', async () => {
   await window.api.save({ closeAction: $('closeAction').value });
   settings.closeAction = $('closeAction').value;
@@ -360,20 +264,6 @@ window.addEventListener('focus', () => {
   }
 });
 
-// copy + tools
-document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
-  try {
-    if (b.dataset.copy !== 'socks') throw new Error(t('tower.copyFailed'));
-    const text = '127.0.0.1:' + (Number(settings.port) || 1080);
-    await window.api.copy(text);
-    const old = b.textContent;
-    b.textContent = t('tower.copied');
-    b.classList.add('done');
-    setTimeout(() => { b.textContent = old; b.classList.remove('done'); }, 1200);
-  } catch (error) {
-    flashSaved(error?.message || t('tower.copyFailed'), true);
-  }
-}));
 $('openBrowser').addEventListener('click', openCampus);
 $('openLog2').addEventListener('click', () => window.api.openLog());
 $('openAdvancedSettings').addEventListener('click', () => setPage('tower'));
@@ -393,7 +283,7 @@ $('logoutBtn').addEventListener('click', async () => {
       $('lgBtn').textContent = t('login.submit');
       show('login');
     } else {
-      flashSaved(message, true);
+      controlTowerFeature?.flash(message, true);
     }
     return;
   }
@@ -415,10 +305,23 @@ proxyAuthFeature = window.proxyAuthMigration.createProxyAuthMigration({
   translate: (key, vars) => t(key, vars),
   getSettings: () => settings,
   setSettings: (next) => { settings = next; },
-  isTowerBusy: () => towerSaving,
-  flash: flashSaved,
+  isTowerBusy: () => controlTowerFeature?.isSaving() === true,
+  flash: (message, isError) => controlTowerFeature?.flash(message, isError),
 });
 proxyAuthFeature.start();
+controlTowerFeature = rendererFeatures.mount('control-tower', {
+  document,
+  api: window.api,
+  translate: (key, vars) => t(key, vars),
+  getSettings: () => settings,
+  setSettings: (next) => { settings = next; },
+  refreshState: () => refreshState(),
+  getProxyAuth: () => proxyAuthFeature,
+  timers: {
+    setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+    clearTimeout: (handle) => window.clearTimeout(handle),
+  },
+});
 window.routingManager.start({
   openTower: () => { show('dash'); setPage('tower'); },
 });

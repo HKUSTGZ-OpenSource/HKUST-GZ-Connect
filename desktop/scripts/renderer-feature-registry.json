@@ -191,7 +191,7 @@
       "root": "renderer/features/feature-host",
       "entrypoint": "renderer/features/feature-host/index.mjs",
       "exports": ["FEATURE_DEFINITIONS", "createRendererFeatures"],
-      "allowedDependencies": ["campus-data", "official-favorites", "auth-challenge", "integration-center", "connection-overview", "update-notices"]
+      "allowedDependencies": ["campus-data", "official-favorites", "auth-challenge", "integration-center", "connection-overview", "update-notices", "control-tower"]
     },
     {
       "id": "connection-overview",
@@ -204,6 +204,13 @@
       "id": "update-notices",
       "root": "renderer/features/update-notices",
       "entrypoint": "renderer/features/update-notices/index.mjs",
+      "exports": ["create"],
+      "allowedDependencies": []
+    },
+    {
+      "id": "control-tower",
+      "root": "renderer/features/control-tower",
+      "entrypoint": "renderer/features/control-tower/index.mjs",
       "exports": ["create"],
       "allowedDependencies": []
     },

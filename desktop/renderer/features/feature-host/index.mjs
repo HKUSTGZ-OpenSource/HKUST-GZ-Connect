@@ -5,6 +5,7 @@ import { create as createAuthChallenge } from '../auth-challenge/index.mjs';
 import { create as createIntegrationCenter } from '../integration-center/index.mjs';
 import { create as createConnectionOverview } from '../connection-overview/index.mjs';
 import { create as createUpdateNotices } from '../update-notices/index.mjs';
+import { create as createControlTower } from '../control-tower/index.mjs';
 
 // Only owners with an explicit start/dispose contract belong in this catalog.
 export const FEATURE_DEFINITIONS = Object.freeze([
@@ -14,6 +15,7 @@ export const FEATURE_DEFINITIONS = Object.freeze([
   Object.freeze({ id: 'campus-data', create: createCampusData }),
   Object.freeze({ id: 'connection-overview', create: createConnectionOverview }),
   Object.freeze({ id: 'update-notices', create: createUpdateNotices }),
+  Object.freeze({ id: 'control-tower', create: createControlTower }),
 ]);
 
 export function createRendererFeatures({ target } = {}) {

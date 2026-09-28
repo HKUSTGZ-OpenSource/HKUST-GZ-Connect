@@ -9,6 +9,7 @@ const renderer = path.join(__dirname, '..', '..', '..', 'renderer');
 const html = fs.readFileSync(path.join(renderer, 'index.html'), 'utf8');
 const css = fs.readFileSync(path.join(renderer, 'styles.css'), 'utf8');
 const app = fs.readFileSync(path.join(renderer, 'app.js'), 'utf8');
+const tower = fs.readFileSync(path.join(renderer, 'features/control-tower/index.mjs'), 'utf8');
 const proxyFeature = fs.readFileSync(path.join(renderer, 'proxy-auth-migration.js'), 'utf8');
 const integrationFeature = ['features/integration-center/lifecycle.mjs', 'features/integration-center/model.mjs',
   'features/integration-center/controller.mjs', 'features/integration-center/lifetime.mjs',
@@ -36,7 +37,7 @@ test('strict proxy authentication is settings-driven rather than hardcoded in ma
 });
 
 test('strict authentication changes only through an explicit Control Tower apply', () => {
-  assert.match(app, /\$\('strictProxyAuth'\)\.checked\s*=\s*settings\.strictProxyAuth\s*===\s*true/,
+  assert.match(tower, /\$\('strictProxyAuth'\)\.checked\s*=\s*settings\.strictProxyAuth\s*===\s*true/,
     'the normalized settings object owns the safe default');
   assert.match(proxyFeature, /async function applyStrict\(requested\)/);
   assert.match(proxyFeature, /api\.save\(\{ strictProxyAuth: requested \}\)/,
@@ -46,17 +47,19 @@ test('strict authentication changes only through an explicit Control Tower apply
   assert.match(proxyFeature, /api\.save\(\{ proxyAuthMigrationAcknowledged: true \}\)/);
   assert.match(app, /window\.proxyAuthMigration\.createProxyAuthMigration\(\{/,
     'the application entry only composes the isolated feature');
-  assert.match(app, /'towerPort', 'strictProxyAuth', 'autoReconnect'/,
+  assert.match(app, /rendererFeatures\.mount\('control-tower', \{/u);
+  assert.doesNotMatch(app, /async function saveTower|function setTowerDirty/u);
+  assert.match(tower, /'towerPort', 'strictProxyAuth', 'autoReconnect'/,
     'ordinary checkbox changes must wait in the explicit dirty-form path');
   assert.match(html, /id="towerActions"[^>]*hidden/u);
   assert.doesNotMatch(html, /id="towerReconnect"/u);
-  assert.match(app, /function setTowerDirty\(value\)[\s\S]{0,180}towerActions/u,
+  assert.match(tower, /function setDirty\(value\)[\s\S]{0,180}towerActions/u,
     'the apply action appears only while the form is dirty');
 
-  const saveTowerStart = app.indexOf('async function saveTower()');
-  const flashStart = app.indexOf('let flashTimer', saveTowerStart);
-  assert.ok(saveTowerStart >= 0 && flashStart > saveTowerStart);
-  assert.match(app.slice(saveTowerStart, flashStart), /strictProxyAuth:\s*\$\('strictProxyAuth'\)\.checked/,
+  const saveStart = tower.indexOf('async function save()');
+  const applyStart = tower.indexOf('async function apply()', saveStart);
+  assert.ok(saveStart >= 0 && applyStart > saveStart);
+  assert.match(tower.slice(saveStart, applyStart), /strictProxyAuth:\s*\$\('strictProxyAuth'\)\.checked/,
     'applying the Control Tower form owns the requested authentication value');
   assert.match(proxyFeature, /checkbox\.checked\s*=\s*previous/,
     'a failed immediate save must restore the persisted switch value');
