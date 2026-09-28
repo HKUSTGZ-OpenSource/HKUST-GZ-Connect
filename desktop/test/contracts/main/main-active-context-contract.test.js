@@ -65,3 +65,10 @@ test('Main injects Routing coordination without owning PAC publication or rule r
   assert.doesNotMatch(source, /require\('\.\/lib\/routing\/pac\/pac-file'\)/u);
   assert.doesNotMatch(source, /\bsavePacFile\(|\bcurrentPacUrl\b|function browserPolicyProxyConfig/u);
 });
+
+test('Main delegates settings snapshot and close-action transaction to Persistence', () => {
+  assert.match(source, /function routingSettings\(\) \{ return persistenceRuntime\.routingSettings\(\); \}/u);
+  assert.match(source, /function saveSettings\(settings\) \{ return persistenceRuntime\.saveSettingsWithGuard\(settings\); \}/u);
+  assert.match(source, /function rememberCloseAction\(action\) \{ return persistenceRuntime\.rememberCloseAction\(action, runActiveContextTransaction\); \}/u);
+  assert.doesNotMatch(source, /routingSettingsSnapshot|const next = \{ \.\.\.previous, closeAction: action \}/u);
+});

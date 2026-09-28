@@ -254,17 +254,8 @@ function currentLocale() {
 function assertSettingsPersistenceAvailable() {
   persistenceRuntime.assertCredentialTransactionAvailable();
 }
-let routingSettingsSnapshot = null;
-function routingSettings() {
-  if (!routingSettingsSnapshot) routingSettingsSnapshot = loadSettingsOrReport();
-  return routingSettingsSnapshot;
-}
-function saveSettings(settings) {
-  assertSettingsPersistenceAvailable();
-  const saved = persistenceRuntime.saveSettings(settings);
-  routingSettingsSnapshot = saved;
-  return saved;
-}
+function routingSettings() { return persistenceRuntime.routingSettings(); }
+function saveSettings(settings) { return persistenceRuntime.saveSettingsWithGuard(settings); }
 function savePassword(pw, username) { return persistenceRuntime.saveCredential(pw, username); }
 function hasPersistentCredential() {
   return persistenceRuntime.hasCredential();
@@ -693,17 +684,7 @@ registerCoreControlIpc({
   resize: (height) => desktopShell.resize(height),
 });
 // ---------- window / tray composition ----------
-function rememberCloseAction(action) {
-  return runActiveContextTransaction(() => {
-    assertSettingsPersistenceAvailable();
-    const previous = loadSettingsOrReport();
-    const next = { ...previous, closeAction: action };
-    return {
-      commit: () => saveSettings(next),
-      rollback: () => saveSettings(previous),
-    };
-  });
-}
+function rememberCloseAction(action) { return persistenceRuntime.rememberCloseAction(action, runActiveContextTransaction); }
 desktopShell = new DesktopShell({
   app,
   BrowserWindow,

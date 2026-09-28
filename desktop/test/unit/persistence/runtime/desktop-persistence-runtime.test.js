@@ -365,3 +365,73 @@ test('frequent settings and account display reads reuse the validated runtime sn
   runtime.reloadAuthority = () => { throw new Error('invalid ACL'); };
   assert.throws(() => persistence.currentAuthority(), /invalid ACL/);
 });
+
+test('Persistence owns the routing settings snapshot and rebases only after a committed save', () => {
+  let current = normalizeSettings({ username: 'synthetic-user', port: 6180,
+    routeDomains: ['first.invalid'] });
+  let reads = 0;
+  let writes = 0;
+  const persistence = new DesktopPersistenceRuntime({
+    preReadySelection: { mode: 'legacy-flat', paths: {} },
+    initializeAfterReady: () => ({ mode: 'legacy-flat' }),
+    legacy: legacy({
+      loadSettings: () => { reads++; return current; },
+      saveSettings: next => { writes++; current = normalizeSettings(next); return current; },
+    }),
+  });
+  persistence.initialize();
+  const first = persistence.routingSettings();
+  assert.equal(persistence.routingSettings(), first);
+  assert.equal(reads, 1, 'route projection should not reload settings on each field');
+  const saved = persistence.saveSettingsWithGuard({ ...first, routeDomains: ['second.invalid'] });
+  assert.equal(writes, 1);
+  assert.equal(persistence.routingSettings(), saved);
+  assert.deepEqual(saved.routeDomains, ['second.invalid']);
+  assert.equal(reads, 1);
+});
+
+test('a failed settings write preserves the prior routing snapshot', () => {
+  const oldSettings = normalizeSettings({ username: 'synthetic-user', port: 6180 });
+  let writes = 0;
+  const persistence = new DesktopPersistenceRuntime({
+    preReadySelection: { mode: 'legacy-flat', paths: {} },
+    initializeAfterReady: () => ({ mode: 'legacy-flat' }),
+    legacy: legacy({
+      loadSettings: () => oldSettings,
+      saveSettings: () => { writes++; throw new Error('synthetic write failure'); },
+    }),
+  });
+  persistence.initialize();
+  assert.equal(persistence.routingSettings(), oldSettings);
+  assert.throws(() => persistence.saveSettingsWithGuard({ ...oldSettings, port: 6280 }),
+    /synthetic write failure/u);
+  assert.equal(writes, 1);
+  assert.equal(persistence.routingSettings(), oldSettings);
+});
+
+test('close-action settings transaction snapshots inside the queued factory and restores on rollback', () => {
+  let current = normalizeSettings({ username: 'synthetic-user', closeAction: 'ask', port: 6180 });
+  const calls = [];
+  const persistence = new DesktopPersistenceRuntime({
+    preReadySelection: { mode: 'legacy-flat', paths: {} },
+    initializeAfterReady: () => ({ mode: 'legacy-flat' }),
+    legacy: legacy({
+      loadSettings: () => { calls.push('read'); return current; },
+      saveSettings: next => { calls.push('write'); current = normalizeSettings(next); return current; },
+    }),
+  });
+  persistence.initialize();
+  let queuedFactory;
+  assert.equal(persistence.rememberCloseAction('quit', factory => {
+    queuedFactory = factory;
+    return 'queued';
+  }), 'queued');
+  assert.deepEqual(calls, [], 'the old settings must not be read before queue admission');
+  const operations = queuedFactory();
+  assert.deepEqual(calls, ['read']);
+  assert.equal(operations.commit().closeAction, 'quit');
+  assert.equal(persistence.routingSettings().closeAction, 'quit');
+  assert.equal(operations.rollback().closeAction, 'ask');
+  assert.equal(persistence.routingSettings().closeAction, 'ask');
+  assert.deepEqual(calls, ['read', 'write', 'write']);
+});
