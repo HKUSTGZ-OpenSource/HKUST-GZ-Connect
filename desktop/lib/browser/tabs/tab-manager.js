@@ -1,6 +1,7 @@
 'use strict';
 
-const { ROUTE_DIRECT } = require('../../routing/policy/campus-route');
+const { ROUTE_CAMPUS, ROUTE_DIRECT } = require('../../routing/policy/campus-route');
+const { resolveDomainRouteForUrl } = require('../../routing/policy/domain-route-policy');
 
 const DEFAULT_MAX_TABS = 24;
 
@@ -395,13 +396,13 @@ class BrowserTabLifecycle extends TabManager {
 class BrowserNavigationOwner {
   constructor({
     blankUrl, normalizeUrl, getHomeUrl, getNewTabUrl, getTranslator, reportError,
-    getActiveTab, containsTab, getConfiguredPort, resolveRoute, ensureRoutingReady,
-    createTab, focusWorkspaceSearch, currentUrl, updateTabRoute,
+    getActiveTab, getTabs, containsTab, getConfiguredPort, resolvePolicyRoute,
+    ensureRoutingReady, createTab, focusWorkspaceSearch,
     scheduleToolbarUpdate,
   } = {}) {
     const ports = { normalizeUrl, getHomeUrl, getNewTabUrl, getTranslator, reportError,
-      getActiveTab, containsTab, getConfiguredPort, resolveRoute, ensureRoutingReady,
-      createTab, focusWorkspaceSearch, currentUrl, updateTabRoute, scheduleToolbarUpdate };
+      getActiveTab, getTabs, containsTab, getConfiguredPort, resolvePolicyRoute,
+      ensureRoutingReady, createTab, focusWorkspaceSearch, scheduleToolbarUpdate };
     if (typeof blankUrl !== 'string' || !blankUrl ||
         Object.values(ports).some((port) => typeof port !== 'function')) {
       throw new TypeError('Browser navigation owner dependencies are incomplete');
@@ -418,6 +419,52 @@ class BrowserNavigationOwner {
   navigationIntentCurrent(tab, intent) {
     return Number.isSafeInteger(intent) && this.containsTab(tab) &&
       tab.navigationIntent === intent && !tab.view.webContents.isDestroyed();
+  }
+
+  currentUrl(tab) {
+    if (!tab) return '';
+    if (tab.kind === 'workspace') return this.blankUrl;
+    if (tab.failedUrl) return tab.failedUrl;
+    if (tab.view.webContents.isDestroyed()) return '';
+    try {
+      const current = tab.view.webContents.getURL();
+      return current.startsWith('data:') ? '' : current;
+    } catch {
+      return '';
+    }
+  }
+
+  resolveRoute(rawUrl, inheritedRoute = null, requestedRoute = null) {
+    if (rawUrl === this.blankUrl) {
+      return { route: ROUTE_DIRECT, source: 'local-blank', matchedRule: null };
+    }
+    let resolution;
+    try { resolution = this.resolvePolicyRoute(rawUrl, inheritedRoute); }
+    catch { resolution = null; }
+    if (!resolution || ![ROUTE_CAMPUS, ROUTE_DIRECT].includes(resolution.route)) {
+      resolution = resolveDomainRouteForUrl(rawUrl, { inheritedRoute });
+    }
+    if (resolution.source === 'default' &&
+        [ROUTE_CAMPUS, ROUTE_DIRECT].includes(requestedRoute)) {
+      return { route: requestedRoute, source: 'requested', matchedRule: null };
+    }
+    return resolution;
+  }
+
+  updateTabRoute(tab, rawUrl = this.currentUrl(tab), requestedRoute = null) {
+    if (!tab || !rawUrl) return null;
+    const resolution = this.resolveRoute(rawUrl, null, requestedRoute);
+    tab.route = resolution.route;
+    tab.routeSource = resolution.source;
+    tab.matchedRule = resolution.matchedRule;
+    return resolution;
+  }
+
+  updateAllTabRoutes() {
+    for (const tab of this.getTabs()) {
+      const url = tab.failedUrl || this.currentUrl(tab);
+      if (url) this.updateTabRoute(tab, url);
+    }
   }
 
   async openHome() {

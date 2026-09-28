@@ -110,6 +110,11 @@ New Tab, address navigation and reload to a distinct class co-located with the e
 lifecycle module. The Browser orchestrator falls from 1,437 to 1,368 lines; the tab file remains
 below 600 and the transitive dependency budget remains unchanged. M2 is still open.
 
+The [route presentation follow-on](browser-route-presentation-owner.md) moves current URL,
+effective navigation-route selection and tab route refresh into that same owner. The Browser root
+falls further to 1,333 lines, the co-located owner file remains below 600 and the Routing policy
+and dependency budget stay unchanged. M2 is not complete.
+
 Extract tested owners for:
 
 ```text

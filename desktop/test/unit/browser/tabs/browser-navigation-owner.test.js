@@ -29,12 +29,14 @@ function fixture(overrides = {}) {
     getActiveTab: () => current,
     containsTab: (value) => value === current,
     getConfiguredPort: () => 1080,
-    resolveRoute: (url) => { calls.push(['route', url]); return { route: 'campus' }; },
+    resolvePolicyRoute: (url) => {
+      calls.push(['route', url]);
+      return { route: 'campus', source: 'default', matchedRule: null };
+    },
+    getTabs: () => [tab],
     ensureRoutingReady: async () => true,
     createTab: (...args) => { calls.push(['create', ...args]); return tab; },
     focusWorkspaceSearch: () => { calls.push(['focus']); return true; },
-    currentUrl: () => contents.url,
-    updateTabRoute: (_tab, url, requested) => calls.push(['tab-route', url, requested]),
     scheduleToolbarUpdate: () => calls.push(['toolbar']),
     ...overrides,
   };
@@ -98,11 +100,12 @@ test('reload waits for routing and failed-page retry navigates to the last URL',
   assert.equal(await f.owner.reloadWhenReady(f.tab), true);
   assert.deepEqual(f.calls, [
     ['route', 'https://failed.example/'],
-    ['tab-route', 'https://failed.example/', null],
+    ['route', 'https://failed.example/'],
     ['load', 'https://failed.example/'],
     ['toolbar'],
   ]);
   assert.equal(f.tab.failedUrl, '');
+  assert.equal(f.tab.routeSource, 'default');
 });
 
 test('navigation resets only the selected tab and reports malformed URLs', () => {
@@ -113,10 +116,54 @@ test('navigation resets only the selected tab and reports malformed URLs', () =>
   assert.equal(f.tab.failedUrl, '');
   assert.equal(f.tab.crashed, false);
   assert.deepEqual(f.calls, [
-    ['tab-route', 'https://next.example/', 'campus'],
+    ['route', 'https://next.example/'],
     ['load', 'https://next.example/'],
     ['toolbar'],
   ]);
+  assert.equal(f.tab.routeSource, 'requested');
   assert.equal(f.owner.navigate('bad:', f.tab), false);
   assert.deepEqual(f.calls.at(-1), ['error', 'invalid URL']);
+});
+
+test('visible URL hides local error data but preserves the failed destination for retry', () => {
+  const f = fixture();
+  f.contents.url = 'data:text/html,error';
+  assert.equal(f.owner.currentUrl(f.tab), '');
+  f.tab.failedUrl = 'https://failed.example/';
+  assert.equal(f.owner.currentUrl(f.tab), 'https://failed.example/');
+  f.tab.kind = 'workspace';
+  assert.equal(f.owner.currentUrl(f.tab), 'about:blank');
+});
+
+test('requested first-load route applies only to an unmatched default policy', () => {
+  const f = fixture();
+  assert.deepEqual(f.owner.resolveRoute('https://example.invalid/', null, 'direct'), {
+    route: 'direct', source: 'requested', matchedRule: null,
+  });
+  const exact = fixture({ resolvePolicyRoute: () => ({
+    route: 'campus', source: 'user-exact', matchedRule: 'synthetic-rule',
+  }) });
+  assert.deepEqual(exact.owner.resolveRoute('https://example.invalid/', null, 'direct'), {
+    route: 'campus', source: 'user-exact', matchedRule: 'synthetic-rule',
+  });
+  assert.deepEqual(exact.owner.resolveRoute('about:blank'), {
+    route: 'direct', source: 'local-blank', matchedRule: null,
+  });
+});
+
+test('policy failure uses the existing Routing fallback rather than retaining stale metadata', () => {
+  const f = fixture({ resolvePolicyRoute: () => { throw new Error('synthetic policy failure'); } });
+  const route = f.owner.resolveRoute('https://example.invalid/');
+  assert.equal(route.route, 'campus');
+  assert.equal(route.source, 'default');
+  assert.equal(route.matchedRule, null);
+});
+
+test('tab route refresh updates every current tab from its visible URL', () => {
+  const f = fixture();
+  f.tab.failedUrl = 'https://failed.example/';
+  f.owner.updateAllTabRoutes();
+  assert.equal(f.tab.route, 'campus');
+  assert.equal(f.tab.routeSource, 'default');
+  assert.equal(f.tab.matchedRule, null);
 });

@@ -8,7 +8,6 @@ const {
   ROUTE_CAMPUS,
   ROUTE_DIRECT,
 } = require('../../routing/policy/campus-route');
-const { resolveDomainRouteForUrl } = require('../../routing/policy/domain-route-policy');
 const { normalizeRuleHost } = require('../../routing/rules/routing-rule-store');
 const { normalizeToolbarCommand } = require('../toolbar/campus-toolbar-contract');
 const { BrowserToolbarOwner } = require('../toolbar/browser-toolbar-owner');
@@ -377,14 +376,13 @@ class CampusBrowser {
       blankUrl: BLANK_CAMPUS_HOME, normalizeUrl: normalizeCampusUrl,
       getHomeUrl: () => this.homeUrl, getNewTabUrl: () => this.getNewTabUrl(),
       getTranslator: () => this.t, reportError: (message) => this.onError?.(message),
-      getActiveTab: () => this.activeTab(), containsTab: (tab) => this.tabManager.contains(tab),
+      getActiveTab: () => this.activeTab(), getTabs: () => this.tabs,
+      containsTab: (tab) => this.tabManager.contains(tab),
       getConfiguredPort: () => this.configuredPort,
-      resolveRoute: (url) => this.resolveRoute(url),
+      resolvePolicyRoute: (url, inheritedRoute) => this.routingPolicy.resolve(url, inheritedRoute),
       ensureRoutingReady: (resolution, port) => this.ensureRoutingReady(resolution, port),
       createTab: (...args) => this.createTab(...args),
       focusWorkspaceSearch: () => this.focusWorkspaceSearch(),
-      currentUrl: (tab) => this.currentUrl(tab),
-      updateTabRoute: (tab, url, route) => this.updateTabRoute(tab, url, route),
       scheduleToolbarUpdate: () => this.scheduleToolbarUpdate(),
     });
     this.findOpen = false;
@@ -599,52 +597,19 @@ class CampusBrowser {
   }
 
   currentUrl(tab) {
-    if (!tab) return '';
-    if (tab.kind === 'workspace') return BLANK_CAMPUS_HOME;
-    if (tab.failedUrl) return tab.failedUrl;
-    if (tab.view.webContents.isDestroyed()) return '';
-    try {
-      const current = tab.view.webContents.getURL();
-      return current.startsWith('data:') ? '' : current;
-    } catch {
-      return '';
-    }
+    return this.navigationOwner.currentUrl(tab);
   }
 
   resolveRoute(rawUrl, inheritedRoute = null, requestedRoute = null) {
-    if (rawUrl === BLANK_CAMPUS_HOME) {
-      return { route: ROUTE_DIRECT, source: 'local-blank', matchedRule: null };
-    }
-    let resolution;
-    try {
-      resolution = this.routingPolicy.resolve(rawUrl, inheritedRoute);
-    } catch {
-      resolution = null;
-    }
-    if (!resolution || ![ROUTE_CAMPUS, ROUTE_DIRECT].includes(resolution.route)) {
-      resolution = resolveDomainRouteForUrl(rawUrl, { inheritedRoute });
-    }
-    if (resolution.source === 'default' &&
-        [ROUTE_CAMPUS, ROUTE_DIRECT].includes(requestedRoute)) {
-      return { route: requestedRoute, source: 'requested', matchedRule: null };
-    }
-    return resolution;
+    return this.navigationOwner.resolveRoute(rawUrl, inheritedRoute, requestedRoute);
   }
 
   updateTabRoute(tab, rawUrl = this.currentUrl(tab), requestedRoute = null) {
-    if (!tab || !rawUrl) return null;
-    const resolution = this.resolveRoute(rawUrl, null, requestedRoute);
-    tab.route = resolution.route;
-    tab.routeSource = resolution.source;
-    tab.matchedRule = resolution.matchedRule;
-    return resolution;
+    return this.navigationOwner.updateTabRoute(tab, rawUrl, requestedRoute);
   }
 
   updateAllTabRoutes() {
-    for (const tab of this.tabs) {
-      const url = tab.failedUrl || this.currentUrl(tab);
-      if (url) this.updateTabRoute(tab, url);
-    }
+    return this.navigationOwner.updateAllTabRoutes();
   }
 
   cancelScheduledToolbarUpdate() {
