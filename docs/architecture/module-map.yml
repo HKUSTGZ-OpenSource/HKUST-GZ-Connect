@@ -72,6 +72,7 @@ modules:
       - desktop/campus-preload.js
       - desktop/lib/browser/**
     publicEntrypoints:
+      - desktop/lib/browser/certificates/certificate-controller.js
       - desktop/lib/browser/session/campus-browser-manager.js
       - desktop/lib/browser/session/browser-session-manager.js
     allowedDependencies: [desktop-resources, desktop-routing, desktop-profiles, desktop-platform]

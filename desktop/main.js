@@ -53,9 +53,8 @@ const {
   externalProxyHelperPath,
 } = require('./lib/integrations/external-proxy-config');
 const {
-  CampusCertificateTrustStore,
-} = require('./lib/browser/certificates/campus-certificate-trust');
-const { routeCertificateError } = require('./lib/browser/certificates/certificate-error-boundary');
+  CampusCertificateTrustStore, routeCertificateError,
+} = require('./lib/browser/certificates/certificate-controller');
 const { createT, effectiveLocale } = require('./lib/platform/i18n/i18n');
 const { registerTrustedIpcHandlers } = require('./lib/ipc/ipc-handlers');
 const { RoutingPolicyCoordinator, RoutingPolicyTransactionQueue } = require('./lib/routing/rules/routing-policy-transaction');

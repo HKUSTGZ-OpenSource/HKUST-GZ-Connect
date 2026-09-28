@@ -5,11 +5,18 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const {
+  CampusCertificateTrustStore,
   CertificateController,
   certificateTime,
 } = require('../../../../lib/browser/certificates/certificate-controller');
 const { certificateFingerprint } = require('../../../../lib/browser/certificates/campus-certificate-trust');
 const { createT } = require('../../../../lib/platform/i18n/i18n');
+
+test('public certificate entrypoint re-exports the existing store without another implementation', () => {
+  const implementation = require('../../../../lib/browser/certificates/campus-certificate-trust');
+  assert.equal(CampusCertificateTrustStore, implementation.CampusCertificateTrustStore);
+  assert.equal(typeof CampusCertificateTrustStore, 'function');
+});
 
 const CERTIFICATE_PEM = [
   '-----BEGIN CERTIFICATE-----',

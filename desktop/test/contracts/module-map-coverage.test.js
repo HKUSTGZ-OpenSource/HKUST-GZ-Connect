@@ -197,7 +197,7 @@ test('exact static-edge debt rejects new bypasses and stale exceptions', () => {
   assert.deepEqual(moduleEdgeDebtErrors([], debt), [`stale module edge debt: ${old}`]);
   for (const invalid of [null, { ...debt, exceptions: [old, old] },
     { ...debt, extra: true }, { ...debt, baseSha: 'short' },
-    { ...debt, exceptions: Array.from({ length: 116 }, (_, index) =>
+    { ...debt, exceptions: Array.from({ length: 114 }, (_, index) =>
       `desktop/lib/a/${index}.js -> desktop/lib/b/private.js [private-entrypoint]`).sort() }]) {
     assert.deepEqual(moduleEdgeDebtErrors([old], invalid), ['module edge debt manifest is invalid']);
   }
@@ -238,4 +238,25 @@ test('the existing campus route module is a declared file-level Routing entrypoi
   assert.deepEqual(moduleImportViolations(source, imports), { errors: [], violations: [] });
   const debt = JSON.parse(fs.readFileSync(path.join(root, 'desktop/scripts/module-edge-debt.json'), 'utf8'));
   assert.ok(debt.exceptions.every(value => !value.includes(` -> ${entry} [`)));
+});
+
+test('Main certificate dispatch uses the public Browser consent entrypoint', () => {
+  const root = path.resolve(__dirname, '../../..');
+  const source = fs.readFileSync(path.join(root, 'docs/architecture/module-map.yml'), 'utf8');
+  const browser = parseModuleMap(source).modules.find(module => module.id === 'desktop-browser');
+  const entry = 'desktop/lib/browser/certificates/certificate-controller.js';
+  const retired = 'desktop/lib/browser/certificates/certificate-error-boundary.js';
+  assert.ok(browser.publicEntrypoints.includes(entry));
+  assert.ok(!browser.publicEntrypoints.includes(
+    'desktop/lib/browser/certificates/campus-certificate-trust.js'));
+  assert.deepEqual(moduleImportViolations(source, [['desktop/main.js', entry]]),
+    { errors: [], violations: [] });
+  const main = fs.readFileSync(path.join(root, 'desktop/main.js'), 'utf8');
+  assert.match(main, /require\('\.\/lib\/browser\/certificates\/certificate-controller'\)/u);
+  assert.doesNotMatch(main, /certificate-error-boundary/u);
+  assert.doesNotMatch(main, /require\('\.\/lib\/browser\/certificates\/campus-certificate-trust'\)/u);
+  assert.equal(fs.existsSync(path.join(root, retired)), false);
+  const debt = JSON.parse(fs.readFileSync(path.join(root, 'desktop/scripts/module-edge-debt.json'), 'utf8'));
+  assert.ok(debt.exceptions.every(value => !value.includes(` -> ${entry} [`) &&
+    !value.includes(` -> ${retired} [`)));
 });

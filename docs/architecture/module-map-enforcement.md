@@ -2,7 +2,7 @@
 
 - Status: Path-coverage contract plus static-JS edge ratchet for M5; full dependency enforcement remains incomplete
 - Owner: architecture and repository maintainers
-- Last verified: 2026-09-27
+- Last verified: 2026-09-29
 - Applies to: `module-map.yml` schema 2, `desktop/scripts/module-map-coverage.js`,
   `desktop/scripts/check-architecture.js` and `desktop/scripts/module-edge-debt.json`
 - Scope: path coverage, ownership uniqueness, schema, public-entrypoint existence and
@@ -59,6 +59,13 @@ The follow-on [Routing coordinator](desktop-routing-policy-coordinator.md) remov
 private PAC-file import by placing derived publication in the existing public Routing owner.
 Its candidate inventory and hard cap are 115; no additional runtime module is introduced.
 
+The [Browser certificate entrypoint](browser-certificate-entrypoint.md) candidate puts the
+unchanged owned/main-frame dispatch helpers beside the existing consent controller and exposes
+that file as Browser's certificate boundary. Main no longer imports the separate private
+dispatch leaf or the private trust-store file; it constructs the unchanged store through the
+public class re-export. Its candidate inventory/cap fall to 113, Main's direct dependencies to 30
+and transitive modules to 169. Low-level trust persistence remains private; consent is unchanged.
+
 This is an explicit migration ratchet, not a claim that all current imports already respect the
 module map. A reviewed policy change can alter the debt manifest, so its diff and the resulting
 edge inventory must be inspected rather than treating a green check as self-authenticating proof.
@@ -90,7 +97,7 @@ enforcement on.
 
 `dependencyEnforcement: inventory-only` is an explicit schema field. The path-coverage checker
 validates referenced module IDs, while the separate architecture ratchet rejects new resolved
-static-JS violations but still records 115 legacy exceptions at the Routing-coordinator candidate.
+static-JS violations but still records 113 legacy exceptions at the certificate-entrypoint candidate.
 It does not resolve computed
 `require()`/`import()` targets or Rust visibility and cannot prove full cross-module enforcement.
 Do not change the field to claim otherwise. The existing Renderer feature checks cover their
