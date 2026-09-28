@@ -46,6 +46,15 @@ both conditions; their exact source, target and violation kind are frozen in
 stale exception fails the architecture gate. Fixing an old edge removes its exact exception in the
 same reviewable change; the debt list is not a blanket permission for another edge in its place.
 
+The Routing-owned `campus-route.js` is an explicit **file-level** public entrypoint. Browser,
+Resources and Integrations already consumed that same route/partition module; their eight existing
+edges use only `ROUTE_CAMPUS`, `ROUTE_DIRECT`, `routeForUrl`, `CAMPUS_PARTITION` and
+`NEUTRAL_CAMPUS_PARTITION`. The module map does not enforce a symbol-level allowlist: the whole
+existing file, including other exported Routing helpers, is importable. This declares the actual
+shared boundary rather than pretending those helpers have a curated façade. It changes no runtime
+behavior. The rule store, host-safety logic and PAC files remain private. The debt inventory and
+hard cap are 116 edges, down from the 124-edge baseline.
+
 This is an explicit migration ratchet, not a claim that all current imports already respect the
 module map. A reviewed policy change can alter the debt manifest, so its diff and the resulting
 edge inventory must be inspected rather than treating a green check as self-authenticating proof.
@@ -77,7 +86,7 @@ enforcement on.
 
 `dependencyEnforcement: inventory-only` is an explicit schema field. The path-coverage checker
 validates referenced module IDs, while the separate architecture ratchet rejects new resolved
-static-JS violations but still records 124 legacy exceptions. It does not resolve computed
+static-JS violations but still records 116 legacy exceptions. It does not resolve computed
 `require()`/`import()` targets or Rust visibility and cannot prove full cross-module enforcement.
 Do not change the field to claim otherwise. The existing Renderer feature checks cover their
 separately documented subset; complete M5 enforcement remains outstanding, alongside M2–M4.
