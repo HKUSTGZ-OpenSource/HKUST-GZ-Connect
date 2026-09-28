@@ -460,6 +460,27 @@ class ConnectionOperationCoordinator {
     finally { if (this.connectInFlight === record) this.connectInFlight = null; }
   }
 
+  // The Browser's boolean request gate and open-result path intentionally keep
+  // their previous failure timing. Both wait on the same intent-bound registry
+  // only when their own admission contract calls for it.
+  async ensureBrowserReady() {
+    if (this.connectionState.isConnected()) return true;
+    const result = await this.connect();
+    if (!result?.ok && !this.connectionState.isConnecting()) return false;
+    return this.waitForConnected(result.intent);
+  }
+
+  async ensureBrowserConnected() {
+    if (!this.connectionState.isConnected()) {
+      const result = await this.connect();
+      if (!await this.waitForConnected(result.intent)) {
+        return { ok: false, error: this.getPresentation().lastError ||
+          this.getTranslator()('error.connectTimeout') };
+      }
+    }
+    return { ok: true };
+  }
+
   ensureEngineStopped() {
     if (this.disconnectInFlight) return this.disconnectInFlight;
     // The injected effect establishes the Browser gate before freeing the

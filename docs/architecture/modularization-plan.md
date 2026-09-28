@@ -179,6 +179,11 @@ cached route-settings snapshot and the close-action commit/rollback factory into
 Persistence Runtime. Main falls from 864 to 845 lines; dependency metrics remain stable. This is
 still a staged M3 contribution, not the below-800/24 intermediate gate.
 
+The [Browser readiness owner](desktop-browser-readiness-owner.md) candidate returns the two
+intent-bound Browser connection wait outcomes to the existing Connection operation entrypoint.
+Main falls from 845 to 831 lines; the reviewed 75-second deadline and dependency budgets stay
+unchanged. Browser launch/routing behavior and the later M3 targets remain separate.
+
 Move remaining settings-surface coordination, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 

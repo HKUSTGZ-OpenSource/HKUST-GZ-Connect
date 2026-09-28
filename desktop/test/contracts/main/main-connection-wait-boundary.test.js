@@ -10,9 +10,11 @@ const operations = fs.readFileSync(require.resolve('../../../lib/connection/stat
 
 test('Main connection waits are event-driven, intent-bound, and disposed on quit', () => {
   assert.match(source, /connectionWaitRegistry\.observe\(connectionState\.snapshot\(\)\)/);
-  assert.match(source, /function waitForConnected\(intent,/);
-  assert.match(source, /connectionWaitRegistry\.wait\(intent,/);
-  assert.match(source, /waitForConnected\(result\.intent\)/);
+  assert.match(source, /waitForConnected: intent => connectionWaitRegistry\.wait\(intent, \{/u);
+  assert.match(source, /ensureCampusReady: \(\) => connectionOperations\.ensureBrowserReady\(\)/u);
+  assert.match(source, /ensureConnected: \(\) => connectionOperations\.ensureBrowserConnected\(\)/u);
+  assert.match(operations, /async ensureBrowserReady\(\)[\s\S]*this\.waitForConnected\(result\.intent\)/u);
+  assert.match(operations, /async ensureBrowserConnected\(\)[\s\S]*this\.waitForConnected\(result\.intent\)/u);
   assert.match(source, /connect: async \(\) => \{ const \{ intent: _intent, \.\.\.result \} = await connect\(\); return result; \}/,
     'the internal wait correlation must not cross the Renderer IPC boundary');
   assert.match(source, /reconnect: async \(\) => \{ const \{ intent: _intent, \.\.\.result \} = await reconnect\(\); return result; \}/);
@@ -28,7 +30,7 @@ test('browser readiness outlives the bounded Engine data-plane retry window', ()
   const timeoutMs = Number(match[1].replaceAll('_', ''));
   assert.ok(timeoutMs >= 60_000 && timeoutMs <= 120_000);
   assert.match(source,
-    /function waitForConnected\(intent, timeoutMs = BROWSER_CONNECTION_READY_TIMEOUT_MS\)/u);
+    /waitForConnected: intent => connectionWaitRegistry\.wait\(intent, \{\s*timeoutMs: BROWSER_CONNECTION_READY_TIMEOUT_MS,/u);
 });
 
 test('settings failures publish terminal intent state to pending waiters', () => {

@@ -376,6 +376,9 @@ const connectionOperations = new ConnectionOperationCoordinator({
   cancelRecovery: () => { networkStartupCoordinator?.cancel(); connectivityRecovery.cancel(); },
   clearProxyCredential: clearActiveProxyCredential, clearPresentation: clearConnectionPresentation,
   removeSidecar: removeExternalProxySidecar, getPresentation: () => state, getTranslator: () => t, emit,
+  waitForConnected: intent => connectionWaitRegistry.wait(intent, {
+    timeoutMs: BROWSER_CONNECTION_READY_TIMEOUT_MS,
+  }),
   runAttempt: (retry, intent) => connectOnce(retry, intent),
   stopEngine: () => stopEngineAfterBrowserSuspend({
     suspendBrowser: suspendOpenBrowserPolicy,
@@ -436,9 +439,6 @@ async function connectOnce(isRetry, intent) { return engineAttempts.run(isRetry,
 
 function ensureEngineStopped() { return connectionOperations.ensureEngineStopped(); }
 async function disconnect() { return connectionOperations.disconnect(); }
-function waitForConnected(intent, timeoutMs = BROWSER_CONNECTION_READY_TIMEOUT_MS) {
-  return connectionWaitRegistry.wait(intent, { timeoutMs });
-}
 async function reconnect(expectedGeneration = null) {
   return connectionOperations.reconnect(expectedGeneration);
 }
@@ -465,12 +465,6 @@ function runDomainPolicyTransaction(buildOperations) {
 const browserRoutingPolicy = routingPolicyCoordinator.browserPolicy;
 const resourcesChanged = () => { emit(); campusBrowserManager?.browser?.updateToolbar(); };
 const pageFavoriteController = createPageFavoriteController({ activeSchoolProfile, loadSettings: loadSettingsOrReport, saveSettings, activityStore: resourceLibraryRuntime, runTransaction: runDomainPolicyTransaction, onChanged: resourcesChanged });
-async function ensureCampusReady() {
-  if (connectionState.isConnected()) return true;
-  const result = await connect();
-  if (!result?.ok && !connectionState.isConnecting()) return false;
-  return waitForConnected(result.intent);
-}
 campusBrowserManager = new CampusBrowserManager({
   BrowserWindow, WebContentsView, Menu,
   session,
@@ -489,17 +483,9 @@ campusBrowserManager = new CampusBrowserManager({
   homeUrl: officialPortalHomeUrl(activeSchoolProfile.createPresentation({ locale }).schoolProfile, safeCampusResourceLibrary()),
   browserPartition: preReadyStorage.authority?.layout?.browserPartition || activeSchoolProfile.browserPartition,
   routingPolicy: browserRoutingPolicy,
-  ensureCampusReady,
+  ensureCampusReady: () => connectionOperations.ensureBrowserReady(),
   resolveRoute: (url) => domainRoutePolicy.resolve(url),
-  ensureConnected: async () => {
-    if (!connectionState.isConnected()) {
-      const result = await connect();
-      if (!await waitForConnected(result.intent)) {
-        return { ok: false, error: state.lastError || t('error.connectTimeout') };
-      }
-    }
-    return { ok: true };
-  },
+  ensureConnected: () => connectionOperations.ensureBrowserConnected(),
   getSocksPort: socksPort, getNewTabUrl: () => loadSettingsOrReport().browserNewTabUrl,
   getLocale: () => locale,
   getTranslator: () => t,
