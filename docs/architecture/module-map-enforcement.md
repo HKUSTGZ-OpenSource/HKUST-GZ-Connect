@@ -55,6 +55,10 @@ shared boundary rather than pretending those helpers have a curated façade. It 
 behavior. The rule store, host-safety logic and PAC files remain private. The debt inventory and
 hard cap are 116 edges, down from the 124-edge baseline.
 
+The follow-on [Routing coordinator](desktop-routing-policy-coordinator.md) removes Main's direct
+private PAC-file import by placing derived publication in the existing public Routing owner.
+Its candidate inventory and hard cap are 115; no additional runtime module is introduced.
+
 This is an explicit migration ratchet, not a claim that all current imports already respect the
 module map. A reviewed policy change can alter the debt manifest, so its diff and the resulting
 edge inventory must be inspected rather than treating a green check as self-authenticating proof.
@@ -86,7 +90,8 @@ enforcement on.
 
 `dependencyEnforcement: inventory-only` is an explicit schema field. The path-coverage checker
 validates referenced module IDs, while the separate architecture ratchet rejects new resolved
-static-JS violations but still records 116 legacy exceptions. It does not resolve computed
+static-JS violations but still records 115 legacy exceptions at the Routing-coordinator candidate.
+It does not resolve computed
 `require()`/`import()` targets or Rust visibility and cannot prove full cross-module enforcement.
 Do not change the field to claim otherwise. The existing Renderer feature checks cover their
 separately documented subset; complete M5 enforcement remains outstanding, alongside M2–M4.

@@ -51,8 +51,17 @@ test('Engine callbacks require context epoch connection intent and process gener
 test('all serialized settings routing and resource mutations capture active context', () => {
   assert.match(source, /new RoutingPolicyTransactionQueue\(\{ isContextCurrent: \(token\) => activeContextLease\.isContextCurrent\(token\) \}\)/u);
   assert.match(source, /routingPolicyTransactions\.run\(activeContextLease\.captureContext\(\), options\)/u);
-  assert.match(source, /function runDomainPolicyTransaction[\s\S]*return runActiveContextTransaction/u);
+  assert.match(source, /runTransaction: runActiveContextTransaction, encodePac: pacDataUrl/u);
+  assert.match(source, /function runDomainPolicyTransaction[\s\S]*return routingPolicyCoordinator\.run/u);
   assert.match(source, /runSerialTransaction: runActiveContextTransaction/u);
   const directRuns = source.match(/routingPolicyTransactions\.run\(/gu) || [];
   assert.equal(directRuns.length, 1, 'every mutation must pass through the context-token helper');
+});
+
+test('Main injects Routing coordination without owning PAC publication or rule rollback', () => {
+  assert.match(source, /new RoutingPolicyCoordinator\(\{/u);
+  assert.match(source, /canResumeBrowser: \(\) => connectionState\.isConnected\(\) && engineSupervisor\.hasActive/u);
+  assert.match(source, /browserRoutingPolicy = routingPolicyCoordinator\.browserPolicy/u);
+  assert.doesNotMatch(source, /require\('\.\/lib\/routing\/pac\/pac-file'\)/u);
+  assert.doesNotMatch(source, /\bsavePacFile\(|\bcurrentPacUrl\b|function browserPolicyProxyConfig/u);
 });

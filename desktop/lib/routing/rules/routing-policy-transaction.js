@@ -1,5 +1,8 @@
 'use strict';
 
+const { pathToFileURL } = require('node:url');
+const { savePacFile } = require('../pac/pac-file');
+
 function asOperation(value) {
   return typeof value === 'function' ? value : async () => undefined;
 }
@@ -135,7 +138,86 @@ class RoutingPolicyTransactionQueue {
   }
 }
 
+// Routing owns derived PAC publication and commit/restore coordination. Browser
+// lifecycle and active-context admission remain injected ports, not dependencies
+// on Browser or Profile implementations.
+class RoutingPolicyCoordinator {
+  constructor({ policy, externalPacFile, browserPacFile, getSettings, getSocksPort,
+    getBrowser, canResumeBrowser, assertPersistence, runTransaction, encodePac,
+    writePac = savePacFile } = {}) {
+    if (!policy || ['list', 'resolve', 'upsert', 'remove', 'replace', 'buildPac']
+      .some(name => typeof policy[name] !== 'function') ||
+      [getSettings, getSocksPort, getBrowser, canResumeBrowser, assertPersistence,
+        runTransaction, encodePac, writePac].some(value => typeof value !== 'function') ||
+      typeof externalPacFile !== 'string' || !externalPacFile ||
+      typeof browserPacFile !== 'string' || !browserPacFile) {
+      throw new TypeError('Routing coordinator dependencies are incomplete');
+    }
+    Object.assign(this, { policy, externalPacFile, browserPacFile, getSettings,
+      getSocksPort, getBrowser, canResumeBrowser, assertPersistence, runTransaction,
+      encodePac, writePac });
+    this.currentPacUrl = pathToFileURL(externalPacFile).href;
+    this.browserPolicy = Object.freeze({
+      appliesLiveSession: true,
+      list: () => this.policy.list(),
+      resolve: (url, inheritedRoute) => this.policy.resolve(url, inheritedRoute),
+      upsert: payload => this.changeRule(() => this.policy.upsert(payload)),
+      remove: payload => this.changeRule(() => this.policy.remove(payload)),
+      proxyConfig: port => this.browserProxyConfig(port),
+    });
+  }
+
+  pacUrl() { return this.currentPacUrl; }
+
+  refreshExternal(settings = this.getSettings()) {
+    const saved = this.writePac(this.externalPacFile, this.policy.buildPac(Number(settings.port), {
+      defaultRoute: 'direct', campusPrivateIpv4: true,
+    }));
+    this.currentPacUrl = saved.url;
+    return saved;
+  }
+
+  browserProxyConfig(port) {
+    const proxyKind = this.getSettings().strictProxyAuth === true ? 'http' : 'socks5';
+    const source = this.policy.buildPac(Number(port), { proxyKind, campusPrivateIpv4: true });
+    // The durable diagnostic copy must succeed before Chromium receives the
+    // in-memory policy; never turn a write/read failure into a DIRECT fallback.
+    this.writePac(this.browserPacFile, source);
+    return { mode: 'pac_script', pacScript: this.encodePac(source),
+      proxyBypassRules: '<-loopback>' };
+  }
+
+  suspendBrowser() { return this.getBrowser().suspendRoutingPolicy(); }
+
+  resumeBrowserIfLive() {
+    if (!this.canResumeBrowser()) return null;
+    return this.getBrowser().resumeRoutingPolicy(this.getSocksPort());
+  }
+
+  run(buildOperations) {
+    return this.runTransaction(() => {
+      this.assertPersistence();
+      const { commit, rollback, resumeBrowser = true } = buildOperations();
+      return {
+        suspend: () => this.suspendBrowser(), commit,
+        applyExternal: () => this.refreshExternal(),
+        applyBrowser: resumeBrowser ? () => this.resumeBrowserIfLive() : null,
+        rollback, restoreExternal: () => this.refreshExternal(),
+        restoreBrowser: () => this.resumeBrowserIfLive(),
+      };
+    });
+  }
+
+  changeRule(commit) {
+    return this.run(() => {
+      const previousRules = this.policy.list();
+      return { commit, rollback: () => this.policy.replace(previousRules) };
+    });
+  }
+}
+
 module.exports = {
+  RoutingPolicyCoordinator,
   RoutingPolicyTransactionQueue,
   runRoutingPolicyTransaction,
   transactionError,

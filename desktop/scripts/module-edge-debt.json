@@ -116,7 +116,6 @@
     "desktop/main.js -> desktop/lib/platform/i18n/i18n.js [private-entrypoint]",
     "desktop/main.js -> desktop/lib/platform/update/update-check.js [private-entrypoint]",
     "desktop/main.js -> desktop/lib/profiles/runtime/school-profile-controller.js [private-entrypoint]",
-    "desktop/main.js -> desktop/lib/routing/pac/pac-file.js [private-entrypoint]",
     "desktop/main.js -> desktop/lib/switching/effects/browser-engine-barrier.js [private-entrypoint]"
   ]
 }

@@ -5,7 +5,6 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
 const { parseCredentialField } = require('./lib/persistence/settings/settings-update');
 const {
@@ -27,7 +26,6 @@ const {
 } = require('./lib/connection/engine/engine-supervisor');
 const { ConnectionTelemetryCoordinator } = require('./lib/connection/telemetry/connection-telemetry-coordinator');
 const { DomainRoutePolicyStore } = require('./lib/routing/policy/domain-route-policy');
-const { savePacFile } = require('./lib/routing/pac/pac-file');
 const { MyPortalDataRuntime, hkustMyPortalSources, pacDataUrl } = require('./lib/browser/session/browser-session-manager');
 const { CampusBrowserManager, officialPortalHomeUrl } = require('./lib/browser/session/campus-browser-manager');
 const { createPreReadySchoolProfileController } = require('./lib/profiles/runtime/school-profile-controller');
@@ -60,7 +58,7 @@ const {
 const { routeCertificateError } = require('./lib/browser/certificates/certificate-error-boundary');
 const { createT, effectiveLocale } = require('./lib/platform/i18n/i18n');
 const { registerTrustedIpcHandlers } = require('./lib/ipc/ipc-handlers');
-const { RoutingPolicyTransactionQueue } = require('./lib/routing/rules/routing-policy-transaction');
+const { RoutingPolicyCoordinator, RoutingPolicyTransactionQueue } = require('./lib/routing/rules/routing-policy-transaction');
 const { stopEngineAfterBrowserSuspend } = require('./lib/switching/effects/browser-engine-barrier');
 const { ConnectionStateMachine, ConnectionWaitRegistry, ConnectionOperationCoordinator, projectConnectionStatus } = require('./lib/connection/state/connection-state-machine');
 // The campus browser is intentionally constrained to the application's
@@ -483,78 +481,25 @@ async function reconnect(expectedGeneration = null) {
 }
 
 // ---------- PAC file (advanced app integration; no DNS probing) ----------
-let currentPacUrl = pathToFileURL(PAC_FILE).href;
+const routingPolicyCoordinator = new RoutingPolicyCoordinator({
+  policy: domainRoutePolicy, externalPacFile: PAC_FILE, browserPacFile: CAMPUS_BROWSER_PAC_FILE,
+  getSettings: loadSettingsOrReport, getSocksPort: socksPort,
+  getBrowser: () => campusBrowserManager,
+  canResumeBrowser: () => connectionState.isConnected() && engineSupervisor.hasActive,
+  assertPersistence: assertSettingsPersistenceAvailable,
+  runTransaction: runActiveContextTransaction, encodePac: pacDataUrl,
+});
 function refreshPacFile(settings = loadSettingsOrReport()) {
-  const saved = savePacFile(PAC_FILE, domainRoutePolicy.buildPac(Number(settings.port), {
-    defaultRoute: 'direct', campusPrivateIpv4: true,
-  }));
-  currentPacUrl = saved.url;
-  return saved;
+  return routingPolicyCoordinator.refreshExternal(settings);
 }
-function pacUrl() { return currentPacUrl; }
-
-function browserPolicyProxyConfig(port) {
-  const proxyKind = loadSettingsOrReport().strictProxyAuth === true ? 'http' : 'socks5';
-  const source = domainRoutePolicy.buildPac(
-    Number(port),
-    { proxyKind, campusPrivateIpv4: true },
-  );
-  // Keep a durable diagnostic copy, while Chromium consumes an in-memory PAC.
-  // If the derived file disappears or cannot be re-read, Chromium must never
-  // silently fall back to DIRECT for a campus page.
-  savePacFile(
-    CAMPUS_BROWSER_PAC_FILE,
-    source,
-  );
-  return {
-    mode: 'pac_script',
-    pacScript: pacDataUrl(source),
-    proxyBypassRules: '<-loopback>',
-  };
-}
+function pacUrl() { return routingPolicyCoordinator.pacUrl(); }
 async function suspendOpenBrowserPolicy() {
-  return campusBrowserManager.suspendRoutingPolicy();
-}
-async function resumeOpenBrowserPolicyIfLive() {
-  if (!connectionState.isConnected() || !engineSupervisor.hasActive) return null;
-  return campusBrowserManager.resumeRoutingPolicy(socksPort());
+  return routingPolicyCoordinator.suspendBrowser();
 }
 function runDomainPolicyTransaction(buildOperations) {
-  return runActiveContextTransaction(() => {
-    assertSettingsPersistenceAvailable();
-    const { commit, rollback, resumeBrowser = true } = buildOperations();
-    return {
-      suspend: suspendOpenBrowserPolicy,
-      commit,
-      applyExternal: () => refreshPacFile(loadSettingsOrReport()),
-      applyBrowser: resumeBrowser ? resumeOpenBrowserPolicyIfLive : null,
-      rollback,
-      restoreExternal: () => refreshPacFile(loadSettingsOrReport()),
-      restoreBrowser: resumeOpenBrowserPolicyIfLive,
-    };
-  });
+  return routingPolicyCoordinator.run(buildOperations);
 }
-
-const browserRoutingPolicy = {
-  appliesLiveSession: true,
-  list: () => domainRoutePolicy.list(),
-  resolve: (url, inheritedRoute) => domainRoutePolicy.resolve(url, inheritedRoute),
-  upsert: (payload) => runDomainPolicyTransaction(() => {
-    const previousRules = domainRoutePolicy.list();
-    return {
-      commit: () => domainRoutePolicy.upsert(payload),
-      rollback: () => domainRoutePolicy.replace(previousRules),
-    };
-  }),
-  remove: (payload) => runDomainPolicyTransaction(() => {
-    const previousRules = domainRoutePolicy.list();
-    return {
-      commit: () => domainRoutePolicy.remove(payload),
-      rollback: () => domainRoutePolicy.replace(previousRules),
-    };
-  }),
-  proxyConfig: (port) => browserPolicyProxyConfig(port),
-};
+const browserRoutingPolicy = routingPolicyCoordinator.browserPolicy;
 const resourcesChanged = () => { emit(); campusBrowserManager?.browser?.updateToolbar(); };
 const pageFavoriteController = createPageFavoriteController({ activeSchoolProfile, loadSettings: loadSettingsOrReport, saveSettings, activityStore: resourceLibraryRuntime, runTransaction: runDomainPolicyTransaction, onChanged: resourcesChanged });
 async function ensureCampusReady() {
