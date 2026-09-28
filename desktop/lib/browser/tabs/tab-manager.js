@@ -389,7 +389,126 @@ class BrowserTabLifecycle extends TabManager {
   }
 }
 
+// Navigation intent belongs to the selected tab. A route/session activation can
+// finish after that tab was closed, switched or superseded; only its current
+// intent may start a load.
+class BrowserNavigationOwner {
+  constructor({
+    blankUrl, normalizeUrl, getHomeUrl, getNewTabUrl, getTranslator, reportError,
+    getActiveTab, containsTab, getConfiguredPort, resolveRoute, ensureRoutingReady,
+    createTab, focusWorkspaceSearch, currentUrl, updateTabRoute,
+    scheduleToolbarUpdate,
+  } = {}) {
+    const ports = { normalizeUrl, getHomeUrl, getNewTabUrl, getTranslator, reportError,
+      getActiveTab, containsTab, getConfiguredPort, resolveRoute, ensureRoutingReady,
+      createTab, focusWorkspaceSearch, currentUrl, updateTabRoute, scheduleToolbarUpdate };
+    if (typeof blankUrl !== 'string' || !blankUrl ||
+        Object.values(ports).some((port) => typeof port !== 'function')) {
+      throw new TypeError('Browser navigation owner dependencies are incomplete');
+    }
+    Object.assign(this, { blankUrl, ...ports });
+  }
+
+  beginNavigationIntent(tab = this.getActiveTab()) {
+    if (!tab || tab.view.webContents.isDestroyed()) return null;
+    tab.navigationIntent = (tab.navigationIntent || 0) + 1;
+    return tab.navigationIntent;
+  }
+
+  navigationIntentCurrent(tab, intent) {
+    return Number.isSafeInteger(intent) && this.containsTab(tab) &&
+      tab.navigationIntent === intent && !tab.view.webContents.isDestroyed();
+  }
+
+  async openHome() {
+    const homeUrl = this.getHomeUrl();
+    if (homeUrl === this.blankUrl) return this.focusWorkspaceSearch();
+    const active = this.getActiveTab();
+    const intent = active ? this.beginNavigationIntent(active) : null;
+    const port = this.getConfiguredPort() || 1080;
+    const resolution = this.resolveRoute(homeUrl);
+    if (!await this.ensureRoutingReady(resolution, port)) return false;
+    if (active && !this.navigationIntentCurrent(active, intent)) return false;
+    if (active && active.kind !== 'workspace') return this.navigate(homeUrl, active);
+    return !!this.createTab(homeUrl);
+  }
+
+  openBlankTab() {
+    return !!this.createTab(this.blankUrl, ROUTE_DIRECT, { blankPage: true });
+  }
+
+  async openNewTab() {
+    let url;
+    try { url = this.normalizeUrl(this.getNewTabUrl(), this.blankUrl, this.getTranslator()); }
+    catch (error) {
+      this.reportError(error.message);
+      return false;
+    }
+    if (url === this.blankUrl) return this.openBlankTab();
+    const port = this.getConfiguredPort() || 1080;
+    // New-tab preferences do not override the effective Routing policy.
+    const resolution = this.resolveRoute(url);
+    if (!await this.ensureRoutingReady(resolution, port)) return false;
+    return !!this.createTab(url);
+  }
+
+  async navigateWhenReady(rawUrl, tab = this.getActiveTab()) {
+    let url;
+    try { url = this.normalizeUrl(rawUrl, this.getHomeUrl(), this.getTranslator()); }
+    catch (error) {
+      this.reportError(error.message);
+      return false;
+    }
+    if (!tab || tab.view.webContents.isDestroyed()) return false;
+    const intent = this.beginNavigationIntent(tab);
+    const resolution = this.resolveRoute(url);
+    if (!await this.ensureRoutingReady(resolution)) return false;
+    if (!this.navigationIntentCurrent(tab, intent)) return false;
+    if (tab.kind === 'workspace') return !!this.createTab(url);
+    return this.navigate(url, tab);
+  }
+
+  async reloadWhenReady(tab = this.getActiveTab()) {
+    if (!tab || tab.kind === 'workspace' || tab.view.webContents.isDestroyed()) return false;
+    const url = tab.failedUrl || this.currentUrl(tab);
+    if (!url || url === this.blankUrl) {
+      tab.view.webContents.reload();
+      return true;
+    }
+    const intent = this.beginNavigationIntent(tab);
+    const resolution = this.resolveRoute(url);
+    if (!await this.ensureRoutingReady(resolution)) return false;
+    if (!this.navigationIntentCurrent(tab, intent)) return false;
+    if (tab.failedUrl) return this.navigate(url, tab);
+    tab.view.webContents.reload();
+    return true;
+  }
+
+  navigate(rawUrl, tab = this.getActiveTab(), requestedRoute = null) {
+    let url;
+    try { url = this.normalizeUrl(rawUrl, this.getHomeUrl(), this.getTranslator()); }
+    catch (error) {
+      this.reportError(error.message);
+      return false;
+    }
+    if (!tab || tab.view.webContents.isDestroyed()) return false;
+    // An ID-only resource may carry a reviewed initial route. Subsequent
+    // navigation resolves the live policy again.
+    this.updateTabRoute(tab, url, requestedRoute);
+    tab.failedUrl = '';
+    tab.renderingError = false;
+    tab.crashed = false;
+    const loading = tab.view.webContents.loadURL(url);
+    loading.catch(() => {
+      // did-fail-load renders the local error page. A superseded load may reject.
+    });
+    this.scheduleToolbarUpdate();
+    return true;
+  }
+}
+
 module.exports = {
+  BrowserNavigationOwner,
   BrowserTabLifecycle,
   DEFAULT_MAX_TABS,
   TabLimitError,
