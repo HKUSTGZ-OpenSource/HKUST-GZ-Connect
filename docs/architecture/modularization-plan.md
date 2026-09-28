@@ -67,6 +67,11 @@ candidate SHAs in linked review records are historical; none is part of publishe
 remaining `app.js` composition and legacy global/HTML-order debt prevent closing M1 merely because
 these slices passed CI. The host must not mask missing owner cleanup with a no-op.
 
+The staged [Notifications and Help owner](renderer-notifications-owner.md) retires two classic
+HTML scripts and their two frozen `window.*` exports in favor of one explicit feature-host
+entrypoint. It keeps the existing drawer, diagnostics, focus trap and Reduced Motion behavior;
+other legacy script-order and bootstrap responsibilities keep M1 open.
+
 1. Add an explicit Renderer bootstrap and a checked feature registry.
 2. Freeze the list of existing `window.*` feature exports; CI rejects new ones.
 3. Give each feature one public entrypoint with injected dependencies.

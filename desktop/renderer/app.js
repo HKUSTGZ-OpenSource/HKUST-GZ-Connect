@@ -32,6 +32,20 @@ const updateNoticesFeature = rendererFeatures.mount('update-notices', {
     clearTimeout: (timer) => window.clearTimeout(timer),
   },
 });
+const notificationsFeature = rendererFeatures.mount('notifications', {
+  document,
+  translate: (key, vars) => t(key, vars),
+  getLogs: () => window.api.getLogs(),
+  openPage: setPage,
+  reconnect: () => (!st.connected && !st.connecting ? window.api.connect() : null),
+  matchMedia: (query) => window.matchMedia(query),
+  timers: {
+    setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+    clearTimeout: (timer) => window.clearTimeout(timer),
+    requestAnimationFrame: (callback) => window.requestAnimationFrame(callback),
+    cancelAnimationFrame: (frame) => window.cancelAnimationFrame(frame),
+  },
+});
 function activeLoginProfileId() {
   return window.schoolProfileSelectorFeature?.credentialProfileId?.() || null;
 }
@@ -87,7 +101,8 @@ function renderConnect(s) {
   usabilityFeature?.updateConnection(s);
   connectionOverviewFeature?.renderStatus(s, t);
   $('settingsNotice').hidden = !s.notice;
-  $('settingsNotice').textContent = s.notice || ''; window.notificationView.render({ card: $('notificationCard'), title: $('notificationTitle'), summary: $('notificationSummary'), action: $('notificationAction'), state: s, translate: t });
+  $('settingsNotice').textContent = s.notice || '';
+  notificationsFeature.renderStatus(s);
   updateLoginProgress(s);
 }
 
@@ -132,13 +147,6 @@ async function refreshState({ preserveTower = false } = {}) {
   browserNewTabSettings?.render(settings);
   if (document.querySelector('.page.active')?.dataset.page === 'connect') connectionOverviewFeature?.refreshEnvironment(s.loggedIn === true);
   return s;
-}
-
-async function loadLogs() {
-  const text = await window.api.getLogs();
-  const box = $('logs');
-  box.textContent = text && text.trim() ? text : t('notif.empty');
-  box.scrollTop = box.scrollHeight;
 }
 
 async function init() {
@@ -397,7 +405,6 @@ connectionOverviewFeature = rendererFeatures.mount('connection-overview', {
     clearInterval: (handle) => window.clearInterval(handle),
   },
 });
-window.notificationDrawer.start({ document, loadLogs, runAction: (action) => window.notificationView.runAction(action, { openPage: setPage, reconnect: () => (!st.connected && !st.connecting ? window.api.connect() : null) }) });
 usabilityFeature = window.usabilityController.create({ window, document, translate: (key) => t(key), openPage: setPage, clearResourceFilter: () => {
   if (window.campusCategoryStacks.isEditing()) { window.campusCategoryStacks.cancelEdit(); return; }
   serviceWorkspace?.clearSearch();
