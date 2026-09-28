@@ -49,6 +49,7 @@ class DesktopPersistenceRuntime {
   #credentialTransactionRecovery = Object.freeze({ ok: true, status: 'none' });
   #credentialRecoveryNoticeText = null;
   #credentialRecoveryErrorText = null;
+  #routingSettingsSnapshot = null;
 
   static createLegacyAdapter({ settingsFile, credentialFile, safeStorage, platform,
     getDefaultRouteDomains, onRecovery, stores = {} }) {
@@ -287,6 +288,35 @@ class DesktopPersistenceRuntime {
     const saved = this.runtime.settingsStore.save(settings);
     this.authority = saved.authority;
     return projectRuntimeSettings(this.authority, { accountLabel: this.accountLabel });
+  }
+
+  routingSettings() {
+    if (!this.#routingSettingsSnapshot) {
+      this.#routingSettingsSnapshot = this.loadSettingsOrReport();
+    }
+    return this.#routingSettingsSnapshot;
+  }
+
+  saveSettingsWithGuard(settings) {
+    this.assertCredentialTransactionAvailable();
+    const saved = this.saveSettings(settings);
+    this.#routingSettingsSnapshot = saved;
+    return saved;
+  }
+
+  rememberCloseAction(action, runTransaction) {
+    if (typeof runTransaction !== 'function') {
+      throw new TypeError('settings transaction runner is required');
+    }
+    return runTransaction(() => {
+      this.assertCredentialTransactionAvailable();
+      const previous = this.loadSettingsOrReport();
+      const next = { ...previous, closeAction: action };
+      return {
+        commit: () => this.saveSettingsWithGuard(next),
+        rollback: () => this.saveSettingsWithGuard(previous),
+      };
+    });
   }
 
   saveCredential(password, username) {

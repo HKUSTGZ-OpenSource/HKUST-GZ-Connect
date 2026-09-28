@@ -174,6 +174,11 @@ per-Engine copy, owner-only helper sidecar and generation-bound retirement in th
 Persistence credential entrypoint. Main falls from 895 to 864 lines without a new production
 module or expanded dependency budget. It remains above the next M3 size/dependency targets.
 
+The [settings transaction owner](desktop-settings-transaction-owner.md) candidate moves the
+cached route-settings snapshot and the close-action commit/rollback factory into the existing
+Persistence Runtime. Main falls from 864 to 845 lines; dependency metrics remain stable. This is
+still a staged M3 contribution, not the below-800/24 intermediate gate.
+
 Move remaining settings-surface coordination, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 
