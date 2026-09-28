@@ -56,6 +56,9 @@ without changing connection authority or completing the remaining M1 bootstrap w
 
 The [feature host](renderer-feature-host.md) and separate lifecycle slices now mount campus-data,
 official-favorites, interactive-auth and Integration Center from explicit entrypoints (#108–#120).
+The staged [Control Tower form owner](renderer-control-tower-owner.md) moves the bounded advanced
+settings form/apply and feedback lifecycle out of the Renderer bootstrap without changing its
+markup or immediate proxy-auth migration owner. It is one M1 slice, not bootstrap completion.
 The [static Renderer policy](renderer-boundaries.md) in #110 rejects new legacy exports and invalid
 HTML/module edges; [localization ownership](renderer-localization.md) entered in #116. The
 [auth lifecycle](renderer-auth-challenge-lifecycle.md), [Integration Center lifecycle](integration-renderer-lifecycle.md)

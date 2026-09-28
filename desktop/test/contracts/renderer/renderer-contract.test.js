@@ -258,8 +258,10 @@ test('control panel has responsive wide and compact layout rules', () => {
 });
 
 test('Control Tower distinguishes a committed save from a failed reconnect', () => {
-  assert.match(appJs, /outcome === 'saved_reconnect_failed'/u);
-  assert.match(appJs, /`\$\{t\('tower\.saved'\)\} · \$\{result\.warning/u);
+  const owner = fs.readFileSync(path.join(rendererDir, 'features/control-tower/index.mjs'), 'utf8');
+  assert.match(appJs, /rendererFeatures\.mount\('control-tower', \{/u);
+  assert.match(owner, /outcome === 'saved_reconnect_failed'/u);
+  assert.match(owner, /`\$\{translate\('tower\.saved'\)\} · \$\{result\.warning/u);
 });
 
 test('Campus Browser chrome keeps the minimum task set and exposes app settings', () => {
