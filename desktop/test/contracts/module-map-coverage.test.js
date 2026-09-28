@@ -197,7 +197,7 @@ test('exact static-edge debt rejects new bypasses and stale exceptions', () => {
   assert.deepEqual(moduleEdgeDebtErrors([], debt), [`stale module edge debt: ${old}`]);
   for (const invalid of [null, { ...debt, exceptions: [old, old] },
     { ...debt, extra: true }, { ...debt, baseSha: 'short' },
-    { ...debt, exceptions: Array.from({ length: 117 }, (_, index) =>
+    { ...debt, exceptions: Array.from({ length: 116 }, (_, index) =>
       `desktop/lib/a/${index}.js -> desktop/lib/b/private.js [private-entrypoint]`).sort() }]) {
     assert.deepEqual(moduleEdgeDebtErrors([old], invalid), ['module edge debt manifest is invalid']);
   }

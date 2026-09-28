@@ -158,6 +158,10 @@ existing state entrypoint is 541; 32 direct / 46 effective / 170 transitive
 dependencies are unchanged. M3 remains open: this does not reach the below-800/24
 intermediate or 500–700/20 final target.
 
+The [Routing policy coordinator](desktop-routing-policy-coordinator.md) candidate moves derived
+PAC publication and rule commit/restore bundles into the existing Routing entrypoint. Main
+falls to 896 lines / 31 direct / 45 effective / 170 transitive dependencies; M3 remains open.
+
 Move remaining settings-surface coordination, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 
@@ -218,6 +222,8 @@ explicitly not promoted to complete by this coverage check.
 The static-JS ratchet now rejects new resolved cross-module bypasses against 124 exact legacy
 edges at `main@381c5f29`. Declaring the existing shared campus-route contract public reduces
 the candidate inventory to 116; the rest remain M5 migration work, not accepted public APIs.
+Routing coordination removes Main's private PAC-file edge and lowers the follow-on candidate
+inventory and cap to 115, without adding a transitive module.
 
 - Move remaining root Desktop tests into `test/unit/<domain>`, `test/contracts` or
   `test/integrations`; reject new root-test debt.
