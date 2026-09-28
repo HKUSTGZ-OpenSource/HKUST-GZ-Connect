@@ -184,6 +184,11 @@ intent-bound Browser connection wait outcomes to the existing Connection operati
 Main falls from 845 to 831 lines; the reviewed 75-second deadline and dependency budgets stay
 unchanged. Browser launch/routing behavior and the later M3 targets remain separate.
 
+The staged [Resource library owner](desktop-resource-open-owner.md) moves Profile-backed
+resource source adaptation and ID-only open transactions into the existing Resources runtime.
+Main falls from 831 to 819 lines without a new dependency node or changed route authority.
+The next M3 size and dependency targets remain open.
+
 Move remaining settings-surface coordination, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 

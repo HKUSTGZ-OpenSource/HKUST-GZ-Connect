@@ -219,10 +219,19 @@ const resourceLibraryRuntime = new ResourceLibraryRuntime({
   favoritesFile: RESOURCE_FAVORITES,
   recentFile: RESOURCE_RECENTS,
   platform: process.platform,
-  loadResources: (settings) => safeCampusResources(settings), loadAliases: (settings) => activeSchoolProfile.resourceActivityAliases((settings || loadSettingsOrReport()).customResources),
+  loadResources: ResourceLibraryRuntime.createSource({
+    loadSettings: loadSettingsOrReport,
+    mergeResources: (custom, hidden) => activeSchoolProfile.mergeResourceLibrary(custom, hidden),
+    resolveRoute: (url) => domainRoutePolicy.resolve(url),
+    onReadFailure: reportSettingsReadFailure,
+  }),
+  loadAliases: (settings) => activeSchoolProfile.resourceActivityAliases((settings || loadSettingsOrReport()).customResources),
   captureContext: () => activeContextLease.captureContext(),
   isContextCurrent: (context) => activeContextLease.isContextCurrent(context),
   openRequest: (request) => campusBrowserManager.open(request),
+  runTransaction: runActiveContextTransaction,
+  getLocale: () => locale,
+  translate: (key) => t(key),
 });
 // Last known "newer release exists" result. Failures never land here, so the
 // renderer can render it without distinguishing network errors from silence.
@@ -292,18 +301,6 @@ function proxyHelperPath() {
     platform: process.platform,
     arch: process.arch,
   });
-}
-function campusResources(settings = loadSettingsOrReport()) {
-  return resourceLibraryRuntime.resolveRoutes(activeSchoolProfile.mergeResourceLibrary(
-    settings.customResources, settings.hiddenBuiltinResourceIds,
-  ), (url) => domainRoutePolicy.resolve(url));
-}
-function safeCampusResources(settings = null) {
-  try { return campusResources(settings || loadSettingsOrReport()); }
-  catch (error) {
-    reportSettingsReadFailure(error);
-    return activeSchoolProfile.mergeResourceLibrary();
-  }
 }
 function safeCampusResourceLibrary(settings = null) {
   return resourceLibraryRuntime.listLocalized(settings, locale);
@@ -490,7 +487,7 @@ campusBrowserManager = new CampusBrowserManager({
   getLocale: () => locale,
   getTranslator: () => t,
   getProfilePresentation: () => activeSchoolProfile.createPresentation({ locale }).schoolProfile, getWorkspaceResources: () => safeCampusResourceLibrary(), getWorkspaceGroups: () => resourceLibraryRuntime.listGroups(), getSharedPortalCredential: (origin) => origin === 'https://sso.hkust-gz.edu.cn' && activeSchoolProfile.activeContextBinding().profileId === 'hkustgz' ? persistenceRuntime.openCredential() : null,
-  onTogglePageFavorite: (candidate) => pageFavoriteController.toggle(candidate).catch((error) => ({ ok: false, error: error.message })), onRecordPageOpen: (url) => (resourceLibraryRuntime.recordOpenByUrl(url) && (emit(), true)), onOpenResource: (resourceId) => openCampusResourceById({ resourceId }), onWorkspaceMutation: (command) => pageFavoriteController.handleWorkspaceCommand(command),
+  onTogglePageFavorite: (candidate) => pageFavoriteController.toggle(candidate).catch((error) => ({ ok: false, error: error.message })), onRecordPageOpen: (url) => (resourceLibraryRuntime.recordOpenByUrl(url) && (emit(), true)), onOpenResource: (resourceId) => resourceLibraryRuntime.openByIdSerialized({ resourceId }), onWorkspaceMutation: (command) => pageFavoriteController.handleWorkspaceCommand(command),
   showItemInFolder: (file) => shell.showItemInFolder(file), showSettings: () => { desktopShell?.showWindow(); desktopShell?.send('open-settings'); },
   showRoutingRules: () => {
     desktopShell?.showWindow();
@@ -542,15 +539,6 @@ async function connectAndOpenCampusBrowser(rawRequest) {
   }
   return result;
 }
-async function openCampusResourceById({ resourceId } = {}) {
-  try {
-    return await runActiveContextTransaction(() => ({
-      commit: () => resourceLibraryRuntime.openById(resourceId, locale),
-    }));
-  }
-  catch { return { ok: false, error: t('error.resourceUnavailable') }; }
-}
-
 // ---------- update notifications (no automatic download or installation) ----------
 updateNotifications = new UpdateNotificationRuntime({
   getVersion: () => app.getVersion(), check: checkForUpdate,
@@ -664,7 +652,7 @@ registerCoreControlIpc({
     return { ok: true };
   },
   openCampusBrowser: (request) => connectAndOpenCampusBrowser(request), openBookmarkManager: () => campusBrowserManager.openBookmarkManager(),
-  openResource: (request) => openCampusResourceById(request),
+  openResource: (request) => resourceLibraryRuntime.openByIdSerialized(request),
   checkUpdate: force => updateNotifications.run(force),
   openExternal: url => updateNotifications.open(url),
   resize: (height) => desktopShell.resize(height),

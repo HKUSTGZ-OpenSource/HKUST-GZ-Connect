@@ -9,7 +9,37 @@ const { normalizePageFavoriteCandidate } = require('../schema/campus-resource-co
 const { PageFavoriteController } = require('./page-favorite-controller');
 const { FavoriteGroupStore, groupProjection } = require('./favorite-group-store');
 
+function projectEffectiveRoutes(resources, resolveRoute) {
+  if (!Array.isArray(resources) || typeof resolveRoute !== 'function') {
+    throw new TypeError('resource route projection dependencies are incomplete');
+  }
+  return Object.freeze(resources.map((resource) => {
+    const resolution = resolveRoute(resource.url);
+    return Object.freeze({ ...resource,
+      route: resolution?.route === 'direct' ? 'direct' : 'campus',
+      routeSource: resolution?.source || 'default' });
+  }));
+}
+
 class ResourceLibraryRuntime {
+  static createSource({ loadSettings, mergeResources, resolveRoute, onReadFailure } = {}) {
+    if ([loadSettings, mergeResources, resolveRoute, onReadFailure]
+      .some((dependency) => typeof dependency !== 'function')) {
+      throw new TypeError('resource source dependencies are incomplete');
+    }
+    return (settings = null) => {
+      try {
+        const current = settings || loadSettings();
+        return projectEffectiveRoutes(mergeResources(
+          current.customResources, current.hiddenBuiltinResourceIds,
+        ), resolveRoute);
+      } catch (error) {
+        onReadFailure(error);
+        return mergeResources();
+      }
+    };
+  }
+
   constructor({
     favoritesFile,
     recentFile,
@@ -18,6 +48,9 @@ class ResourceLibraryRuntime {
     captureContext,
     isContextCurrent,
     openRequest,
+    runTransaction = null,
+    getLocale = null,
+    translate = null,
     loadAliases = () => [],
     ActivityStoreClass = ResourceActivityStore,
     GroupStoreClass = FavoriteGroupStore,
@@ -29,11 +62,18 @@ class ResourceLibraryRuntime {
         throw new TypeError('resource library runtime dependencies are incomplete');
       }
     }
+    if ([runTransaction, getLocale, translate].some((dependency) => dependency !== null) &&
+      [runTransaction, getLocale, translate].some((dependency) => typeof dependency !== 'function')) {
+      throw new TypeError('resource open transaction dependencies are incomplete');
+    }
     this.loadResources = loadResources;
     this.loadAliases = loadAliases;
     this.captureContext = captureContext;
     this.isContextCurrent = isContextCurrent;
     this.openRequest = openRequest;
+    this.runTransaction = runTransaction;
+    this.getLocale = getLocale;
+    this.translate = translate;
     this.activityStore = new ActivityStoreClass({ favoritesFile, recentFile, platform });
     this.activitySnapshot = null;
     this.groupSnapshot = null;
@@ -62,15 +102,7 @@ class ResourceLibraryRuntime {
   }
 
   resolveRoutes(resources, resolveRoute) {
-    if (!Array.isArray(resources) || typeof resolveRoute !== 'function') {
-      throw new TypeError('resource route projection dependencies are incomplete');
-    }
-    return Object.freeze(resources.map((resource) => {
-      const resolution = resolveRoute(resource.url);
-      return Object.freeze({ ...resource,
-        route: resolution?.route === 'direct' ? 'direct' : 'campus',
-        routeSource: resolution?.source || 'default' });
-    }));
+    return projectEffectiveRoutes(resources, resolveRoute);
   }
 
   snapshot() { this.activitySnapshot = null; return this.#reconcileActivity(null); }
@@ -187,6 +219,17 @@ class ResourceLibraryRuntime {
       resourceId: resource.id,
       resources: this.listLocalized(null, locale),
     });
+  }
+
+  async openByIdSerialized({ resourceId } = {}) {
+    if (!this.runTransaction) throw new TypeError('resource open transaction is unavailable');
+    try {
+      return await this.runTransaction(() => ({
+        commit: () => this.openById(resourceId, this.getLocale()),
+      }));
+    } catch {
+      return { ok: false, error: this.translate('error.resourceUnavailable') };
+    }
   }
 
   #groupDocument() { return this.groupSnapshot ||= this.groupStore.snapshot(); }
