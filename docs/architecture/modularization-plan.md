@@ -115,6 +115,12 @@ effective navigation-route selection and tab route refresh into that same owner.
 falls further to 1,333 lines, the co-located owner file remains below 600 and the Routing policy
 and dependency budget stay unchanged. M2 is not complete.
 
+The staged [managed credential popup owner](browser-managed-popup-owner.md) moves native MFA
+child-window construction, event wiring and idempotent close out of the Browser orchestrator.
+The Browser root falls to 1,236 lines; the separate owner class shares the existing 492-line
+credential module, below 600, without changing Session or credential-flow authority. M2 remains
+open for the remaining event and routing lifecycle responsibilities.
+
 Extract tested owners for:
 
 ```text

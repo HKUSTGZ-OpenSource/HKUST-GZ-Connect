@@ -15,7 +15,7 @@ const { BrowserWorkspaceOwner, projectBrowserWorkspaceResources, MAX_WORKSPACE_H
   require('../workspace/campus-workspace-controller');
 const { CertificateController } = require('../certificates/certificate-controller');
 const { BrowserDownloadController } = require('../downloads/download-controller');
-const { CredentialController } = require('../credentials/credential-controller');
+const { CredentialController, ManagedCredentialPopupOwner } = require('../credentials/credential-controller');
 const {
   BrowserSessionManager,
   applyCampusSessionPolicy,
@@ -343,6 +343,18 @@ class CampusBrowser {
       },
       onSessionReady: (browserSession) => this.applyDownloadHandler(browserSession),
     });
+    this.popupOwner = new ManagedCredentialPopupOwner({
+      BrowserWindow,
+      getParentWindow: () => this.window,
+      getCampusSession: () => this.browserSessionManager.sessionForRoute(ROUTE_CAMPUS),
+      isContextCurrent: () => this.windowOwner?.contextRetired !== true,
+      campusPreload: this.campusPreload, credentialController: this.credentialController,
+      safePopupUrl,
+      openOrdinaryPopup: (url) => this.createTab(url, this.resolveRoute(url).route),
+      reportCreateFailure: () => this.onError?.(this.t('tab.createFailed')),
+      markNavigation: (popup, url, code) => this.markCredentialNavigation(popup, url, code),
+      recordPortalSessionUrl: (url) => this.recordPortalSessionUrl(url),
+    });
     // One-release compatibility for diagnostics/tests; ownership and mutation
     // live exclusively in CertificateController.
     this.certificateDecisions = this.certificateController.decisions;
@@ -358,7 +370,7 @@ class CampusBrowser {
     // of being flattened into tabs. Some IdPs complete SMS MFA through
     // window.opener/postMessage and window.close; preserving that relationship
     // is required for the opener to observe a successful challenge.
-    this.managedCredentialPopups = new Set();
+    this.managedCredentialPopups = this.popupOwner.popups;
     this.workspaceOwner = new BrowserWorkspaceOwner({
       getWorkspaceResources: () => this.getWorkspaceResources(),
       getWorkspaceGroups: () => this.getWorkspaceGroups(),
@@ -749,118 +761,15 @@ class CampusBrowser {
   }
 
   windowOpenResponse(tab, url) {
-    if (!safePopupUrl(url)) return { action: 'deny' };
-    const credentialReservation = this.credentialController.reservePopup(tab);
-    if (credentialReservation) {
-      return {
-        action: 'allow',
-        outlivesOpener: false,
-        createWindow: (options) => this.createManagedCredentialPopup(
-          options,
-          credentialReservation,
-        ),
-      };
-    }
-    setImmediate(() => {
-      try { this.createTab(url, this.resolveRoute(url).route); }
-      catch { this.onError?.(this.t('tab.createFailed')); }
-    });
-    return { action: 'deny' };
+    return this.popupOwner.windowOpenResponse(tab, url);
   }
 
   createManagedCredentialPopup(options, credentialReservation) {
-    const targetWindow = this.window;
-    const routeSession = this.browserSessionManager.sessionForRoute(ROUTE_CAMPUS);
-    if (!targetWindow || targetWindow.isDestroyed() || !routeSession) {
-      this.credentialController.releasePopup(credentialReservation);
-      throw new Error('campus browser unavailable during authentication popup creation');
-    }
-
-    let popupWindow = null;
-    let popup = null;
-    try {
-      popupWindow = new this.BrowserWindow({
-        ...(options && typeof options === 'object' ? options : {}),
-        parent: targetWindow,
-        show: true,
-        minWidth: 420,
-        minHeight: 360,
-        backgroundColor: '#f7f9fc',
-        autoHideMenuBar: true,
-        webPreferences: {
-          ...(options?.webPreferences || {}),
-          session: routeSession,
-          preload: this.campusPreload,
-          devTools: false,
-          nodeIntegration: false,
-          contextIsolation: true,
-          sandbox: true,
-          webSecurity: true,
-          safeDialogs: true,
-          backgroundThrottling: true,
-        },
-      });
-      popup = {
-        window: popupWindow,
-        view: { webContents: popupWindow.webContents },
-        pendingCredential: null,
-        pendingCredentialTimer: null,
-      };
-      if (!this.credentialController.linkPopup(credentialReservation, popup)) {
-        throw new Error('authentication popup lost its credential flow');
-      }
-      this.managedCredentialPopups.add(popup);
-      this.attachManagedCredentialPopupEvents(popup);
-      popupWindow.setMenuBarVisibility?.(false);
-      return popupWindow.webContents;
-    } catch (error) {
-      if (popup) {
-        this.managedCredentialPopups.delete(popup);
-        this.credentialController.closeTab(popup);
-      }
-      else this.credentialController.releasePopup(credentialReservation);
-      try {
-        if (popupWindow && !popupWindow.isDestroyed()) popupWindow.close();
-      } catch {}
-      this.onError?.(this.t('tab.createFailed'));
-      throw error;
-    }
+    return this.popupOwner.createManagedCredentialPopup(options, credentialReservation);
   }
 
   attachManagedCredentialPopupEvents(popup) {
-    const popupWindow = popup.window;
-    const contents = popup.view.webContents;
-    let cleaned = false;
-    const cleanup = () => {
-      if (cleaned) return;
-      cleaned = true;
-      this.managedCredentialPopups.delete(popup);
-      this.credentialController.closeTab(popup);
-    };
-    const rejectNonWebNavigation = (event, url) => {
-      if (!safePopupUrl(url)) event?.preventDefault?.();
-    };
-    contents.setWindowOpenHandler(({ url }) => this.windowOpenResponse(popup, url));
-    contents.on('will-navigate', rejectNonWebNavigation);
-    contents.on('will-redirect', rejectNonWebNavigation);
-    contents.on('did-navigate', (_event, url, httpResponseCode = 0) => {
-      this.markCredentialNavigation(popup, url, httpResponseCode);
-      this.recordPortalSessionUrl(url);
-    });
-    contents.on('did-navigate-in-page', (_event, url) => this.recordPortalSessionUrl(url));
-    contents.on('ipc-message', (_event, channel, candidate) => {
-      if (channel === 'campus-credential-candidate') {
-        this.credentialController.stage(popup, candidate);
-      } else if (channel === 'campus-credential-page-state') {
-        this.credentialController.confirmPageState(popup, candidate).catch(() => {});
-      }
-    });
-    contents.on('render-process-gone', (_event, details = {}) => {
-      if (details.reason !== 'clean-exit') this.credentialController.clear(popup);
-      try { if (!popupWindow.isDestroyed()) popupWindow.close(); } catch {}
-    });
-    contents.once('destroyed', cleanup);
-    popupWindow.once('closed', cleanup);
+    return this.popupOwner.attachManagedCredentialPopupEvents(popup);
   }
 
   attachPageEvents(tab) {
@@ -1224,13 +1133,7 @@ class CampusBrowser {
     this.cancelScheduledUpdates();
     this.certificateController.cancelAll();
     this.tabManager.closeViews();
-    for (const popup of [...this.managedCredentialPopups]) {
-      this.credentialController.closeTab(popup);
-      try {
-        if (!popup.window.isDestroyed()) popup.window.close();
-      } catch {}
-    }
-    this.managedCredentialPopups.clear();
+    this.popupOwner.closeAll();
     this.tabManager.clear();
     this.view = null;
     this.attachedView = null;

@@ -324,9 +324,168 @@ class CredentialController {
   }
 }
 
+// Native child windows preserve opener/postMessage/self-close semantics used by
+// campus IdPs. Only flow ownership is shared with CredentialController; no
+// password or challenge value is copied into the popup record.
+class ManagedCredentialPopupOwner {
+  constructor({
+    BrowserWindow, getParentWindow, getCampusSession, campusPreload,
+    credentialController, safePopupUrl, openOrdinaryPopup,
+    scheduleOrdinary = setImmediate, isContextCurrent = () => true, reportCreateFailure,
+    markNavigation, recordPortalSessionUrl,
+  } = {}) {
+    const ports = { getParentWindow, getCampusSession, safePopupUrl,
+      openOrdinaryPopup, scheduleOrdinary, isContextCurrent, reportCreateFailure,
+      markNavigation, recordPortalSessionUrl };
+    if ((BrowserWindow != null && typeof BrowserWindow !== 'function') ||
+        (campusPreload != null && (typeof campusPreload !== 'string' || !campusPreload)) ||
+        !credentialController ||
+        ['reservePopup', 'releasePopup', 'linkPopup', 'closeTab', 'stage',
+          'confirmPageState', 'clear'].some((name) => typeof credentialController[name] !== 'function') ||
+        Object.values(ports).some((port) => typeof port !== 'function')) {
+      throw new TypeError('managed credential popup dependencies are incomplete');
+    }
+    Object.assign(this, { BrowserWindow, campusPreload, credentialController, ...ports });
+    this.popups = new Set();
+  }
+
+  windowOpenResponse(tab, url) {
+    if (!this.isContextCurrent() || !this.safePopupUrl(url)) return { action: 'deny' };
+    const reservation = this.credentialController.reservePopup(tab);
+    if (reservation) {
+      return {
+        action: 'allow',
+        outlivesOpener: false,
+        createWindow: (options) => this.createManagedCredentialPopup(options, reservation),
+      };
+    }
+    const parent = this.getParentWindow();
+    this.scheduleOrdinary(() => {
+      try {
+        if (!parent || parent.isDestroyed() || !this.isContextCurrent() ||
+            this.getParentWindow() !== parent) return;
+        this.openOrdinaryPopup(url);
+      }
+      catch { this.reportCreateFailure(); }
+    });
+    return { action: 'deny' };
+  }
+
+  createManagedCredentialPopup(options, reservation) {
+    let parent;
+    let routeSession;
+    try {
+      if (!this.isContextCurrent()) {
+        throw new Error('campus browser unavailable during authentication popup creation');
+      }
+      parent = this.getParentWindow();
+      routeSession = this.getCampusSession();
+    } catch (error) {
+      this.credentialController.releasePopup(reservation);
+      throw error;
+    }
+    if (typeof this.BrowserWindow !== 'function' || !this.campusPreload ||
+        !parent || parent.isDestroyed() || !routeSession) {
+      this.credentialController.releasePopup(reservation);
+      throw new Error('campus browser unavailable during authentication popup creation');
+    }
+    let popupWindow = null;
+    let popup = null;
+    try {
+      popupWindow = new this.BrowserWindow({
+        ...(options && typeof options === 'object' ? options : {}),
+        parent,
+        show: true,
+        minWidth: 420,
+        minHeight: 360,
+        backgroundColor: '#f7f9fc',
+        autoHideMenuBar: true,
+        webPreferences: {
+          ...(options?.webPreferences || {}),
+          session: routeSession,
+          preload: this.campusPreload,
+          devTools: false,
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: true,
+          webSecurity: true,
+          safeDialogs: true,
+          backgroundThrottling: true,
+        },
+      });
+      popup = { window: popupWindow, view: { webContents: popupWindow.webContents },
+        pendingCredential: null, pendingCredentialTimer: null };
+      if (!this.credentialController.linkPopup(reservation, popup)) {
+        this.credentialController.releasePopup(reservation);
+        throw new Error('authentication popup lost its credential flow');
+      }
+      this.popups.add(popup);
+      this.attachManagedCredentialPopupEvents(popup);
+      popupWindow.setMenuBarVisibility?.(false);
+      return popupWindow.webContents;
+    } catch (error) {
+      if (popup) {
+        if (popup.cleanup) popup.cleanup();
+        else {
+          this.popups.delete(popup);
+          this.credentialController.closeTab(popup);
+        }
+      } else this.credentialController.releasePopup(reservation);
+      try { if (popupWindow && !popupWindow.isDestroyed()) popupWindow.close(); } catch {}
+      this.reportCreateFailure();
+      throw error;
+    }
+  }
+
+  attachManagedCredentialPopupEvents(popup) {
+    const popupWindow = popup.window;
+    const contents = popup.view.webContents;
+    let cleaned = false;
+    popup.cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      this.popups.delete(popup);
+      this.credentialController.closeTab(popup);
+    };
+    const rejectNonWebNavigation = (event, url) => {
+      if (!this.safePopupUrl(url)) event?.preventDefault?.();
+    };
+    contents.setWindowOpenHandler(({ url }) => this.windowOpenResponse(popup, url));
+    contents.on('will-navigate', rejectNonWebNavigation);
+    contents.on('will-redirect', rejectNonWebNavigation);
+    contents.on('did-navigate', (_event, url, httpResponseCode = 0) => {
+      this.markNavigation(popup, url, httpResponseCode);
+      this.recordPortalSessionUrl(url);
+    });
+    contents.on('did-navigate-in-page', (_event, url) => this.recordPortalSessionUrl(url));
+    contents.on('ipc-message', (_event, channel, candidate) => {
+      if (channel === 'campus-credential-candidate') {
+        this.credentialController.stage(popup, candidate);
+      } else if (channel === 'campus-credential-page-state') {
+        this.credentialController.confirmPageState(popup, candidate).catch(() => {});
+      }
+    });
+    contents.on('render-process-gone', (_event, details = {}) => {
+      if (details.reason !== 'clean-exit') this.credentialController.clear(popup);
+      try { if (!popupWindow.isDestroyed()) popupWindow.close(); } catch {}
+    });
+    contents.once('destroyed', popup.cleanup);
+    popupWindow.once('closed', popup.cleanup);
+  }
+
+  closeAll() {
+    for (const popup of [...this.popups]) {
+      popup.cleanup?.();
+      try { if (!popup.window.isDestroyed()) popup.window.close(); } catch {}
+    }
+    this.popups.clear();
+  }
+}
+
 module.exports = {
   CREDENTIAL_CANDIDATE_TTL_MS,
   CredentialController,
+  ManagedCredentialPopupOwner,
   MAX_PASSWORD_LENGTH,
   MAX_USERNAME_LENGTH,
   canonicalHttpsOrigin,
