@@ -121,6 +121,11 @@ The Browser root falls to 1,236 lines; the separate owner class shares the exist
 credential module, below 600, without changing Session or credential-flow authority. M2 remains
 open for the remaining event and routing lifecycle responsibilities.
 
+The [toolbar command owner](browser-toolbar-command-owner.md) moves validated toolbar actions
+and native keyboard shortcut dispatch into the existing Toolbar module. Browser root falls to
+1,137 lines; Toolbar is 262 lines and Main dependencies do not grow. Page events and routing
+activation still need separate M2 ownership work.
+
 Extract tested owners for:
 
 ```text

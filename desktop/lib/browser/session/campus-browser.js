@@ -9,8 +9,7 @@ const {
   ROUTE_DIRECT,
 } = require('../../routing/policy/campus-route');
 const { normalizeRuleHost } = require('../../routing/rules/routing-rule-store');
-const { normalizeToolbarCommand } = require('../toolbar/campus-toolbar-contract');
-const { BrowserToolbarOwner } = require('../toolbar/browser-toolbar-owner');
+const { BrowserToolbarCommandOwner, BrowserToolbarOwner } = require('../toolbar/browser-toolbar-owner');
 const { BrowserWorkspaceOwner, projectBrowserWorkspaceResources, MAX_WORKSPACE_HOME_RESOURCES } =
   require('../workspace/campus-workspace-controller');
 const { CertificateController } = require('../certificates/certificate-controller');
@@ -398,7 +397,6 @@ class CampusBrowser {
       scheduleToolbarUpdate: () => this.scheduleToolbarUpdate(),
     });
     this.findOpen = false;
-    this.lastFindQuery = '';
     this.scheduledLayout = null;
     this.routingActivationInFlight = null;
     this.toolbarOwner = new BrowserToolbarOwner({
@@ -415,6 +413,31 @@ class CampusBrowser {
       translate: (key, vars) => this.t(key, vars),
       campusRoute: ROUTE_CAMPUS,
       directRoute: ROUTE_DIRECT,
+    });
+    this.toolbarCommands = new BrowserToolbarCommandOwner({
+      getActiveTab: () => this.activeTab(), getTabs: () => this.tabs,
+      getWindow: () => this.window, getBookmarkBarState: () => this.bookmarkBarState(),
+      getBookmarkMenu: () => this.showBookmarkMenu,
+      getOpenResource: () => this.onOpenResource,
+      navigationForContents, workspaceSearchQuery, nextZoomFactor,
+      translate: (key, vars) => this.t(key, vars),
+      reportError: (message) => this.onError?.(message),
+      actions: {
+        openNewTab: () => this.openNewTab(), openHome: () => this.openHome(),
+        focusWorkspace: (target, query) => this.focusWorkspace(target, query),
+        updateToolbar: () => this.updateToolbar(),
+        switchTab: (id) => this.switchTab(id), closeTab: (id) => this.closeTab(id),
+        setTabRoute: (id, route) => this.setTabRoute(id, route),
+        manageCredential: (tab) => this.manageCredential(tab),
+        openSettings: () => this.onOpenSettings(),
+        toggleFavorite: (tab) => this.toggleActivePageFavorite(tab),
+        focusWorkspaceSearch: () => this.focusWorkspaceSearch(),
+        beginNavigationIntent: (tab) => this.beginNavigationIntent(tab),
+        reloadWhenReady: (tab) => this.reloadWhenReady(tab),
+        navigateWhenReady: (url, tab) => this.navigateWhenReady(url, tab),
+        setFindBar: (open) => this.setFindBar(open),
+        tabAt: (index) => this.tabManager.at(index),
+      },
     });
   }
 
@@ -646,90 +669,7 @@ class CampusBrowser {
   }
 
   handleToolbarCommand(input) {
-    const normalized = input && typeof input === 'object'
-      ? normalizeToolbarCommand(input.command, input.value)
-      : null;
-    if (!normalized) return false;
-    const { command, value } = normalized;
-    const active = this.activeTab();
-    const navigation = navigationForContents(active?.view.webContents);
-
-    if (command === 'new-tab') {
-      Promise.resolve(this.openNewTab()).catch(() => this.onError?.(this.t('tab.createFailed')));
-    }
-    else if (command === 'home') {
-      Promise.resolve(this.openHome()).catch(() => this.onError?.(this.t('tab.createFailed')));
-    }
-    else if (command === 'manage-bookmarks') this.focusWorkspace('manage');
-    else if (command === 'open-bookmark-menu' && this.showBookmarkMenu) {
-      this.showBookmarkMenu(this.bookmarkBarState());
-    }
-    else if (command === 'open-bookmark-folder' && this.showBookmarkMenu) {
-      const folder = this.bookmarkBarState().find(({ type, id }) => type === 'folder' && id === value);
-      if (folder) this.showBookmarkMenu(folder.children);
-    }
-    else if (command === 'open-resource' && this.onOpenResource) {
-      Promise.resolve(this.onOpenResource(value)).then(() => this.updateToolbar()).catch((error) => {
-        this.onError?.(error?.message || this.t('browser.favoriteFailed'));
-      });
-    }
-    else if (command === 'switch-tab') this.switchTab(Number(value));
-    else if (command === 'close-tab') this.closeTab(Number(value));
-    else if (command === 'set-route' && active) {
-      this.setTabRoute(active.id, value).catch((error) => {
-        if (this.onError) this.onError(this.t('route.switchFailed', { message: error.message }));
-      });
-    }
-    else if (command === 'manage-credential' && active) {
-      this.manageCredential(active);
-    }
-    else if (command === 'open-settings') this.onOpenSettings();
-    else if (command === 'toggle-favorite' && active) {
-      this.toggleActivePageFavorite(active).catch((error) => {
-        this.onError?.(error.message || this.t('browser.favoriteFailed'));
-      });
-    }
-    else if (command === 'focus-workspace') {
-      this.focusWorkspaceSearch();
-    }
-    else if (command === 'back' && navigation.canGoBack()) {
-      this.beginNavigationIntent(active);
-      navigation.goBack();
-    } else if (command === 'forward' && navigation.canGoForward()) {
-      this.beginNavigationIntent(active);
-      navigation.goForward();
-    } else if (command === 'reload' && active) {
-      Promise.resolve(this.reloadWhenReady(active)).catch((error) => {
-        this.onError?.(error?.message || this.t('error.connectTimeout'));
-      });
-    } else if (command === 'navigate' && active) {
-      const query = workspaceSearchQuery(value);
-      if (query) this.focusWorkspace('search', query);
-      else Promise.resolve(this.navigateWhenReady(value, active)).catch((error) => {
-        this.onError?.(error?.message || this.t('error.connectTimeout'));
-      });
-    } else if (command === 'find-open') {
-      this.setFindBar(true);
-    } else if (command === 'find-close') {
-      this.setFindBar(false);
-    } else if (command === 'find' && active) {
-      this.lastFindQuery = value;
-      const contents = active.view.webContents;
-      if (contents.isDestroyed()) return;
-      if (value && typeof contents.findInPage === 'function') contents.findInPage(value);
-      if (!value && typeof contents.stopFindInPage === 'function') {
-        contents.stopFindInPage('clearSelection');
-      }
-    } else if ((command === 'find-next' || command === 'find-prev') &&
-               active && this.lastFindQuery &&
-               !active.view.webContents.isDestroyed() &&
-               typeof active.view.webContents.findInPage === 'function') {
-      active.view.webContents.findInPage(this.lastFindQuery, {
-        forward: command === 'find-next',
-        findNext: true,
-      });
-    }
-    return true;
+    return this.toolbarCommands.handleCommand(input);
   }
 
   // The find bar is per-window: it stays open across tab switches, but matches
@@ -857,46 +797,7 @@ class CampusBrowser {
       this.handleRendererCrash(tab, details);
     });
     contents.on('before-input-event', (event, input) => {
-      const commandKey = process.platform === 'darwin' ? input.meta : input.control;
-      const key = String(input.key || '').toLowerCase();
-      const navigation = navigationForContents(contents);
-      if (commandKey && key === 't') {
-        event.preventDefault();
-        Promise.resolve(this.openNewTab())
-          .catch(() => this.onError?.(this.t('tab.createFailed')));
-      } else if (commandKey && key === 'w') {
-        event.preventDefault();
-        this.closeTab(tab.id);
-      } else if (commandKey && key === 'l') {
-        event.preventDefault();
-        this.window?.webContents.send?.('campus-toolbar-focus', 'address');
-      } else if (commandKey && key === 'k' && input.type === 'keyDown') {
-        event.preventDefault();
-        this.focusWorkspaceSearch();
-      } else if (commandKey && key === 'r') {
-        event.preventDefault();
-        Promise.resolve(this.reloadWhenReady(tab)).catch((error) => {
-          this.onError?.(error?.message || this.t('error.connectTimeout'));
-        });
-      } else if (commandKey && key === 'f' && input.type === 'keyDown') {
-        event.preventDefault();
-        this.setFindBar(true);
-      } else if (commandKey && ['=', '+', '-', '0'].includes(key) &&
-                 input.type === 'keyDown') {
-        event.preventDefault();
-        contents.setZoomFactor(nextZoomFactor(contents.getZoomFactor(), key));
-      } else if (input.alt && ['left', 'arrowleft'].includes(key) && navigation.canGoBack()) {
-        event.preventDefault();
-        navigation.goBack();
-      } else if (input.alt && ['right', 'arrowright'].includes(key) && navigation.canGoForward()) {
-        event.preventDefault();
-        navigation.goForward();
-      } else if (commandKey && /^[1-9]$/.test(key)) {
-        event.preventDefault();
-        const index = key === '9' ? this.tabs.length - 1 : Number(key) - 1;
-        const selected = this.tabManager.at(index);
-        if (selected) this.switchTab(selected.id);
-      }
+      this.toolbarCommands.handleKeyboard(tab, event, input);
     });
   }
 
