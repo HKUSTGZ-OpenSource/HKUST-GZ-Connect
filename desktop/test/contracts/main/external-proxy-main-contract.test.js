@@ -7,6 +7,7 @@ const test = require('node:test');
 const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
+const proxyOwner = fs.readFileSync(require.resolve('../../../lib/persistence/credentials/proxy-credential'), 'utf8');
 const integrationSuite = fs.readFileSync(
   path.join(__dirname, '..', '..', '..', 'lib', 'ipc', 'integration-center-suite.js'), 'utf8',
 );
@@ -16,7 +17,9 @@ const operations = fs.readFileSync(require.resolve('../../../lib/connection/stat
 test('strict and compatibility generations share one stable credential with distinct policies', () => {
   assert.match(source, /engineAttempts\.run\(isRetry, intent\)/u);
   assert.match(source, /const PROXY_CREDENTIAL = runtimeStoragePaths\.proxyCredential/);
-  assert.match(source, /hasStableProxyCredential: \(\) => !!stableProxyCredential, proxyCredentialFile: PROXY_CREDENTIAL/u);
+  assert.match(source, /new ProxyAccessCoordinator\(\{[\s\S]*store: externalProxyCredentialStore,[\s\S]*sidecarFile: PROXY_HELPER_CREDENTIAL/u);
+  assert.match(source, /hasStableProxyCredential: \(\) => proxyAccess\.hasStable\(\), proxyCredentialFile: PROXY_CREDENTIAL/u);
+  assert.doesNotMatch(source, /let activeProxyCredential|let stableProxyCredential/u);
   assert.match(connectOnce, /proxyCredential = this\.generationProxyCredential\(Number\(s\.port\)\);\s*proxyCredentialMode = 'required'/);
   assert.match(connectOnce, /this\.hasStableProxyCredential\(\) \|\| this\.fileSystem\.existsSync\(this\.proxyCredentialFile\)[\s\S]*proxyCredentialMode = 'optional'/);
   assert.match(connectOnce, /proxyCredentialMode === 'required'[^\n]+--socks-auth-stdin/);
@@ -49,11 +52,12 @@ test('VS Code snippet sidecar follows the connection and Profile lifecycle', () 
   assert.match(source, /removeSidecar: removeExternalProxySidecar/u);
   const termination = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-connection-runtime'), 'utf8');
   assert.match(termination.slice(termination.indexOf('  exit({ generation }')), /this\.removeSidecar\(\)/);
-  assert.match(source, /stableProxyCredential\?\.destroy\(\)/);
+  assert.match(source, /proxyAccess\.disposeForQuit\(\)/u);
+  assert.match(proxyOwner, /disposeForQuit\(\) \{[\s\S]*this\.removeSidecar\(\);[\s\S]*this\.#stable\?\.destroy\(\)/u);
 });
 
 test('Profile switch revokes in-memory and sidecar access before the next Account activates', () => {
-  assert.match(source, /function revokeExternalProxyAccess\(\) \{ clearActiveProxyCredential\(\);/u);
-  assert.match(source, /stableProxyCredential\?\.destroy\(\); stableProxyCredential = null;/u);
+  assert.match(source, /function revokeExternalProxyAccess\(\) \{ return proxyAccess\.revoke\(\); \}/u);
+  assert.match(proxyOwner, /revoke\(\) \{[\s\S]*this\.clearActive\(\);[\s\S]*this\.removeSidecar\(\);[\s\S]*this\.#stable\?\.destroy\(\)/u);
   assert.match(source, /revokeProxyAccess: revokeExternalProxyAccess/u);
 });

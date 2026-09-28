@@ -1,6 +1,8 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const util = require('node:util');
 
 const RANDOM_SECRET_BYTES = 24;
@@ -135,8 +137,111 @@ class EphemeralProxyCredential {
   }
 }
 
+// The stable secret, per-Engine copy and helper sidecar are one process-local
+// lifecycle. Main injects the existing encrypted store and private-file write
+// effect; this owner does not infer Profile or Engine state from global data.
+class ProxyAccessCoordinator {
+  #store;
+  #sidecarFile;
+  #fileSystem;
+  #writeSidecar;
+  #currentProfileId;
+  #stable = null;
+  #active = null;
+
+  constructor({ store, sidecarFile, fileSystem = fs, writeSidecar,
+    currentProfileId, createEphemeral = (options) => new EphemeralProxyCredential(options) } = {}) {
+    if (typeof store?.loadOrCreate !== 'function' ||
+        typeof sidecarFile !== 'string' || !path.isAbsolute(sidecarFile) ||
+        typeof fileSystem?.unlinkSync !== 'function' ||
+        typeof writeSidecar !== 'function' || typeof currentProfileId !== 'function' ||
+        typeof createEphemeral !== 'function') {
+      throw new TypeError('proxy access dependencies are incomplete');
+    }
+    this.#store = store;
+    this.#sidecarFile = sidecarFile;
+    this.#fileSystem = fileSystem;
+    this.#writeSidecar = writeSidecar;
+    this.#currentProfileId = currentProfileId;
+    this.createEphemeral = createEphemeral;
+  }
+
+  hasStable() { return this.#stable !== null; }
+
+  loadStable() {
+    if (!this.#stable) this.#stable = this.#store.loadOrCreate();
+    return this.#stable;
+  }
+
+  removeSidecar() {
+    try {
+      this.#fileSystem.unlinkSync(this.#sidecarFile);
+      return true;
+    } catch (error) {
+      return error?.code === 'ENOENT';
+    }
+  }
+
+  ensureSidecar(port) {
+    const credential = this.loadStable();
+    this.#writeSidecar({ filePath: this.#sidecarFile, port, credential,
+      profileId: this.#currentProfileId() });
+    return credential;
+  }
+
+  generationCredential(port) {
+    const injected = this.ensureSidecar(port).copyForEngine();
+    try {
+      return this.createEphemeral({ credential: injected });
+    } finally {
+      injected.username.fill(0);
+      injected.password.fill(0);
+    }
+  }
+
+  setActive(value) { this.#active = value; }
+
+  clearActive(expectedGeneration = null) {
+    if (!this.#active || !this.#active.destroy(expectedGeneration)) return false;
+    this.#active = null;
+    return true;
+  }
+
+  socksAuthentication(generation) {
+    return this.#active?.socksAuthentication(generation) || null;
+  }
+
+  matchesProxyChallenge(authInfo, generation) {
+    return this.#active?.matchesProxyChallenge(authInfo, generation) === true;
+  }
+
+  answerProxyChallenge(authInfo, generation, callback) {
+    return this.#active?.answerProxyChallenge(authInfo, generation, callback) === true;
+  }
+
+  revoke() {
+    this.clearActive();
+    const removed = this.removeSidecar();
+    this.#stable?.destroy();
+    this.#stable = null;
+    return removed && this.#active === null;
+  }
+
+  disposeForQuit() {
+    const removed = this.removeSidecar();
+    this.#stable?.destroy();
+    this.#stable = null;
+    return removed;
+  }
+
+  toJSON() { return { type: 'ProxyAccessCoordinator', redacted: true }; }
+
+  [util.inspect.custom]() { return 'ProxyAccessCoordinator { <redacted> }'; }
+}
+
 module.exports = {
   EphemeralProxyCredential,
+  ProxyAccessCoordinator,
   LOOPBACK_PROXY_HOST,
   RANDOM_SECRET_BYTES,
   cleanupProxyAccessForEngineClose,

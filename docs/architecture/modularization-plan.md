@@ -169,6 +169,11 @@ The [Routing policy coordinator](desktop-routing-policy-coordinator.md) candidat
 PAC publication and rule commit/restore bundles into the existing Routing entrypoint. Main
 falls to 896 lines / 31 direct / 45 effective / 170 transitive dependencies; M3 remains open.
 
+The staged [proxy access owner](desktop-proxy-access-owner.md) keeps the stable local-proxy secret,
+per-Engine copy, owner-only helper sidecar and generation-bound retirement in the existing
+Persistence credential entrypoint. Main falls from 895 to 864 lines without a new production
+module or expanded dependency budget. It remains above the next M3 size/dependency targets.
+
 Move remaining settings-surface coordination, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 

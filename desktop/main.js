@@ -44,7 +44,7 @@ const { BufferedLogWriter, readLogTail } = require('./lib/diagnostics/logging/lo
 const { UpdateNotificationRuntime, checkForUpdate } = require('./lib/platform/update/update-check');
 const { ConnectivityRecovery } = require('./lib/connection/recovery/connectivity-recovery');
 const { createNetworkStartupSystem } = require('./lib/connection/telemetry/network-status-monitor');
-const { EphemeralProxyCredential, cleanupProxyAccessForEngineClose } = require('./lib/persistence/credentials/proxy-credential');
+const { ProxyAccessCoordinator, cleanupProxyAccessForEngineClose } = require('./lib/persistence/credentials/proxy-credential');
 const {
   ExternalProxyCredentialStore,
 } = require('./lib/persistence/credentials/external-proxy-credential-store');
@@ -172,8 +172,6 @@ connectionWaitRegistry.observe(connectionState.snapshot());
 const BROWSER_CONNECTION_READY_TIMEOUT_MS = 75_000;
 let connectedAt = null;
 let telemetryCoordinator = null;
-let activeProxyCredential = null;
-let stableProxyCredential = null;
 let state = {
   clientIp: null,
   dnsMode: 'unknown',
@@ -207,6 +205,15 @@ const externalProxyCredentialStore = new ExternalProxyCredentialStore({
   filePath: PROXY_CREDENTIAL,
   safeStorage,
   platform: process.platform,
+});
+const proxyAccess = new ProxyAccessCoordinator({
+  store: externalProxyCredentialStore,
+  sidecarFile: PROXY_HELPER_CREDENTIAL,
+  fileSystem: fs,
+  currentProfileId: () => activeSchoolProfile.activeContextBinding().profileId,
+  writeSidecar: (options) => ensureProxyCredentialSidecar({
+    ...options, privateStorageEffects: profileStorageEffects,
+  }),
 });
 const resourceLibraryRuntime = new ResourceLibraryRuntime({
   favoritesFile: RESOURCE_FAVORITES,
@@ -278,48 +285,14 @@ function hasCredentialForCurrentSession() {
   return hasStoredCredential() || engineSupervisor.hasActive;
 }
 function socksPort() { return Number(loadSettingsOrReport().port) || 1080; }
-function clearActiveProxyCredential(expectedGeneration = null) {
-  if (!activeProxyCredential) return false;
-  if (!activeProxyCredential.destroy(expectedGeneration)) return false;
-  activeProxyCredential = null;
-  return true;
-}
+function clearActiveProxyCredential(expectedGeneration = null) { return proxyAccess.clearActive(expectedGeneration); }
 const clearActiveEngineControl = (expectedGeneration = null) => engineControlRegistry.clear(expectedGeneration);
 const requestActiveEngineControlShutdown = () => engineControlRegistry.shutdown();
-function loadStableProxyCredential() {
-  if (stableProxyCredential) return stableProxyCredential;
-  stableProxyCredential = externalProxyCredentialStore.loadOrCreate();
-  return stableProxyCredential;
-}
-function removeExternalProxySidecar() {
-  try {
-    fs.unlinkSync(PROXY_HELPER_CREDENTIAL);
-    return true;
-  } catch (error) {
-    return error?.code === 'ENOENT';
-  }
-}
-function revokeExternalProxyAccess() { clearActiveProxyCredential(); const removed = removeExternalProxySidecar(); stableProxyCredential?.destroy(); stableProxyCredential = null; return removed && activeProxyCredential === null; }
-function ensureExternalProxyAccess(port) {
-  const credential = loadStableProxyCredential();
-  ensureProxyCredentialSidecar({
-    filePath: PROXY_HELPER_CREDENTIAL,
-    port,
-    credential, profileId: activeSchoolProfile.activeContextBinding().profileId,
-    privateStorageEffects: profileStorageEffects,
-  });
-  return credential;
-}
-function generationProxyCredential(port) {
-  const stable = ensureExternalProxyAccess(port);
-  const injected = stable.copyForEngine();
-  try {
-    return new EphemeralProxyCredential({ credential: injected });
-  } finally {
-    injected.username.fill(0);
-    injected.password.fill(0);
-  }
-}
+function loadStableProxyCredential() { return proxyAccess.loadStable(); }
+function removeExternalProxySidecar() { return proxyAccess.removeSidecar(); }
+function revokeExternalProxyAccess() { return proxyAccess.revoke(); }
+function ensureExternalProxyAccess(port) { return proxyAccess.ensureSidecar(port); }
+function generationProxyCredential(port) { return proxyAccess.generationCredential(port); }
 function proxyHelperPath() {
   return externalProxyHelperPath({
     isPackaged: app.isPackaged,
@@ -461,8 +434,8 @@ const engineAttempts = new EngineAttemptCoordinator({
     openPersistent: () => persistenceRuntime.openCredential() }),
   credentialLoadErrorKey, parseCredentialField, enginePath,
   clearActiveProxyCredential, generationProxyCredential, removeExternalProxySidecar, killStrayEngines,
-  hasStableProxyCredential: () => !!stableProxyCredential, proxyCredentialFile: PROXY_CREDENTIAL,
-  setActiveProxyCredential: value => { activeProxyCredential = value; }, engineOwnerFile: ENGINE_OWNER,
+  hasStableProxyCredential: () => proxyAccess.hasStable(), proxyCredentialFile: PROXY_CREDENTIAL,
+  setActiveProxyCredential: value => proxyAccess.setActive(value), engineOwnerFile: ENGINE_OWNER,
   activeEngineContextCurrent, getBrowser: () => campusBrowserManager, revokeEngineServing,
   handleEngineExitBoundary, handleEngineClose, controlRegistry: engineControlRegistry,
   contextLease: { capture: options => activeContextLease.capture(options) },
@@ -758,9 +731,7 @@ desktopShell = new DesktopShell({
   },
   cleanupQuit: async () => {
     await logWriter?.close().catch(reportLogFailure);
-    removeExternalProxySidecar();
-    stableProxyCredential?.destroy();
-    stableProxyCredential = null;
+    proxyAccess.disposeForQuit();
   },
   onControlRendererUnavailable: () => (schoolProfileOnboarding.cancel(), externalIntegrationRuntime.cancel(), authChallengeCoordinator.cancelForLifecycle()),
   onWindowError: (error) => {
@@ -775,9 +746,7 @@ telemetryCoordinator = new ConnectionTelemetryCoordinator({
   healthTargets: activeSchoolProfile.healthTargets,
   getSocksPort: socksPort,
   getEnginePid: () => engineSupervisor.currentChild?.pid ?? -1,
-  getProxyCredentials: (generation) => (
-    activeProxyCredential?.socksAuthentication(generation) || null
-  ),
+  getProxyCredentials: (generation) => proxyAccess.socksAuthentication(generation),
   isConnected: () => connectionState.isConnected(),
   isEngineCurrent: activeEngineContextCurrent,
   isVisible: () => desktopShell.isVisible(),
@@ -819,9 +788,9 @@ app.on('login', (event, webContents, _details, authInfo, callback) => {
   // in-memory credential. Control UI and arbitrary WebContents are excluded.
   const generation = engineSupervisor.currentGeneration;
   if (!campusBrowserManager.ownsWebContents(webContents) ||
-      !activeProxyCredential?.matchesProxyChallenge(authInfo, generation)) return;
+      !proxyAccess.matchesProxyChallenge(authInfo, generation)) return;
   event.preventDefault();
-  activeProxyCredential.answerProxyChallenge(authInfo, generation, callback);
+  proxyAccess.answerProxyChallenge(authInfo, generation, callback);
 });
 app.whenReady().then(() => {
   if (!profileSwitching.runtime) {
