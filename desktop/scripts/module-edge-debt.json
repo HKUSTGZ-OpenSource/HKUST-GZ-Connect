@@ -98,8 +98,6 @@
     "desktop/lib/switching/active-context/active-context-activation-store.js -> desktop/lib/persistence/paths/profile-workspace-layout.js [private-entrypoint]",
     "desktop/lib/switching/active-context/active-context-activation-store.js -> desktop/lib/persistence/schema/profile-workspace-documents.js [private-entrypoint]",
     "desktop/main.js -> desktop/lib/app/card-board-main-runtime.js [private-entrypoint]",
-    "desktop/main.js -> desktop/lib/browser/certificates/campus-certificate-trust.js [private-entrypoint]",
-    "desktop/main.js -> desktop/lib/browser/certificates/certificate-error-boundary.js [private-entrypoint]",
     "desktop/main.js -> desktop/lib/connection/engine/engine-control-suite.js [private-entrypoint]",
     "desktop/main.js -> desktop/lib/connection/engine/engine-process.js [private-entrypoint]",
     "desktop/main.js -> desktop/lib/connection/engine/engine-supervisor.js [private-entrypoint]",
