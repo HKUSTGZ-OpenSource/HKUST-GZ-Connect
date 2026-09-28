@@ -477,6 +477,7 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     '/renderer/app.js',
     '/renderer/features/feature-host/index.mjs',
     '/renderer/features/update-notices/index.mjs',
+    '/renderer/features/notifications/index.mjs',
     '/renderer/features/auth-challenge/index.mjs',
     '/renderer/features/auth-challenge/controller.mjs',
     '/renderer/features/auth-challenge/lifecycle.mjs',
@@ -490,7 +491,6 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     '/renderer/certificate-manager.js',
     '/renderer/group-dialog.js',
     '/renderer/campus-service-workspace.js',
-    '/renderer/notification-view.js',
     '/renderer/browser-data-settings.js',
     '/renderer/proxy-auth-migration.js',
     '/renderer/i18n.js',
@@ -503,7 +503,6 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     '/renderer/campus-workspace-model.js',
     '/renderer/campus-workspace.css',
     '/renderer/campus-category-stacks.js',
-    '/renderer/notification-drawer.js',
     '/renderer/styles.css',
     '/lib/browser/workspace/campus-workspace-controller.js',
     '/lib/browser/workspace/campus-workspace-preload.js',
@@ -515,6 +514,10 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
   ];
   assertRequiredPackageEntries(entries, requiredEntries);
   assertConnectionOverviewPackageEntries(entries);
+  if (entries.has('/renderer/notification-view.js') ||
+      entries.has('/renderer/notification-drawer.js')) {
+    throw new Error('retired notification globals entered the package');
+  }
   if (entries.has('/assets/campus-resources.json')) {
     throw new Error('legacy duplicate campus resource asset entered the package');
   }
@@ -573,7 +576,7 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
   }
   for (const feature of [
     'routing-manager', 'certificate-manager', 'group-dialog',
-    'proxy-auth-migration', 'notification-view', 'notification-drawer',
+    'proxy-auth-migration',
     'campus-category-stacks', 'campus-service-workspace',
     'browser-data-settings',
   ]) {

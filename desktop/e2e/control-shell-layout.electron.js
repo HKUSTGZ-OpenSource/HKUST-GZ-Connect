@@ -446,6 +446,44 @@ async function reducedMotionSnapshot(window) {
   })()`);
 }
 
+async function notificationDrawerSnapshot(window, { reducedMotion = false } = {}) {
+  return window.webContents.executeJavaScript(`(async () => {
+    document.querySelector('.nav[data-page="settings"]').click();
+    const trigger = document.getElementById('openNotificationDrawer');
+    const drawer = document.getElementById('notificationDrawer');
+    trigger.focus();
+    trigger.click();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    await new Promise((resolve) => setTimeout(resolve, 240));
+    const opened = !drawer.hidden && drawer.classList.contains('open');
+    const focusedClose = document.activeElement.id === 'closeNotificationDrawer';
+    const rect = drawer.getBoundingClientRect();
+    const focusable = [...drawer.querySelectorAll(
+      'button, summary, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    )].filter((element) => !element.disabled && !element.hidden &&
+      element.getClientRects().length > 0 &&
+      (!element.closest('details:not([open])') || element.tagName === 'SUMMARY'));
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    last.focus();
+    const beforeTab = document.activeElement?.id || document.activeElement?.tagName || '';
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    document.dispatchEvent(tab);
+    const trapped = tab.defaultPrevented && document.activeElement === first;
+    const afterTab = document.activeElement?.id || document.activeElement?.tagName || '';
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.dispatchEvent(escape);
+    await new Promise((resolve) => setTimeout(resolve, ${reducedMotion ? 30 : 220}));
+    return { opened, focusedClose, trapped, beforeTab, afterTab,
+      firstFocus: first?.id || first?.tagName || '', lastFocus: last?.id || last?.tagName || '',
+      focusableIds: focusable.map((element) => element.id || element.tagName),
+      tabPrevented: tab.defaultPrevented, escapePrevented: escape.defaultPrevented,
+      closed: drawer.hidden, focusReturned: document.activeElement === trigger,
+      left: rect.left, right: rect.right, viewportWidth: innerWidth,
+      bodyOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      drawerOverflow: drawer.scrollWidth - drawer.clientWidth };
+  })()`);
+}
+
 async function main() {
   await app.whenReady();
   const output = process.env.HKUSTGZ_CONTROL_SCREENSHOT_DIR || '';
@@ -628,7 +666,19 @@ async function main() {
       if (width >= 1180) assert.ok(tower.towerRoutingWidth >= tower.towerGridWidth - 1,
         `${label}: website routing does not use the full Control Tower width`);
       await capture(window, output, `${label}-tower`);
-      await shellSnapshot(window, 'settings'); await capture(window, output, `${label}-settings`);
+      await shellSnapshot(window, 'settings');
+      const notification = await notificationDrawerSnapshot(window);
+      assert.equal(notification.opened, true, `${label}: notification drawer did not open`);
+      assert.equal(notification.focusedClose, true, `${label}: drawer close button did not receive focus`);
+      assert.equal(notification.trapped, true,
+        `${label}: Tab escaped the notification drawer: ${JSON.stringify(notification)}`);
+      assert.equal(notification.escapePrevented, true, `${label}: Escape was not handled`);
+      assert.equal(notification.closed, true, `${label}: notification drawer did not close`);
+      assert.equal(notification.focusReturned, true, `${label}: focus did not return to the trigger`);
+      assert.ok(notification.left >= -1 && notification.right <= notification.viewportWidth + 1 &&
+        notification.bodyOverflow <= 0 && notification.drawerOverflow <= 0,
+      `${label}: notification drawer overflows horizontally`);
+      await capture(window, output, `${label}-settings`);
     }
 
     if (realCatalog) {
@@ -756,6 +806,9 @@ async function main() {
     const reducedMotion = await reducedMotionSnapshot(window);
     assert.equal(reducedMotion.cardTransitionMs, '0s');
     assert.equal(reducedMotion.enterAnimation, 'none');
+    const reducedNotification = await notificationDrawerSnapshot(window, { reducedMotion: true });
+    assert.equal(reducedNotification.closed, true, 'Reduced Motion drawer close did not complete');
+    assert.equal(reducedNotification.focusReturned, true, 'Reduced Motion drawer lost its trigger focus');
     window.setContentSize(820, 540);
     window.webContents.setZoomFactor(2);
     await new Promise((resolve) => setTimeout(resolve, 260));

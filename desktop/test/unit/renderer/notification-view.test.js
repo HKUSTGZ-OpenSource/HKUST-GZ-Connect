@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { applyState, render, runAction } = require('../../../renderer/notification-view');
+const { applyState, render, runAction } = require('../../../renderer/features/notifications/index.mjs');
 
 function fakeCard() {
   const values = new Set();

@@ -83,6 +83,18 @@ test('package verifier requires the update notice ESM entry in the ASAR', () => 
     /missing required packaged file: \/renderer\/features\/update-notices\/index\.mjs/u);
 });
 
+test('package verifier requires the native notification owner and rejects retired globals', () => {
+  const verifierSource = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'build', 'verify-package.js'), 'utf8');
+  assert.match(verifierSource,
+    /const requiredEntries = \[[\s\S]*?'\/renderer\/features\/notifications\/index\.mjs'/u);
+  assert.match(verifierSource, /retired notification globals entered the package/u);
+  assert.doesNotMatch(verifierSource, /'\/renderer\/notification-(?:view|drawer)\.js',/u);
+  const required = ['/renderer/features/notifications/index.mjs'];
+  assert.doesNotThrow(() => assertRequiredPackageEntries(new Set(required), required));
+  assert.throws(() => assertRequiredPackageEntries(new Set(), required),
+    /missing required packaged file: \/renderer\/features\/notifications\/index\.mjs/u);
+});
+
 test('ASAR entry paths use the packaging host separator at every nesting level', () => {
   const entry = 'assets/profiles/hkustgz/school-profile.json';
   assert.equal(archiveEntryPath(entry, path.posix), entry);

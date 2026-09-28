@@ -110,8 +110,10 @@ test('connection detail rendering belongs to the existing owner while App retain
     'the connection command remains in App');
   assert.match(connectionOverviewJs, /power\.classList\.toggle\('on', state\.connected\)/u,
     'the control card status is projected by the connection owner');
-  assert.match(appJs, /window\.notificationView\.render/u,
-    'notification rendering remains in its existing owner');
+  assert.match(appJs, /rendererFeatures\.mount\('notifications'/u,
+    'notification content and drawer use one registered owner');
+  assert.match(appJs, /notificationsFeature\.renderStatus\(s\)/u);
+  assert.doesNotMatch(appJs, /window\.(?:notificationView|notificationDrawer)/u);
   assert.match(appJs, /updateLoginProgress\(s\)/u,
     'login progression remains in App');
   assert.match(appJs, /document\.querySelectorAll\('\.nav'\)\.forEach/u,
