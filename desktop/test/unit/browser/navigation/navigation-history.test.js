@@ -73,8 +73,15 @@ test('CampusBrowser no longer invokes deprecated navigation methods directly', (
     path.join(__dirname, '..', '..', '..', '..', 'lib', 'browser', 'session', 'campus-browser.js'),
     'utf8',
   );
-  assert.doesNotMatch(source, /webContents\.(?:canGoBack|canGoForward|goBack|goForward)\(/);
-  assert.doesNotMatch(source, /\bcontents\.(?:canGoBack|canGoForward|goBack|goForward)\(/);
-  assert.match(source, /navigationForContents\(active\?\.view\.webContents\)/);
-  assert.match(source, /navigationForContents\(contents\)/);
+  const toolbar = fs.readFileSync(
+    path.join(__dirname, '..', '..', '..', '..', 'lib', 'browser', 'toolbar', 'browser-toolbar-owner.js'),
+    'utf8',
+  );
+  for (const implementation of [source, toolbar]) {
+    assert.doesNotMatch(implementation, /webContents\.(?:canGoBack|canGoForward|goBack|goForward)\(/);
+    assert.doesNotMatch(implementation, /\bcontents\.(?:canGoBack|canGoForward|goBack|goForward)\(/);
+  }
+  assert.match(source, /navigationForContents, workspaceSearchQuery, nextZoomFactor/u);
+  assert.match(toolbar, /this\.navigationForContents\(active\?\.view\.webContents\)/u);
+  assert.match(toolbar, /this\.navigationForContents\(contents\)/u);
 });
