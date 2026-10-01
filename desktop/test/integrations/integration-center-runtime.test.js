@@ -72,6 +72,16 @@ test('list stays available without touching export context', () => {
   assert.equal(contextReads, 0);
 });
 
+test('gateway-default passes through only the prepared export, never a client switch', async () => {
+  const f = fixture();
+  await f.runtime.prepare({ adapterId: 'clash_mihomo_yaml', action: 'copy', routingMode: 'gateway-default' });
+  assert.equal(f.calls.find(([name, action]) => name === 'generic' && action === 'prepare')[2]
+    .routingMode, 'gateway-default');
+  assert.equal(f.calls.some(([name]) => name === 'select'), false);
+  await assert.rejects(f.runtime.prepare({ adapterId: 'clash_mihomo_yaml', action: 'save', routingMode: 'global' }));
+  await assert.rejects(f.runtime.prepare({ adapterId: 'vscode_remote_ssh', action: 'copy', routingMode: 'gateway-default' }));
+});
+
 test('Clash save selects a destination while VS Code remains copy-only', async () => {
   const f = fixture();
   await f.runtime.prepare({ adapterId: 'clash_mihomo_yaml', action: 'save' });

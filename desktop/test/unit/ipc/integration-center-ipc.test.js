@@ -24,6 +24,17 @@ function fixture(overrides = {}) {
   return { handlers, calls };
 }
 
+test('optional gateway routing intent is closed and never accepted by the SSH adapter', () => {
+  assert.equal(prepareIntegrationRequest({ adapterId: 'clash_mihomo_yaml', action: 'copy',
+    routingMode: 'gateway-default' }).routingMode, 'gateway-default');
+  for (const routingMode of ['global', null, true, '']) {
+    assert.throws(() => prepareIntegrationRequest({ adapterId: 'clash_mihomo_yaml',
+      action: 'copy', routingMode }));
+  }
+  assert.throws(() => prepareIntegrationRequest({ adapterId: 'vscode_remote_ssh',
+    action: 'copy', routingMode: 'gateway-default' }));
+});
+
 test('IPC registers four exact channels and accepts only closed adapter action handles', async () => {
   const f = fixture();
   assert.deepEqual([...f.handlers.keys()], [

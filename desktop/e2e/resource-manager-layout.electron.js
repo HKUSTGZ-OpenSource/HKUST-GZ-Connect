@@ -70,6 +70,24 @@ async function exerciseIntegrationCenter(window) {
   await waitFor(window,
     `document.querySelectorAll('[data-integration-adapter]').length === 2`,
     'Integration Center rows');
+  for (const [width, height] of [[500, 640], [840, 900], [1180, 900]]) {
+    window.setContentSize(width, height);
+    await waitFor(window, `window.innerWidth === ${width}`, 'export selector resize');
+    const selector = await window.webContents.executeJavaScript(`(() => {
+      const node = document.querySelector('[data-integration-routing]');
+      node.focus({ preventScroll: true });
+      const rect = node.getBoundingClientRect();
+      return { focused: document.activeElement === node, label: node.labels[0]?.textContent,
+        width: rect.width, parent: node.parentElement.getBoundingClientRect().width,
+        options: [...node.options].map(option => option.value) };
+    })()`);
+    assert.equal(selector.focused, true);
+    assert.match(selector.label, /分流|routing/iu);
+    assert.ok(selector.width > 0 && selector.width <= selector.parent + 1, 'selector must not overflow');
+    assert.deepEqual(selector.options, ['rules-only', 'gateway-default']);
+  }
+  window.setContentSize(500, 640);
+  await waitFor(window, 'window.innerWidth === 500', 'compact export selector restore');
   const capabilityBoundary = await window.webContents.executeJavaScript(`(async () => {
     const state = await window.api.getState();
     return {
@@ -125,6 +143,8 @@ async function exerciseIntegrationCenter(window) {
   assert.match(explanation.text, /校园(?:账号)?密码|campus password/iu,
     'Integration Center explanation omitted the credential boundary');
   const prepared = await window.webContents.executeJavaScript(`(async () => {
+    const mode = document.querySelector('[data-integration-routing]');
+    mode.value = 'gateway-default'; mode.dispatchEvent(new Event('change'));
     document.querySelector('[data-integration-adapter="clash_mihomo_yaml"] [data-integration-action="copy"]').click();
     await new Promise((resolve) => setTimeout(resolve, 25));
     const dialog = document.getElementById('integrationDialog');
@@ -145,6 +165,7 @@ async function exerciseIntegrationCenter(window) {
   assert.match(prepared.summary, /1|512|2/u, 'Integration Center omitted the bounded change summary');
   assert.match(prepared.warning, /凭据|credential/iu,
     'Integration Center omitted the local proxy credential warning');
+  assert.match(prepared.warning, /UDP/u, 'gateway-default confirmation must disclose UDP fail-closed scope');
   assert.doesNotMatch(prepared.pageText, /\/Users\/|\\Users\\|password\s*[:=]/iu,
     'Integration Center exposed a path or credential value to the renderer');
 
