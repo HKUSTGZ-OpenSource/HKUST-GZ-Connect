@@ -3,7 +3,7 @@
 const { allowedKeys, boundedString } = require('./ipc-guard');
 
 function probeRequest(value) {
-  const source = allowedKeys(value, ['origin', 'schoolLabel']);
+  const source = allowedKeys(value, ['origin', 'schoolLabel', 'leafSha256']);
   return Object.freeze({
     origin: boundedString(source.origin, {
       minLength: 1,
@@ -15,6 +15,10 @@ function probeRequest(value) {
       maxLength: 96,
       trim: true,
       message: '学校名称无效',
+    }),
+    ...(source.leafSha256 == null || source.leafSha256 === '' ? {} : {
+      leafSha256: boundedString(source.leafSha256, { minLength: 64, maxLength: 64,
+        trim: true, message: '网关证书指纹无效' }),
     }),
   });
 }

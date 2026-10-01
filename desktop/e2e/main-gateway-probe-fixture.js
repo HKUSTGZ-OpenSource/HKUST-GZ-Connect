@@ -1,7 +1,8 @@
 'use strict';
 
 const args = process.argv.slice(2);
-if (args.length !== 2 || args[0] !== '--origin') process.exit(2);
+if (![2, 4].includes(args.length) || args[0] !== '--origin') process.exit(2);
+if (args.length === 4 && (args[2] !== '--leaf-sha256' || !/^[a-f0-9]{64}$/u.test(args[3]))) process.exit(2);
 let origin;
 try {
   const parsed = new URL(args[1]);

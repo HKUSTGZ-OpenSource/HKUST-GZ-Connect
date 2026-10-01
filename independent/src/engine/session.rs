@@ -10,7 +10,11 @@ use crate::engine::provider::{
 use crate::gateway_auth::AuthenticatedSessionId;
 use crate::gateway_connector::GatewayConnectorGeneration;
 use crate::gateway_http::{DEFAULT_TIMEOUT_SECONDS, GatewaySession};
-use crate::modern::{parse_sha256_pin, request_modern_token, request_modern_token_with_connector};
+use crate::gateway_tls::GatewayTlsTrust;
+use crate::modern::{
+    parse_sha256_pin, request_modern_token_with_connector_and_trust,
+    request_modern_token_with_trust,
+};
 use crate::xml::{first_descendant_text, parse_xml};
 use crate::{Error, ErrorKind, Result};
 use reqwest::Method;
@@ -78,6 +82,7 @@ pub struct ModernL3TransportBackend {
     configuration_path: String,
     resource_list_path: String,
     configured_certificate_pin: Option<[u8; 32]>,
+    gateway_tls_trust: Option<GatewayTlsTrust>,
 }
 
 #[derive(Clone)]
@@ -209,6 +214,7 @@ impl ModernL3TransportBackend {
             configuration_path,
             resource_list_path,
             configured_certificate_pin,
+            gateway_tls_trust: GatewayTlsTrust::from_config(config)?,
         })
     }
 
@@ -304,14 +310,18 @@ impl ModernL3TransportBackend {
         }
         ensure_transport_active(cancellation)?;
         let acquisition = match session.http.connector_handle() {
-            Some(connector) => request_modern_token_with_connector(
+            Some(connector) => request_modern_token_with_connector_and_trust(
                 connector,
                 &session.session_identifier,
                 self.timeout,
+                self.gateway_tls_trust.as_ref(),
             )?,
-            None => {
-                request_modern_token(&self.base_url, &session.session_identifier, self.timeout)?
-            }
+            None => request_modern_token_with_trust(
+                &self.base_url,
+                &session.session_identifier,
+                self.timeout,
+                self.gateway_tls_trust.as_ref(),
+            )?,
         };
         ensure_transport_active(cancellation)?;
         let data_plane_not_before = Instant::now() + MODERN_ADDRESS_SETTLE_DELAY;
@@ -447,16 +457,28 @@ impl AuthenticatedGatewaySession {
             .as_str()
             .unwrap_or("EasyConnect_windows");
         let logout_path = required_endpoint(config, "logout")?.to_owned();
-        let http = match connector {
-            Some(connector) => GatewaySession::new_with_connector(
-                connector,
+        let trust = GatewayTlsTrust::from_config(config)?;
+        let http = if trust.is_some() {
+            GatewaySession::new_with_trust(
+                base_url.to_owned(),
                 user_agent.to_owned(),
                 timeout_seconds,
+                connector,
+                trust.as_ref(),
             )
-            .map_err(classify_prelogin_gateway_error)?,
-            None => {
-                GatewaySession::new(base_url.to_owned(), user_agent.to_owned(), timeout_seconds)
-                    .map_err(classify_prelogin_gateway_error)?
+            .map_err(classify_prelogin_gateway_error)?
+        } else {
+            match connector {
+                Some(connector) => GatewaySession::new_with_connector(
+                    connector,
+                    user_agent.to_owned(),
+                    timeout_seconds,
+                )
+                .map_err(classify_prelogin_gateway_error)?,
+                None => {
+                    GatewaySession::new(base_url.to_owned(), user_agent.to_owned(), timeout_seconds)
+                        .map_err(classify_prelogin_gateway_error)?
+                }
             }
         };
 

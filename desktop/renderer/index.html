@@ -38,6 +38,12 @@
           <input id="customSchoolName" class="inp" type="text" maxlength="96" autocomplete="organization" placeholder="例如 Example University" data-i18n-attr="placeholder:school.namePlaceholder" />
           <label class="lbl" for="customGatewayOrigin" data-i18n="school.gateway">EasyConnect 网关</label>
           <input id="customGatewayOrigin" class="inp" type="url" inputmode="url" maxlength="2048" autocomplete="url" autocapitalize="none" spellcheck="false" placeholder="https://vpn.example.edu" data-i18n-attr="placeholder:school.gatewayPlaceholder" />
+          <details class="gateway-trust-options">
+            <summary data-i18n="school.tlsAdvanced">高级：网关证书信任</summary>
+            <label class="lbl" for="customGatewayLeafSha256" data-i18n="school.tlsFingerprint">已核对的证书 SHA-256 指纹（可选）</label>
+            <input id="customGatewayLeafSha256" class="inp" type="text" maxlength="95" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="gatewayTrustHint" />
+            <p id="gatewayTrustHint" class="gateway-warning" data-i18n="school.tlsHint">默认校验证书。仅为自签名网关填写经管理员核对的 64 位指纹；只信任确认的网关，证书变化后停止连接。</p>
+          </details>
           <div class="school-actions">
             <button id="probeCustomGateway" class="primary sm" type="button" data-i18n="school.check">检查网关</button>
             <button id="cancelCustomGateway" class="ghost sm" type="button" data-i18n="school.cancel">取消</button>

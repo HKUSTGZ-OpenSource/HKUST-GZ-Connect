@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const {
   PROTOCOL_FAMILY,
   normalizeGatewayOrigin,
+  normalizeGatewayLeafSha256,
   validateAccountHandle,
   validateProfileId,
   validateSchoolProfileDocument,
@@ -98,8 +99,9 @@ function entropyId(prefix, randomBytes) {
   finally { entropy.fill(0); entropy = null; }
 }
 
-function customProfileDocument({ profileId, origin, schoolLabel }) {
+function customProfileDocument({ profileId, origin, schoolLabel, leafSha256 = null }) {
   const gateway = normalizeGatewayOrigin(origin);
+  const pin = normalizeGatewayLeafSha256(leafSha256);
   if (!String(profileId).startsWith('custom-')) {
     throw new TypeError('custom Profile identity is invalid');
   }
@@ -121,6 +123,7 @@ function customProfileDocument({ profileId, origin, schoolLabel }) {
       origin: gateway.origin,
       protocolFamily: PROTOCOL_FAMILY,
       engineConfigRef: null,
+      ...(pin == null ? {} : { tlsLeafSha256: pin }),
     },
     browser: {
       homeUrl: null,
@@ -177,7 +180,7 @@ class CustomGatewayConfirmationOwner {
     this.ttlMs = ttlMs;
   }
 
-  issue({ probeResult, schoolLabel = '', activeContext: contextValue } = {}) {
+  issue({ probeResult, schoolLabel = '', leafSha256 = null, activeContext: contextValue } = {}) {
     const probe = validatedProbe(probeResult);
     const context = activeContext(contextValue);
     const draftProfileId = entropyId('custom', this.randomBytes);
@@ -189,6 +192,7 @@ class CustomGatewayConfirmationOwner {
       profileId: draftProfileId,
       origin: probe.normalizedOrigin,
       schoolLabel,
+      leafSha256,
     });
     const profile = validateSchoolProfileDocument(profileDocument);
     this.#record = Object.freeze({
@@ -218,6 +222,7 @@ class CustomGatewayConfirmationOwner {
       reportedVersion: this.#record.probe.reportedVersion,
       expiresAt: this.#record.expiresAt,
       unverified: true,
+      ...(this.#record.profile.gateway.tlsLeafSha256 == null ? {} : { leafSha256: this.#record.profile.gateway.tlsLeafSha256 }),
     });
   }
 

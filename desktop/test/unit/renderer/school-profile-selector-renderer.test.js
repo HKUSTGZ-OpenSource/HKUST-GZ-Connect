@@ -17,6 +17,7 @@ const IDS = [
   'titlebarText', 'connectSchoolName', 'gatewaySchoolName', 'gwName', 'settingsGateway',
   'schoolPicker', 'lgUser', 'lgPass', 'lgBtn', 'profileTrustBadge', 'settingsTrustBadge',
   'deleteSchoolProfile',
+  'customGatewayLeafSha256',
 ];
 
 function element() {
@@ -179,6 +180,32 @@ test('expired confirmation is erased locally and cancelled in Main', async () =>
   assert.equal(f.calls.some(([name]) => name === 'cancel'), true);
   assert.equal(f.elements.get('schoolProfileError').textContent,
     'school.error.PROFILE_CONFIRMATION_STALE');
+});
+
+test('Gateway trust is explicit input and visible in confirmation without creating a Profile', async () => {
+  const leafSha256 = 'ab'.repeat(32);
+  const f = fixture({ probeResult: { ok: true, confirmation: {
+    confirmationHandle: `confirmation-${'b'.repeat(32)}`, normalizedOrigin: 'https://8.8.8.8:4455',
+    reportedVersion: 'M7.6.8R2', expiresAt: 1_800_000_010_000, unverified: true, leafSha256,
+  } } });
+  await f.feature.refresh();
+  f.elements.get('schoolProfileSelect').value = OTHER_PROFILE;
+  f.elements.get('customGatewayOrigin').value = 'http://entry.example.edu/start.php';
+  f.elements.get('customGatewayLeafSha256').value = 'AB:'.repeat(31) + 'AB';
+  await f.feature.probe();
+  assert.equal(f.calls.find(([name]) => name === 'probe')[1].leafSha256, leafSha256);
+  assert.match(f.elements.get('customGatewaySummary').textContent, /school.tlsConfirmed/u);
+  assert.equal(f.calls.some(([name]) => name === 'confirm'), false);
+});
+
+test('malformed certificate fingerprint fails locally before a native probe', async () => {
+  const f = fixture();
+  await f.feature.refresh();
+  f.elements.get('customGatewayOrigin').value = 'https://vpn.example.edu';
+  f.elements.get('customGatewayLeafSha256').value = 'bad fingerprint';
+  await f.feature.probe();
+  assert.equal(f.calls.some(([name]) => name === 'probe'), false);
+  assert.equal(f.elements.get('schoolProfileError').textContent, 'school.error.fingerprintInvalid');
 });
 
 test('custom active Profile keeps product identity and continuously shows unreviewed status', async () => {

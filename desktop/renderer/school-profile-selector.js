@@ -40,6 +40,7 @@
         !Number.isSafeInteger(value.expiresAt) || value.expiresAt <= 0 ||
         (value.reportedVersion !== null && !text(value.reportedVersion, 32)) ||
         value.unverified !== true) return null;
+    if (value.leafSha256 != null && (typeof value.leafSha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(value.leafSha256))) return null;
     try {
       const origin = new URL(value.normalizedOrigin);
       if (origin.protocol !== 'https:' || origin.username || origin.password ||
@@ -51,6 +52,7 @@
       reportedVersion: value.reportedVersion,
       expiresAt: value.expiresAt,
       unverified: true,
+      leafSha256: value.leafSha256 ?? null,
     });
   }
 
@@ -90,6 +92,7 @@
     if (Object.values(elements).some((element) => !element)) {
       throw new TypeError('school selector markup is incomplete');
     }
+    const leafInput = document.getElementById('customGatewayLeafSha256');
     let t = translate;
     let profiles = [];
     let active = null;
@@ -128,6 +131,7 @@
     }
     function setBusy(value, status = '') {
       busy = value === true;
+      if (leafInput) leafInput.disabled = busy;
       for (const element of [
         elements.schoolProfileSelect, elements.switchSchoolProfile,
         elements.deleteSchoolProfile,
@@ -257,6 +261,10 @@
       if (busy || !customGatewayEnabled) return;
       const origin = elements.customGatewayOrigin.value.trim();
       if (!origin) { setError(t('school.error.gatewayRequired')); return; }
+      const leafSha256 = (leafInput?.value || '').replace(/[:\s]/gu, '').toLowerCase();
+      if (leafSha256 && !/^[a-f0-9]{64}$/u.test(leafSha256)) {
+        setError(t('school.error.fingerprintInvalid')); return;
+      }
       clearConfirmation();
       setError();
       setBusy(true, t('school.checking'));
@@ -265,6 +273,7 @@
         result = await api.probeCustomGateway({
           origin,
           schoolLabel: elements.customSchoolName.value.trim(),
+          ...(leafSha256 ? { leafSha256 } : {}),
         });
       } catch { result = { ok: false, code: 'generic' }; }
       if (!result?.ok) {
@@ -283,7 +292,7 @@
       elements.customGatewaySummary.textContent = t('school.confirmSummary', {
         origin: confirmation.normalizedOrigin,
         version: confirmation.reportedVersion || t('school.versionUnknown'),
-      });
+      }) + (confirmation.leafSha256 ? `\n${t('school.tlsConfirmed', { fingerprint: confirmation.leafSha256 })}` : '');
       const remaining = Math.min(MAX_CONFIRMATION_DELAY_MS,
         Math.max(0, confirmation.expiresAt - now()));
       expiryTimer = setTimeoutFn(() => {
@@ -388,7 +397,7 @@
         elements.customGatewaySummary.textContent = t('school.confirmSummary', {
           origin: confirmation.normalizedOrigin,
           version: confirmation.reportedVersion || t('school.versionUnknown'),
-        });
+        }) + (confirmation.leafSha256 ? `\n${t('school.tlsConfirmed', { fingerprint: confirmation.leafSha256 })}` : '');
       }
       renderProfiles(elements.schoolProfileSelect.value);
       if (active) applyActiveProfile(active);

@@ -119,6 +119,9 @@ button, input, select, a, code { -webkit-app-region: no-drag; }
 .school-picker .primary { margin-top: 0; width: auto; }
 .gateway-confirmation { color: #41516a; font-size: 11.5px; line-height: 1.45; }
 .gateway-confirmation strong { color: var(--navy); font-size: 12.5px; }
+.gateway-confirmation #customGatewaySummary { white-space: pre-line; overflow-wrap: anywhere; }
+.custom-school-panel .gateway-trust-options { color: var(--muted); font-size: 11px; }
+.custom-school-panel .gateway-trust-options summary { cursor: pointer; padding: 4px 0; }
 .gateway-warning { padding: 8px 9px; border-radius: 9px; color: #725300; background: #fff8df; border: 1px solid #f1dfac; }
 .school-error { min-height: 14px; color: var(--err); font-size: 11px; line-height: 1.35; }
 .integration-hint { margin: 2px 0 10px; }

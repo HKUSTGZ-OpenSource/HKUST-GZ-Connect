@@ -7,6 +7,22 @@ const {
   customProfileDocument,
 } = require('../../../../lib/profiles/onboarding/custom-gateway-onboarding');
 const { PROTOCOL_FAMILY } = require('../../../../lib/profiles/schema/school-profile-schema');
+const { createCustomEngineConfigDocument } = require('../../../../lib/profiles/provisioning/custom-engine-config');
+
+test('explicit leaf trust persists only for the confirmed Gateway including IP roots', () => {
+  const f = fixture();
+  const leafSha256 = 'ab'.repeat(32);
+  const view = f.owner.issue({ probeResult: probe({ normalized_origin: 'https://8.8.8.8:4455' }),
+    leafSha256, activeContext: context() });
+  assert.equal(view.leafSha256, leafSha256);
+  const consumed = f.owner.consume({ confirmationHandle: view.confirmationHandle, activeContext: context() });
+  assert.equal(consumed.profileDocument.gateway.tlsLeafSha256, leafSha256);
+  assert.deepEqual(createCustomEngineConfigDocument(consumed.profileDocument).gateway_tls,
+    { origin: 'https://8.8.8.8:4455', leaf_sha256: leafSha256 });
+  const ordinary = customProfileDocument({ profileId: 'custom-plain', origin: 'https://vpn.example.edu' });
+  assert.equal('tlsLeafSha256' in ordinary.gateway, false);
+  assert.equal('gateway_tls' in createCustomEngineConfigDocument(ordinary), false);
+});
 
 function context(overrides = {}) {
   return {
