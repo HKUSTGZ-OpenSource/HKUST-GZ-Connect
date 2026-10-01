@@ -58,8 +58,9 @@ unsupported. A public discovery version is not proof of authentication or L3.
 
 Synthetic checks cover origin/port drift, malformed grants, matching and changed
 leaf, validity bounds, credential-free argv, unsafe locator shapes and address
-restrictions. Native public probes against two supplied redirect entries return
-the existing compiled family and M7.6.8R2 with an explicitly supplied observed
-pin; no-pin and wrong-pin attempts fail. This is metadata/TLS evidence only:
-no real password, cookie or authenticated response was used or retained, and
-no authentication/tunnel acceptance or cross-platform package is claimed.
+restrictions. Native metadata checks cover locator resolution, recognition of
+the compiled family and rejection of absent or mismatching trust grants.
+Metadata/TLS evidence does not establish account authentication or tunnel
+acceptance. Public reports contain capability and validation summaries only:
+never deployment addresses, user identities, certificate fingerprints, private
+configuration, authentication data or private-environment observations.
