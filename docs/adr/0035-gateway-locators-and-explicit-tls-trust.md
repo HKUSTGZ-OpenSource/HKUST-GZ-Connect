@@ -24,12 +24,29 @@ Do not re-resolve a locator during authentication, silently fail over to a new
 origin or transfer a credential envelope across origins. A changing redirect
 target requires another check and explicit confirmation.
 
-Standard PKI is unchanged by default. An optional, administrator-verified
-64-hex-character leaf SHA-256 is explicit user input in the advanced onboarding
-section. Never infer it from a first network observation or Browser trust. The
-confirmation displays both origin and fingerprint. Main binds the grant into
-the newly provisioned custom Profile, whose origin is immutable. Reviewed
-Profiles cannot acquire a local trust override.
+Standard PKI is unchanged by default. When ordinary discovery cannot verify a
+valid self-issued leaf because its issuer is unknown, the credential-free helper
+may complete a TLS handshake with signature verification to observe its leaf.
+It closes without sending application data, then uses that exact leaf for one
+fixed credential-free discovery request. Schema 2 explicitly reports
+`https_identity_valid: false`, the observed fingerprint and required consent.
+This is observation, not server identity proof or authentication authority.
+
+Main requires a one-use, expiring confirmation bound to the active context,
+exact origin and observed fingerprint. The user-visible action is explicitly
+"Trust on first use and add"; its trusted IPC request must carry
+`trustCertificate: true`. No Profile or persistent trust grant is created before
+that action. Fingerprints are automatically recorded and compared on subsequent
+connections, with details collapsed by default. First-use trust cannot prove
+the destination's identity, particularly for plaintext redirect entries, and
+the warning states this limitation. Certificate change or expiration blocks
+future authentication, not an automatic pin update.
+
+Non-self-issued, malformed and expired certificates and PKI hostname/signature
+failures are not eligible for this convenience path. An administrator-provided
+fingerprint remains an optional advanced input. Browser trust is never reused.
+Reviewed Profiles cannot acquire a local trust override. Observation/fallback
+fits the existing native probe process deadline; no timeout budget is raised.
 
 The additive Engine `gateway_tls` object contains exactly `origin` and
 `leaf_sha256`; its origin must equal `base_url`. One neutral TLS owner supplies

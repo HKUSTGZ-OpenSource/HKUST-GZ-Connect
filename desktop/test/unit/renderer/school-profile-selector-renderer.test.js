@@ -18,6 +18,7 @@ const IDS = [
   'schoolPicker', 'lgUser', 'lgPass', 'lgBtn', 'profileTrustBadge', 'settingsTrustBadge',
   'deleteSchoolProfile',
   'customGatewayLeafSha256',
+  'gatewayTrustNotice', 'gatewayCertificateDetails', 'gatewayObservedFingerprint',
 ];
 
 function element() {
@@ -194,8 +195,26 @@ test('Gateway trust is explicit input and visible in confirmation without creati
   f.elements.get('customGatewayLeafSha256').value = 'AB:'.repeat(31) + 'AB';
   await f.feature.probe();
   assert.equal(f.calls.find(([name]) => name === 'probe')[1].leafSha256, leafSha256);
-  assert.match(f.elements.get('customGatewaySummary').textContent, /school.tlsConfirmed/u);
+  assert.equal(f.elements.get('gatewayObservedFingerprint').textContent, leafSha256);
+  assert.equal(f.elements.get('gatewayCertificateDetails').hidden, false);
   assert.equal(f.calls.some(([name]) => name === 'confirm'), false);
+});
+
+test('automatically observed fingerprint needs one clearly labelled first-trust action', async () => {
+  const f = fixture({ probeResult: { ok: true, confirmation: {
+    confirmationHandle: `confirmation-${'b'.repeat(32)}`, normalizedOrigin: 'https://vpn.example.edu',
+    reportedVersion: 'M7.6.8R2', expiresAt: 1_800_000_010_000, unverified: true,
+    requiresTrust: true, leafSha256: 'ab'.repeat(32),
+  } } });
+  await f.feature.refresh();
+  f.elements.get('customGatewayOrigin').value = 'https://vpn.example.edu';
+  await f.feature.probe();
+  assert.equal('leafSha256' in f.calls.find(([name]) => name === 'probe')[1], false);
+  assert.equal(f.elements.get('confirmCustomGateway').textContent, 'school.trustConfirm');
+  assert.equal(f.elements.get('gatewayTrustNotice').textContent, 'school.firstTrustWarning');
+  assert.equal(f.calls.some(([name]) => name === 'confirm'), false);
+  await f.feature.confirm();
+  assert.equal(f.calls.find(([name]) => name === 'confirm')[1].trustCertificate, true);
 });
 
 test('malformed certificate fingerprint fails locally before a native probe', async () => {

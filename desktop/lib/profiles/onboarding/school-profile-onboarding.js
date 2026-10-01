@@ -158,7 +158,7 @@ class SchoolProfileOnboardingCoordinator {
     });
   }
 
-  confirm({ confirmationHandle } = {}) {
+  confirm({ confirmationHandle, trustCertificate = false } = {}) {
     if (this.#running) return Object.freeze({ ok: false, code: 'PROFILE_ONBOARDING_NOT_READY' });
     const context = activeContext(this.getActiveContext());
     let confirmation;
@@ -166,6 +166,7 @@ class SchoolProfileOnboardingCoordinator {
       confirmation = this.confirmationOwner.consume({
         confirmationHandle,
         activeContext: context,
+        trustCertificate,
       });
     } catch (error) {
       return Object.freeze({ ok: false, code: 'PROFILE_CONFIRMATION_STALE' });

@@ -47,6 +47,28 @@ function probe(overrides = {}) {
   };
 }
 
+test('observed certificate stays pending until an explicit one-use first-trust action', () => {
+  const fingerprint = 'ab'.repeat(32);
+  const result = probe({ schema_version: 2, https_identity_valid: false,
+    certificate_requires_confirmation: true, leaf_sha256: fingerprint });
+  const f = fixture();
+  const view = f.owner.issue({ probeResult: result, activeContext: context() });
+  assert.equal(view.requiresTrust, true);
+  assert.equal(view.leafSha256, fingerprint);
+  assert.throws(() => f.owner.consume({ confirmationHandle: view.confirmationHandle,
+    activeContext: context() }), /explicit certificate trust/u);
+  const accepted = f.owner.issue({ probeResult: result, activeContext: context() });
+  const consumed = f.owner.consume({ confirmationHandle: accepted.confirmationHandle,
+    activeContext: context(), trustCertificate: true });
+  assert.equal(consumed.profile.gateway.tlsLeafSha256, fingerprint);
+  assert.throws(() => f.owner.consume({ confirmationHandle: accepted.confirmationHandle,
+    activeContext: context(), trustCertificate: true }), /unavailable or stale/u);
+  for (const bad of [{ ...result, leaf_sha256: 'bad' },
+    { ...result, certificate_requires_confirmation: false }, { ...result, https_identity_valid: true }]) {
+    assert.throws(() => f.owner.issue({ probeResult: bad, activeContext: context() }));
+  }
+});
+
 function fixture() {
   let clock = 1_800_000_000_000;
   let counter = 0;

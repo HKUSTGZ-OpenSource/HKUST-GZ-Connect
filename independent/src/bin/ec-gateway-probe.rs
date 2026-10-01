@@ -1,8 +1,36 @@
 use ec_compat::gateway_connector::GatewayConnectorGeneration;
 use ec_compat::gateway_locator::resolve_gateway_locator;
-use ec_compat::gateway_probe::{PublicGatewayProbeResult, probe_public_gateway_with_trust};
+use ec_compat::gateway_probe::{
+    PublicGatewayProbeResult, observe_self_signed_gateway_certificate,
+    probe_public_gateway_with_trust,
+};
 use ec_compat::gateway_tls::GatewayTlsTrust;
-use std::time::Duration;
+use serde::Serialize;
+use std::time::{Duration, Instant};
+
+#[derive(Serialize)]
+struct ProbeView {
+    #[serde(flatten)]
+    result: PublicGatewayProbeResult,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    certificate_requires_confirmation: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    leaf_sha256: Option<String>,
+}
+
+fn remaining(deadline: Instant, cap: Duration) -> ec_compat::Result<Duration> {
+    let left = deadline
+        .checked_duration_since(Instant::now())
+        .unwrap_or_default()
+        .min(cap);
+    if left < Duration::from_secs(1) {
+        return Err(ec_compat::Error::classified(
+            ec_compat::ErrorKind::GatewayHttp,
+            "Gateway probe deadline exhausted",
+        ));
+    }
+    Ok(left)
+}
 
 fn origin_argument(arguments: &[String]) -> Option<(&str, Option<&str>)> {
     if !matches!(arguments.len(), 2 | 4) || arguments[0] != "--origin" {
@@ -17,14 +45,48 @@ fn origin_argument(arguments: &[String]) -> Option<(&str, Option<&str>)> {
     Some((&arguments[1], None))
 }
 
-fn probe(entry: &str, pin: Option<&str>) -> ec_compat::Result<PublicGatewayProbeResult> {
+fn probe(entry: &str, pin: Option<&str>) -> ec_compat::Result<ProbeView> {
+    let deadline = Instant::now() + Duration::from_secs(10);
     let origin = resolve_gateway_locator(entry, Duration::from_secs(3))?;
     let connector =
         GatewayConnectorGeneration::resolve_system("custom-probe", 1, 1, &origin, false)?;
     let trust = pin
         .map(|pin| GatewayTlsTrust::new(&origin, pin))
         .transpose()?;
-    probe_public_gateway_with_trust(&connector, Duration::from_secs(8), trust.as_ref())
+    let result = probe_public_gateway_with_trust(
+        &connector,
+        remaining(deadline, Duration::from_secs(8))?,
+        trust.as_ref(),
+    );
+    match result {
+        Ok(result) => Ok(ProbeView {
+            result,
+            certificate_requires_confirmation: None,
+            leaf_sha256: None,
+        }),
+        Err(error) if pin.is_none() => {
+            let observed = observe_self_signed_gateway_certificate(
+                &connector,
+                remaining(deadline, Duration::from_secs(3))?,
+            )
+            .map_err(|_| error)?;
+            let observed_trust = GatewayTlsTrust::new(&origin, &observed)?;
+            // Read-only discovery only. Observation cannot authorize credentials.
+            let mut result = probe_public_gateway_with_trust(
+                &connector,
+                remaining(deadline, Duration::from_secs(8))?,
+                Some(&observed_trust),
+            )?;
+            result.schema_version = 2;
+            result.https_identity_valid = false;
+            Ok(ProbeView {
+                result,
+                certificate_requires_confirmation: Some(true),
+                leaf_sha256: Some(observed),
+            })
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn main() {

@@ -12,11 +12,12 @@ try {
 } catch { process.exit(3); }
 
 process.stdout.write(`${JSON.stringify({
-  schema_version: 1,
+  schema_version: args.length === 2 ? 2 : 1,
   normalized_origin: origin,
-  https_identity_valid: true,
+  https_identity_valid: args.length !== 2,
   compatibility: 'recognized_candidate',
   candidate_family: 'easyconnect-password-modern-l3-v1',
   reported_version: 'M7.6.8R2',
   http_status: 200,
+  ...(args.length === 2 ? { certificate_requires_confirmation: true, leaf_sha256: 'ab'.repeat(32) } : {}),
 })}\n`);

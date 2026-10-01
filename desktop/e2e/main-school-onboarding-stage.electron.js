@@ -63,11 +63,8 @@ async function runOnboarding(control) {
     select.dispatchEvent(new Event('change', { bubbles: true }));
     document.getElementById('customSchoolName').value = 'Example University';
     document.getElementById('customGatewayOrigin').value = 'https://vpn.example.edu';
-    document.querySelector('.gateway-trust-options').open = true;
     const fingerprint = document.getElementById('customGatewayLeafSha256');
-    fingerprint.value = 'ab'.repeat(32);
-    fingerprint.focus();
-    if (document.activeElement !== fingerprint) throw new Error('Gateway trust field cannot receive focus');
+    if (fingerprint.value !== '') throw new Error('First-use onboarding must not require a manually entered fingerprint');
     document.getElementById('probeCustomGateway').click();
   })()`);
   await waitFor(async () => control.webContents.executeJavaScript(`
@@ -76,6 +73,9 @@ async function runOnboarding(control) {
   const probed = await control.webContents.executeJavaScript(`(async () => ({
     profiles: await window.api.listSchoolProfiles(),
     summary: document.getElementById('customGatewaySummary').textContent,
+    fingerprint: document.getElementById('gatewayObservedFingerprint').textContent,
+    action: document.getElementById('confirmCustomGateway').textContent,
+    firstTrustWarning: document.getElementById('gatewayTrustNotice').textContent,
     warning: document.querySelector('.gateway-warning').textContent,
     error: document.getElementById('schoolProfileError').textContent,
   }))()`);
@@ -83,7 +83,9 @@ async function runOnboarding(control) {
     'probe must not create a Profile before explicit confirmation');
   assert.match(probed.summary, /https:\/\/vpn\.example\.edu/u);
   assert.match(probed.summary, /M7\.6\.8R2/u);
-  assert.match(probed.summary, /(?:ab){32}/u);
+  assert.match(probed.fingerprint, /(?:ab){32}/u);
+  assert.match(probed.action, /首次信任|Trust on first use/u);
+  assert.match(probed.firstTrustWarning, /首次连接|first connection/u);
   assert.ok(probed.warning.length > 20);
   assert.equal(probed.error, '');
   const confirmationVisible = await control.webContents.executeJavaScript(`(() => {

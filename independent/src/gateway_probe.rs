@@ -18,6 +18,15 @@ use std::io::Read;
 use std::time::Duration;
 use zeroize::Zeroizing;
 
+mod certificate;
+
+pub fn observe_self_signed_gateway_certificate(
+    connector: &GatewayConnectorGeneration,
+    timeout: Duration,
+) -> Result<String> {
+    certificate::observe(connector, timeout)
+}
+
 pub const PUBLIC_GATEWAY_PROBE_PATH: &str = "/por/login_auth.csp?apiversion=1";
 pub const PUBLIC_GATEWAY_PROBE_FAMILY: &str = "easyconnect-password-modern-l3-v1";
 const PUBLIC_GATEWAY_PROBE_PROFILE_ID: &str = "custom-probe";

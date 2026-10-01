@@ -107,8 +107,9 @@ AppImage 是独立文件，下载新版后请用它替换旧 AppImage；应用�
 `主机:端口`、HTTPS 网关地址，或只用于跳转的 HTTP/HTTPS 入口。应用先检查入口，
 显示最终 HTTPS 网关；只有确认并切换到独立配置后，才向该网关提交登录凭据。
 
-自签名网关可在“高级：网关证书信任”中填写经管理员核对的 64 位 SHA-256 指纹。
-该授权只适用于确认的网关和证书；证书变化后会拒绝连接，不会关闭全局证书校验。
+自签名网关通常不需要手填指纹：应用自动获取证书，并显示“首次信任并添加”。
+确认目标网关后，证书会在本机保存并自动比对；证书变化后会拒绝连接，不会关闭全局
+证书校验。首次信任本身不能证明服务器身份；管理员提供的指纹仍可在高级选项指定。
 当前生产协议仍是 EasyConnect 密码认证与 Modern L3；验证码、OTP、SSO 和其他 VPN
 协议不能仅凭网关识别成功就视为支持。跳转目标变化时需重新检查并确认。
 
@@ -337,10 +338,12 @@ entry. The app checks and displays the final HTTPS origin before creating and
 switching to an isolated Profile. Credentials are never sent to the entry or
 over HTTP.
 
-For a self-signed gateway, enter its administrator-verified 64-digit SHA-256
-fingerprint under Advanced. Trust applies only to the confirmed origin and
-certificate; a changed certificate blocks connection without disabling global
-verification. Production support remains EasyConnect password authentication
+For an eligible self-signed gateway, the app observes the certificate and asks
+you to trust it on first use; manual fingerprint entry is normally unnecessary.
+Trust applies only to the confirmed origin and certificate; a changed certificate
+blocks connection without disabling global verification. First-use trust alone
+does not prove server identity. An administrator-provided fingerprint remains
+an optional advanced setting. Production support remains EasyConnect password authentication
 and Modern L3, not arbitrary VPN protocols, CAPTCHA, OTP or SSO. A changed
 redirect target requires another check and confirmation.
 

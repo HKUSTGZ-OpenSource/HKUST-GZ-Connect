@@ -52,7 +52,11 @@
         <div id="customGatewayConfirmation" class="gateway-confirmation" hidden>
           <strong data-i18n="school.confirmTitle">确认未审核学校</strong>
           <p id="customGatewaySummary"></p>
-          <p class="gateway-warning" data-i18n="school.unverifiedWarning">该学校并非应用内置审核配置。确认后会在本机创建独立配置并切换重启；校园密码不会发送给当前学校以外的网关。</p>
+          <p id="gatewayTrustNotice" class="gateway-warning" data-i18n="school.unverifiedWarning">该学校并非应用内置审核配置。确认后会在本机创建独立配置并切换重启；校园密码不会发送给当前学校以外的网关。</p>
+          <details id="gatewayCertificateDetails" hidden>
+            <summary data-i18n="school.certificateDetails">证书详情</summary>
+            <code id="gatewayObservedFingerprint"></code>
+          </details>
           <div class="school-actions">
             <button id="confirmCustomGateway" class="primary sm" type="button" data-i18n="school.confirmSwitch">确认创建并切换</button>
             <button id="backCustomGateway" class="ghost sm" type="button" data-i18n="school.back">返回修改</button>

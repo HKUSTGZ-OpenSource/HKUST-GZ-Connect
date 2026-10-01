@@ -41,6 +41,7 @@
         (value.reportedVersion !== null && !text(value.reportedVersion, 32)) ||
         value.unverified !== true) return null;
     if (value.leafSha256 != null && (typeof value.leafSha256 !== 'string' || !/^[a-f0-9]{64}$/u.test(value.leafSha256))) return null;
+    if (value.requiresTrust != null && (value.requiresTrust !== true || !value.leafSha256)) return null;
     try {
       const origin = new URL(value.normalizedOrigin);
       if (origin.protocol !== 'https:' || origin.username || origin.password ||
@@ -53,6 +54,7 @@
       expiresAt: value.expiresAt,
       unverified: true,
       leafSha256: value.leafSha256 ?? null,
+      requiresTrust: value.requiresTrust === true,
     });
   }
 
@@ -93,6 +95,9 @@
       throw new TypeError('school selector markup is incomplete');
     }
     const leafInput = document.getElementById('customGatewayLeafSha256');
+    const trustNotice = document.getElementById('gatewayTrustNotice');
+    const trustDetails = document.getElementById('gatewayCertificateDetails');
+    const trustFingerprint = document.getElementById('gatewayObservedFingerprint');
     let t = translate;
     let profiles = [];
     let active = null;
@@ -100,6 +105,18 @@
     let expiryTimer = null;
     let busy = false;
     let bound = false;
+
+    function renderConfirmation() {
+      if (!confirmation) return;
+      elements.customGatewaySummary.textContent = t('school.confirmSummary', {
+        origin: confirmation.normalizedOrigin,
+        version: confirmation.reportedVersion || t('school.versionUnknown'),
+      });
+      elements.confirmCustomGateway.textContent = t(confirmation.requiresTrust ? 'school.trustConfirm' : 'school.confirmSwitch');
+      if (trustNotice) trustNotice.textContent = t(confirmation.requiresTrust ? 'school.firstTrustWarning' : 'school.unverifiedWarning');
+      if (trustDetails) trustDetails.hidden = !confirmation.leafSha256;
+      if (trustFingerprint) trustFingerprint.textContent = confirmation.leafSha256 || '';
+    }
     let customGatewayEnabled = false;
     let deleteArmedProfileId = null;
 
@@ -289,10 +306,7 @@
       }
       elements.customSchoolPanel.hidden = true;
       elements.customGatewayConfirmation.hidden = false;
-      elements.customGatewaySummary.textContent = t('school.confirmSummary', {
-        origin: confirmation.normalizedOrigin,
-        version: confirmation.reportedVersion || t('school.versionUnknown'),
-      }) + (confirmation.leafSha256 ? `\n${t('school.tlsConfirmed', { fingerprint: confirmation.leafSha256 })}` : '');
+      renderConfirmation();
       const remaining = Math.min(MAX_CONFIRMATION_DELAY_MS,
         Math.max(0, confirmation.expiresAt - now()));
       expiryTimer = setTimeoutFn(() => {
@@ -311,7 +325,9 @@
       setError();
       setBusy(true, t('school.creating'));
       let created;
-      try { created = await api.confirmCustomGateway({ confirmationHandle: handle }); }
+      try { created = await api.confirmCustomGateway({ confirmationHandle: handle,
+        ...(confirmation.requiresTrust ? { trustCertificate: true } : {}),
+      }); }
       catch { created = { ok: false, code: 'generic' }; }
       clearConfirmation();
       if (!created?.ok || !text(created.profileId, 80)) {
@@ -393,12 +409,7 @@
     function setTranslator(next) {
       if (typeof next !== 'function') return;
       t = next;
-      if (confirmation) {
-        elements.customGatewaySummary.textContent = t('school.confirmSummary', {
-          origin: confirmation.normalizedOrigin,
-          version: confirmation.reportedVersion || t('school.versionUnknown'),
-        }) + (confirmation.leafSha256 ? `\n${t('school.tlsConfirmed', { fingerprint: confirmation.leafSha256 })}` : '');
-      }
+      renderConfirmation();
       renderProfiles(elements.schoolProfileSelect.value);
       if (active) applyActiveProfile(active);
     }
