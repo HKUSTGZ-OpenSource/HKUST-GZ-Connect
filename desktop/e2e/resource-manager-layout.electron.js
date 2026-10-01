@@ -70,24 +70,6 @@ async function exerciseIntegrationCenter(window) {
   await waitFor(window,
     `document.querySelectorAll('[data-integration-adapter]').length === 2`,
     'Integration Center rows');
-  for (const [width, height] of [[500, 640], [840, 900], [1180, 900]]) {
-    window.setContentSize(width, height);
-    await waitFor(window, `window.innerWidth === ${width}`, 'export selector resize');
-    const selector = await window.webContents.executeJavaScript(`(() => {
-      const node = document.querySelector('[data-integration-routing]');
-      node.focus({ preventScroll: true });
-      const rect = node.getBoundingClientRect();
-      return { focused: document.activeElement === node, label: node.labels[0]?.textContent,
-        width: rect.width, parent: node.parentElement.getBoundingClientRect().width,
-        options: [...node.options].map(option => option.value) };
-    })()`);
-    assert.equal(selector.focused, true);
-    assert.match(selector.label, /分流|routing/iu);
-    assert.ok(selector.width > 0 && selector.width <= selector.parent + 1, 'selector must not overflow');
-    assert.deepEqual(selector.options, ['rules-only', 'gateway-default']);
-  }
-  window.setContentSize(500, 640);
-  await waitFor(window, 'window.innerWidth === 500', 'compact export selector restore');
   const capabilityBoundary = await window.webContents.executeJavaScript(`(async () => {
     const state = await window.api.getState();
     return {
@@ -132,6 +114,25 @@ async function exerciseIntegrationCenter(window) {
     focusPreserved: true,
     legacyList: false,
   }, 'routing stacks must lead with the populated route and keep the empty route accessible');
+  // Keep selector resize coverage separate from the original compact routing-stack test.
+  for (const [width, height] of [[500, 640], [840, 900], [1180, 900]]) {
+    window.setContentSize(width, height);
+    await waitFor(window, `window.innerWidth === ${width}`, 'export selector resize');
+    const selector = await window.webContents.executeJavaScript(`(() => {
+      const node = document.querySelector('[data-integration-routing]');
+      node.focus({ preventScroll: true });
+      const rect = node.getBoundingClientRect();
+      return { focused: document.activeElement === node, label: node.labels[0]?.textContent,
+        width: rect.width, parent: node.parentElement.getBoundingClientRect().width,
+        options: [...node.options].map(option => option.value) };
+    })()`);
+    assert.equal(selector.focused, true);
+    assert.match(selector.label, /分流|routing/iu);
+    assert.ok(selector.width > 0 && selector.width <= selector.parent + 1, 'selector must not overflow');
+    assert.deepEqual(selector.options, ['rules-only', 'gateway-default']);
+  }
+  window.setContentSize(500, 640);
+  await waitFor(window, 'window.innerWidth === 500', 'compact export selector restore');
   const explanation = await window.webContents.executeJavaScript(`(() => {
     const details = document.querySelector('.integration-explainer');
     details.querySelector('summary').click();
