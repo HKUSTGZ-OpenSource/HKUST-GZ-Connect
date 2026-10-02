@@ -10,6 +10,7 @@ const GENERIC_EXPORT_ADAPTERS = Object.freeze([
   'clash_mihomo_yaml', 'vscode_remote_ssh',
 ]);
 const MAX_GENERIC_EXPORT_BYTES = 512 * 1024;
+const DEFAULT_CLASH_MIXED_PORT = 7890;
 const LOCAL_PROXY_SECRET = /^[A-Za-z0-9_-]{16,128}$/u;
 
 function port(value) {
@@ -80,6 +81,13 @@ function buildClashCompatibleYaml({ adapterId, port: rawPort, credential, networ
       '# Campus Connect Clash / Mihomo export',
       `# Profile: ${rules.profileId}; rules: ${rules.rulesDigest}`,
       `# Routing: ${routingMode}`,
+      ...(routingMode === 'gateway-default' ? [
+        '# Layout: standalone-gateway',
+        `mixed-port: ${DEFAULT_CLASH_MIXED_PORT}`,
+        'allow-lan: false',
+        'bind-address: "127.0.0.1"',
+        'mode: "rule"',
+      ] : []),
       'proxies:',
       `  - name: ${JSON.stringify(name)}`,
       '    type: "socks5"',
@@ -128,38 +136,45 @@ function validateClashCompatibleText(text) {
   const lines = text.trimEnd().split('\n');
   const routingMode = lines[2]?.startsWith('# Routing: ') ? lines.splice(2, 1)[0].slice(11) : 'rules-only';
   try { validateIntegrationRoutingMode('clash_mihomo_yaml', routingMode); } catch { return false; }
+  const standalone = routingMode === 'gateway-default';
+  if (standalone && (lines[2] !== '# Layout: standalone-gateway' ||
+      lines[3] !== `mixed-port: ${DEFAULT_CLASH_MIXED_PORT}` ||
+      lines[4] !== 'allow-lan: false' || lines[5] !== 'bind-address: "127.0.0.1"' ||
+      lines[6] !== 'mode: "rule"')) return false;
+  const proxyIndex = standalone ? 7 : 2;
+  const rulesIndex = proxyIndex + 8;
   if (lines.length < 12 || lines[0] !== '# Campus Connect Clash / Mihomo export' ||
       !/^# Profile: [a-z0-9-]{1,64}; rules: [a-f0-9]{64}$/u.test(lines[1]) ||
-      lines[2] !== 'proxies:' || lines[4] !== '    type: "socks5"' ||
-      lines[5] !== '    server: "127.0.0.1"' || lines[10] !== 'rules:') return false;
+      lines[proxyIndex] !== 'proxies:' || lines[proxyIndex + 2] !== '    type: "socks5"' ||
+      lines[proxyIndex + 3] !== '    server: "127.0.0.1"' || lines[rulesIndex] !== 'rules:') return false;
   let name;
   let username;
   let password;
   let proxyPort;
   try {
-    name = JSON.parse(lines[3].replace(/^  - name: /u, ''));
-    username = JSON.parse(lines[7].replace(/^    username: /u, ''));
-    password = JSON.parse(lines[8].replace(/^    password: /u, ''));
-    proxyPort = port(Number(lines[6].slice('    port: '.length)));
+    name = JSON.parse(lines[proxyIndex + 1].replace(/^  - name: /u, ''));
+    username = JSON.parse(lines[proxyIndex + 5].replace(/^    username: /u, ''));
+    password = JSON.parse(lines[proxyIndex + 6].replace(/^    password: /u, ''));
+    proxyPort = port(Number(lines[proxyIndex + 4].slice('    port: '.length)));
   } catch { return false; }
   const profileId = lines[1].match(/^# Profile: ([a-z0-9-]{1,64});/u)?.[1];
   if (name !== `Campus Connect - ${profileId}` ||
-      !/^    port: (?:[1-9][0-9]{3,4})$/u.test(lines[6]) || proxyPort < 1025 ||
+      !/^    port: (?:[1-9][0-9]{3,4})$/u.test(lines[proxyIndex + 4]) || proxyPort < 1025 ||
       !LOCAL_PROXY_SECRET.test(username) || !LOCAL_PROXY_SECRET.test(password) ||
-      username === password || lines[9] !== '    udp: false') return false;
-  for (const line of lines.slice(11)) {
+      username === password || lines[proxyIndex + 7] !== '    udp: false') return false;
+  for (const line of lines.slice(rulesIndex + 1)) {
     if (!line.startsWith('  - ')) return false;
     let rule;
     try { rule = JSON.parse(line.slice(4)); } catch { return false; }
     const fields = String(rule).split(',');
     if (rule === 'NETWORK,udp,REJECT') {
       if (routingMode !== 'gateway-default' || line !== lines.at(-2) ||
-          lines.slice(11).filter(value => value === line).length !== 1) return false;
+          lines.slice(rulesIndex + 1).filter(value => value === line).length !== 1) return false;
       continue;
     }
     if (fields[0] === 'MATCH') {
       if (routingMode !== 'gateway-default' || line !== lines.at(-1) || fields.length !== 2 ||
-          fields[1] !== name || lines.slice(11).filter(value => value === line).length !== 1) return false;
+          fields[1] !== name || lines.slice(rulesIndex + 1).filter(value => value === line).length !== 1) return false;
       continue;
     }
     if (!['DOMAIN', 'DOMAIN-SUFFIX', 'IP-CIDR', 'IP-CIDR6'].includes(fields[0]) || !fields[1] ||
@@ -234,6 +249,7 @@ function buildGenericExport({
 module.exports = {
   GENERIC_EXPORT_ADAPTERS,
   MAX_GENERIC_EXPORT_BYTES,
+  DEFAULT_CLASH_MIXED_PORT,
   buildClashCompatibleYaml,
   buildGenericExport,
   buildVscodeRemoteSshSnippet,

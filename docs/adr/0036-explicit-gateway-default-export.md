@@ -12,7 +12,8 @@ The same `clash_mihomo_yaml` adapter accepts an optional closed `routingMode`:
 Old requests retain their behavior. SSH cannot accept a gateway-default intent. No Profile,
 Workspace, credentials, settings schema, Engine wire format or gateway capability is changed.
 
-Gateway-default adds terminal `NETWORK,udp,REJECT` and `MATCH,<current local SOCKS node>` rules.
+Gateway-default adds a minimal standalone Clash profile (`mixed-port: 7890`, loopback-only,
+rule mode), then terminal `NETWORK,udp,REJECT` and `MATCH,<current local SOCKS node>` rules.
 Gateway bypass and explicit direct rules remain higher priority. Literal IPv4/IPv6 gateway
 origins use address CIDR bypass rules rather than a DOMAIN rule that cannot match IP-only requests.
 The unsupported UDP path must not silently fall through to DIRECT. This mode requires a

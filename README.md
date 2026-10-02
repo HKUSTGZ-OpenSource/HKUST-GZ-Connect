@@ -160,10 +160,10 @@ Clash、Mihomo 和 VS Code 可使用控制塔“外部工具集成”生成的�
 2. 先连接 HKUST(GZ) Connect。
 3. 在“控制塔”→“外部工具集成”的 Clash / Mihomo 导出中选择分流方式：
    - “仅转发匹配的网站规则”：合并到现有配置，保留原互联网节点、代理组、DNS 和兜底规则；不是完整订阅。
-   - “网关自动分流”：未匹配的 TCP 请求交给当前 EasyConnect 网关，由网关执行自身策略，无需逐站添加规则。
+   - “独立网关配置”：导出可直接替换使用的最小配置，在 `127.0.0.1:7890` 监听；未匹配的 TCP 请求交给当前 EasyConnect 网关，由网关执行自身策略，无需逐站添加规则。
 4. 点击“复制”或“保存文件”，确认预览后自行在客户端合并或启用。本应用不会切换 Clash。
 
-网关自动分流适用于支持 `NETWORK` 规则的 Mihomo / Clash Meta，保留明确的直连例外，
+独立网关配置适用于支持 `NETWORK` 规则的 Mihomo / Clash Meta，保留明确的直连例外，
 拒绝其余 UDP，避免 TCP-only 节点不支持 UDP 时回退直连。它不意味着该网关允许所有互联网访问。
 域名通过 SOCKS 交给引擎时，由引擎使用网关 DNS；已被第三方解析为 IP 的请求不会被还原为域名。
 
@@ -393,10 +393,10 @@ application needs rule-based access to the campus tunnel.
 2. Connect HKUST(GZ) Connect.
 3. In **Control Tower** → **External Tool Integrations**, choose the routing mode:
    - **Matching rules only**: merge with existing proxies, groups, DNS and fallback rules; this is not a complete subscription.
-   - **Gateway routing**: send unmatched TCP requests to the connected EasyConnect gateway, which applies its own policy. No per-site rules are needed.
+   - **Standalone gateway config**: a minimal replaceable profile listening on `127.0.0.1:7890`; send unmatched TCP requests to the connected EasyConnect gateway, which applies its own policy. No per-site rules are needed.
 4. Click **Copy** or **Save File**, confirm the preview, then activate or merge it yourself. Campus Connect never switches Clash.
 
-Gateway routing requires a Mihomo / Clash Meta core supporting `NETWORK` rules. Explicit direct
+The standalone gateway config requires a Mihomo / Clash Meta core supporting `NETWORK` rules. Explicit direct
 exceptions remain; unmatched UDP is rejected to avoid a TCP-only node silently falling back to
 DIRECT. It does not imply that the gateway permits arbitrary internet access. When SOCKS carries
 a hostname, Engine uses gateway DNS; a destination already resolved to an IP is not converted back.

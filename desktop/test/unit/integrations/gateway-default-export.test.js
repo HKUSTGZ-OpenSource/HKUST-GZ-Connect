@@ -18,6 +18,10 @@ test('explicit gateway-default forwards unmatched domains without website-specif
   const exported = buildGenericExport({ ...input, routingMode: 'gateway-default' });
   try {
     const parsed = yaml.load(exported.payload.toString());
+    assert.equal(parsed['mixed-port'], 7890);
+    assert.equal(parsed['allow-lan'], false);
+    assert.equal(parsed['bind-address'], '127.0.0.1');
+    assert.equal(parsed.mode, 'rule');
     assert.equal(parsed.rules.at(-1), `MATCH,${parsed.proxies[0].name}`);
     assert.equal(parsed.rules[0], 'DOMAIN,vpn.example.edu,DIRECT');
     assert.ok(parsed.rules.includes('DOMAIN,direct.example.edu,DIRECT'));
