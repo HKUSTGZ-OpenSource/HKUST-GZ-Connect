@@ -43,6 +43,7 @@ modules:
   - id: desktop-connection
     paths: [desktop/lib/connection/**]
     publicEntrypoints:
+      - desktop/lib/connection/engine/engine-process.js
       - desktop/lib/connection/engine/engine-connection-runtime.js
       - desktop/lib/connection/state/connection-state-machine.js
     allowedDependencies: [desktop-profiles, desktop-platform, desktop-diagnostics]

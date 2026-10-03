@@ -8,14 +8,8 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const { desktopRuntimeComposition } = require('./lib/app/desktop-runtime-composition');
 const { ActiveContextLease, assertActiveContextSwitchStartupClear, createLegacyRuntimeStoragePaths, createMainProfileSwitchComposition, createMultiSchoolStartupInitializer, createPageFavoriteController, customGatewayProductAvailability, DesktopPersistenceRuntime, DesktopStartupRuntime, ProfileWorkspaceStartupRuntime, relaunchAfterPersistenceMigration, ResourceLibraryRuntime, resolveUserDataOverride, selectProfileWorkspacePreReadyStorage, writePersistenceE2EMarker, writeProfileSwitchE2EMarker } = desktopRuntimeComposition;
-const { AuthChallengeCoordinator, EngineControlRegistry } = require('./lib/connection/engine/engine-control-suite');
-const { EngineTerminationCoordinator } = require('./lib/connection/engine/engine-connection-runtime');
 const { DesktopShell } = require('./lib/platform/shell/desktop-shell');
-const { SYNTHETIC_ENGINE_E2E_ENV, EngineAttemptCoordinator, resolveGatewayProbeLaunch, resolveNativeResourcePath } = require('./lib/connection/engine/engine-process');
-const {
-  EngineSupervisor,
-  cleanupOrphanedEngine,
-} = require('./lib/connection/engine/engine-supervisor');
+const { SYNTHETIC_ENGINE_E2E_ENV, createEngineApplicationRuntime, resolveGatewayProbeLaunch, resolveNativeResourcePath } = require('./lib/connection/engine/engine-process');
 const { ConnectionTelemetryCoordinator } = require('./lib/connection/telemetry/connection-telemetry-coordinator');
 const { DomainRoutePolicyStore } = require('./lib/routing/policy/domain-route-policy');
 const { MyPortalDataRuntime, hkustMyPortalSources, pacDataUrl } = require('./lib/browser/session/browser-session-manager');
@@ -174,14 +168,14 @@ let state = {
 };
 function statusSnapshot() { return projectConnectionStatus(state, connectionState.presentation(), connectedAt); }
 function reportLogFailure() { if (!state.diagnosticNotice) { state.diagnosticNotice = t('error.logUnavailable'); emit(); } }
-const authChallengeCoordinator = new AuthChallengeCoordinator({
+const engineApplication = createEngineApplicationRuntime({ spawnProcess: spawn, authChallenge: {
   isContextCurrent: (token) => activeContextLease.isContextCurrent(token),
   publish: (challenge) => {
     desktopShell?.send('auth-challenge', challenge);
   },
-});
-const engineControlRegistry = new EngineControlRegistry({ authChallenges: authChallengeCoordinator });
-const engineSupervisor = new EngineSupervisor({ spawnProcess: spawn });
+} });
+const { authChallenges: authChallengeCoordinator, controlRegistry: engineControlRegistry,
+  supervisor: engineSupervisor } = engineApplication;
 const activeEngineContextCurrent = (generation, token) => engineSupervisor.isCurrent(generation) &&
   activeContextLease.isCurrent(token, { connectionIntent: connectionState.snapshot().intent, engineGeneration: generation });
 const routingPolicyTransactions = new RoutingPolicyTransactionQueue({ isContextCurrent: (token) => activeContextLease.isContextCurrent(token) });
@@ -310,7 +304,7 @@ function emit() {
 // The gateway permits one session per account. Stop an orphaned independent
 // engine before starting the new owned child.
 function killStrayEngines(resolvedEnginePath) {
-  return cleanupOrphanedEngine({ platform: process.platform,
+  return engineApplication.cleanupOrphaned({ platform: process.platform,
     executablePath: resolvedEnginePath, ownerFile: ENGINE_OWNER });
 }
 
@@ -361,11 +355,10 @@ const connectionOperations = new ConnectionOperationCoordinator({
 async function connect(isRetry = false, expectedIntent = null) {
   return connectionOperations.connect(isRetry, expectedIntent);
 }
-const engineTermination = new EngineTerminationCoordinator({
-  isGenerationCurrent: generation => engineSupervisor.isCurrent(generation), connectionState,
-  scheduleRetry: (generation, delay, callback) => engineSupervisor.schedule(generation, delay, callback),
+const engineTermination = engineApplication.createTermination({
+  connectionState,
   getPresentation: () => state, getConnectedAt: () => connectedAt, getTranslator: () => t,
-  now: () => Date.now(), clearControl: clearActiveEngineControl,
+  now: () => Date.now(),
   cleanupProxyAccess: DesktopPersistenceRuntime.cleanupProxyAccessForEngineClose,
   clearCredential: clearActiveProxyCredential, removeSidecar: removeExternalProxySidecar,
   suspendBrowser: suspendOpenBrowserPolicy, clearPresentation: clearConnectionPresentation,
@@ -374,8 +367,8 @@ const engineTermination = new EngineTerminationCoordinator({
 function handleEngineClose(...args) { return engineTermination.close(...args); }
 function revokeEngineServing(...args) { return engineTermination.revokeServing(...args); }
 function handleEngineExitBoundary(...args) { return engineTermination.exit(...args); }
-const engineAttempts = new EngineAttemptCoordinator({
-  engineSupervisor, connectionState, appIsPackaged: app.isPackaged, baseDirectory: __dirname,
+const engineAttempts = engineApplication.createAttempt({
+  connectionState, appIsPackaged: app.isPackaged, baseDirectory: __dirname,
   getState: () => state, getTranslator: () => t, getLogWriter: () => logWriter,
   isCredentialTransactionBlocked: () => persistenceRuntime.isCredentialTransactionBlocked(),
   retryCredentialTransactionRecovery: () => persistenceRuntime.retryCredentialTransactionRecovery(),
@@ -397,7 +390,7 @@ const engineAttempts = new EngineAttemptCoordinator({
   hasStableProxyCredential: () => proxyAccess.hasStable(), proxyCredentialFile: PROXY_CREDENTIAL,
   setActiveProxyCredential: value => proxyAccess.setActive(value), engineOwnerFile: ENGINE_OWNER,
   activeEngineContextCurrent, getBrowser: () => campusBrowserManager, revokeEngineServing,
-  handleEngineExitBoundary, handleEngineClose, controlRegistry: engineControlRegistry,
+  handleEngineExitBoundary, handleEngineClose,
   contextLease: { capture: options => activeContextLease.capture(options) },
   onFirstConnected: (generation, token) => { connectedAt = Date.now(); telemetryCoordinator.start(generation, token); },
 });

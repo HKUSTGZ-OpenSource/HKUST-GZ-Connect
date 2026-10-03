@@ -258,6 +258,11 @@ startup module. Obsolete composition bindings retire; Main falls to 730 lines wh
 24 direct/170 transitive dependencies remain. Exact downward budgets and three private-edge
 retirements are enforced; final 500–700/20 composition is still outstanding.
 
+The proposed [Engine application assembly](desktop-engine-application-composition.md) constructs
+the existing process/control owners through one Connection entrypoint and preserves their shared
+identity. Main falls to 723 lines/21 direct imports with no new production node, while three
+private-edge exceptions retire. The final 500–700/20 target and full dependency enforcement remain open.
+
 Move remaining settings-surface coordination, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 

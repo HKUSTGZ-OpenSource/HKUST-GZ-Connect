@@ -398,7 +398,8 @@ function assertPrivateEngineProfileBinding(main, readPackagedSource) {
     throw new Error('packaged Desktop does not enforce private Engine profile binding');
   };
   let owner = main;
-  if (/new EngineAttemptCoordinator\(/u.test(main)) {
+  const assembled = /engineApplication\.createAttempt\(/u.test(main);
+  if (assembled || /new EngineAttemptCoordinator\(/u.test(main)) {
     if (!main.includes("require('./lib/connection/engine/engine-process')") ||
         !/verifyEngineLaunchBinding:\s*\(\)\s*=>\s*activeSchoolProfile\.verifyEngineLaunchBinding\(\)/u.test(main)) fail();
     try {
@@ -407,6 +408,8 @@ function assertPrivateEngineProfileBinding(main, readPackagedSource) {
       fail();
     }
     if (typeof owner !== 'string' || !owner.includes('class EngineAttemptCoordinator')) fail();
+    if (assembled && (!/const engineApplication = createEngineApplicationRuntime\(/u.test(main) ||
+        !/createAttempt: options => new EngineAttemptCoordinator\(\{\s*\.\.\.options, engineSupervisor: supervisor, controlRegistry,/u.test(owner))) fail();
     const binding = owner.indexOf('engineConfigBinding = this.profile.verifyEngineLaunchBinding();');
     const credential = owner.indexOf('const credentialOwner = this.openCredential(');
     const spawn = owner.indexOf('const started = this.engineSupervisor.start(');

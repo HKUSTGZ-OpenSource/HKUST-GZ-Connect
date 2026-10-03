@@ -116,6 +116,9 @@ test('delegated binding rejects missing owner injection, argv digest, frame and 
   const main = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
   const owner = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
   const changes = [
+    [main.replace('const engineApplication = createEngineApplicationRuntime(', 'const engineApplication = unreviewedRuntime('), owner],
+    [main, owner.replace('createAttempt: options => new EngineAttemptCoordinator(', 'createAttempt: options => unreviewedAttempt(')],
+    [main, owner.replace('...options, engineSupervisor: supervisor, controlRegistry,', '...options, engineSupervisor: unownedSupervisor, controlRegistry,')],
     [main.replace("require('./lib/connection/engine/engine-process')", "require('./unreviewed-owner')"), owner],
     [main.replace('verifyEngineLaunchBinding: () => activeSchoolProfile.verifyEngineLaunchBinding()', 'verifyEngineLaunchBinding: () => null'), owner],
     [main, owner.replace('class EngineAttemptCoordinator', 'class UnreviewedOwner')],

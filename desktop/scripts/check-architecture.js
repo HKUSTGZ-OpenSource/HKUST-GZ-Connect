@@ -15,7 +15,7 @@ const RENDERER_SHARED_SOURCES = Object.freeze([
 const BASELINE = Object.freeze({
   // Reviewed Main owner extractions retire direct imports; do not regrow them
   // behind facade bindings. The ready-startup slice adds no production module.
-  mainDirectDependencies: 24,
+  mainDirectDependencies: 21,
   // The cross-platform network-environment domain now owns one additional
   // HTTPS-only public-egress leaf. Main gained no direct dependency or lines.
   // Card Board adds one isolated App composition and four bounded layout
@@ -25,7 +25,7 @@ const BASELINE = Object.freeze({
   mainTransitiveDependencies: 170,
   // Startup ordering now lives in the existing App startup owner. Further work
   // must extract responsibilities rather than rebuild that workflow in Main.
-  mainLines: 730,
+  mainLines: 723,
   rendererLines: 562,
   campusBrowserLines: 1476,
   browserTabOwnerLines: 600,
@@ -36,7 +36,7 @@ const BASELINE = Object.freeze({
   runtimeCompositionExports: 1,
   runtimeCompositionMembers: 16,
   mainCompositionBindings: 16,
-  mainEffectiveDirectDependencies: 39,
+  mainEffectiveDirectDependencies: 36,
 });
 
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'release']);

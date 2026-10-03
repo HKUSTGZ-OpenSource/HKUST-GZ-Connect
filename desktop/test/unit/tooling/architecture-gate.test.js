@@ -202,11 +202,11 @@ test('current production graph has no cycle and stays within debt growth caps', 
 });
 
 test('Main startup and App composition budgets ratchet to the current owned root', () => {
-  assert.equal(BASELINE.mainLines, 730);
-  assert.equal(BASELINE.mainDirectDependencies, 24);
-  assert.equal(BASELINE.mainEffectiveDirectDependencies, 39);
+  assert.equal(BASELINE.mainLines, 723);
+  assert.equal(BASELINE.mainDirectDependencies, 21);
+  assert.equal(BASELINE.mainEffectiveDirectDependencies, 36);
   assert.equal(BASELINE.runtimeCompositionMembers, 16);
-  assert.ok(architectureErrors({ cycles: [], mainLines: 731 })
+  assert.ok(architectureErrors({ cycles: [], mainLines: 724 })
     .some(error => error.includes('mainLines')));
 });
 
