@@ -9,6 +9,9 @@ const { CustomGatewayConfirmationOwner } = require('../../../lib/profiles/onboar
 const { CustomProfileProvisioningRuntime } = require('../../../lib/profiles/provisioning/custom-profile-provisioning-runtime');
 const { CustomSchoolProfileRegistry } = require('../../../lib/profiles/registry/custom-school-profile-registry');
 const { PROTOCOL_FAMILY } = require('../../../lib/profiles/schema/school-profile-schema');
+const { createPrivateStorageEffects } = require('../../../lib/platform/storage/private-file');
+
+const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
 
 function root(t) {
   const value = fs.mkdtempSync(path.join(os.tmpdir(), 'custom-school-registry-'));
@@ -48,6 +51,7 @@ function provision(userData) {
   let provisionSeed = 50;
   return new CustomProfileProvisioningRuntime({
     userData,
+    profileStorageEffects,
     randomBytes: (length) => Buffer.alloc(length, ++provisionSeed),
     now: () => 1_800_000_000_100,
   }).begin(confirmation);
@@ -56,7 +60,7 @@ function provision(userData) {
 test('registry verifies one inactive custom Profile authority and exposes only a sanitized view', (t) => {
   const userData = root(t);
   const provisioned = provision(userData);
-  const registry = new CustomSchoolProfileRegistry({ userData }).load();
+  const registry = new CustomSchoolProfileRegistry({ userData, profileStorageEffects }).load();
   const views = registry.listViews({ locale: 'en' });
   assert.equal(views.length, 1);
   assert.equal(views[0].profileId, provisioned.profileId);
@@ -109,7 +113,7 @@ test('registry fails closed on Profile Engine config and index binding drift', (
       value.entries[0].profileId = `custom-${'9'.repeat(32)}`;
       fs.writeFileSync(file, `${JSON.stringify(value)}\n`, { mode: 0o600 });
     }
-    assert.throws(() => new CustomSchoolProfileRegistry({ userData }).load(),
+    assert.throws(() => new CustomSchoolProfileRegistry({ userData, profileStorageEffects }).load(),
       /does not match|binding|active workspace/u, target);
   }
 });
@@ -117,7 +121,7 @@ test('registry fails closed on Profile Engine config and index binding drift', (
 test('registry callback is synchronous and nested source data is immutable', (t) => {
   const userData = root(t);
   const provisioned = provision(userData);
-  const registry = new CustomSchoolProfileRegistry({ userData }).load();
+  const registry = new CustomSchoolProfileRegistry({ userData, profileStorageEffects }).load();
   registry.withProfile(provisioned.profileId, (record) => {
     assert.equal(Object.isFrozen(record.sourceDocument.gateway), true);
     assert.throws(() => { record.sourceDocument.gateway.origin = 'https://changed.invalid'; });

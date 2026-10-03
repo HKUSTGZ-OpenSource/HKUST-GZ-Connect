@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
 
@@ -14,15 +15,17 @@ function section(start, end) {
   return source.slice(from, to);
 }
 
-test('pre-ready selection binds every service path before recovery or construction', () => {
+test('pre-ready selection constructs the persistence owner before ordered recovery and validation', () => {
   const legacyCleanup = source.indexOf('fs.unlinkSync(legacyRuntimeStoragePaths.proxyHelperCredential)');
   const profile = source.indexOf('const activeSchoolProfile = createPreReadySchoolProfileController(');
   const selection = source.indexOf('selectProfileWorkspacePreReadyStorage({ userData: DATA, profile })');
   const paths = source.indexOf('const runtimeStoragePaths = preReadyStorage.paths;');
-  const recovery = source.indexOf('recoverCredentialSettingsTransaction(CREDENTIAL_TRANSACTION');
+  const owner = source.indexOf('const persistenceRuntime = new DesktopPersistenceRuntime(');
+  const prepare = source.indexOf('persistenceRuntime.prepareBeforeOwnerOnlyValidation(');
+  const validation = source.indexOf('ensureOwnerOnly(privateFile)', prepare);
   assert.ok(legacyCleanup >= 0 && profile > legacyCleanup && selection > profile &&
-    paths > selection && recovery > paths);
-  assert.match(source, /preReadyStorage\.mode === 'legacy-flat'[\s\S]*recoverCredentialSettingsTransaction/);
+    paths > selection && owner > paths && prepare > owner && validation > prepare);
+  assert.doesNotMatch(source, /recoverCredentialSettingsTransaction|runCredentialSettingsMutation/u);
 });
 
 test('after-ready migration uses the bounded relaunch owner before services can start', () => {
@@ -40,13 +43,14 @@ test('after-ready migration uses the bounded relaunch owner before services can 
 });
 
 test('settings credential IPC and connect use the immutable persistence adapter', () => {
-  const connect = section('async function connectOnce(', '\nfunction ensureEngineStopped()');
+  const connect = attempt;
+  assert.match(source, /engineAttempts\.run\(isRetry, intent\)/u);
+  assert.match(source, /openPersistent: \(\) => persistenceRuntime\.openCredential\(\)/u);
   assert.match(source, /function loadSettings\(\) \{ return persistenceRuntime\.loadSettings\(\); \}/u);
   assert.match(source, /persistenceRuntime\.saveCredential\(pw, username\)/u);
   assert.match(source, /removePassword: \(\) => persistenceRuntime\.clearCredential\(\)/u);
   assert.match(source, /hasAccountIdentity: \(\) => persistenceRuntime\.hasAccountIdentity\(\)/u);
-  assert.match(connect, /const credentialOwner = openVpnCredential\(\{/u);
-  assert.match(connect, /openPersistent: \(\) => persistenceRuntime\.openCredential\(\)/u);
+  assert.match(connect, /const credentialOwner = this\.openCredential\(/u);
   assert.match(connect, /finally \{ credentialOwner\.destroy\(\); \}/u);
   assert.match(connect, /\$\{engineConfigBinding\.stdinFrame\}\\n\$\{username\}\\n\$\{pw\}/u);
   assert.doesNotMatch(connect, /loadPasswordResult\(\)/u);

@@ -1,15 +1,31 @@
 schemaVersion: 2
 status: proposed
 owner: maintainers
-lastVerified: 2026-09-25
+lastVerified: 2026-09-27
 enforcement: path-coverage-and-entrypoint-ownership
 dependencyEnforcement: inventory-only
 
 modules:
+  - id: desktop-main
+    paths: [desktop/main.js]
+    publicEntrypoints: []
+    allowedDependencies:
+      - desktop-app
+      - desktop-connection
+      - desktop-browser
+      - desktop-persistence
+      - desktop-profiles
+      - desktop-resources
+      - desktop-routing
+      - desktop-integrations
+      - desktop-ipc
+      - desktop-platform
+      - desktop-diagnostics
+    risk: critical
+    requiredChecks: [desktop, desktop-electron, architecture, secret-scan, package-verifier]
+
   - id: desktop-app
-    paths:
-      - desktop/main.js
-      - desktop/lib/app/**
+    paths: [desktop/lib/app/**]
     publicEntrypoints:
       - desktop/lib/app/desktop-runtime-composition.js
     allowedDependencies:
@@ -56,6 +72,7 @@ modules:
       - desktop/campus-preload.js
       - desktop/lib/browser/**
     publicEntrypoints:
+      - desktop/lib/browser/certificates/certificate-controller.js
       - desktop/lib/browser/session/campus-browser-manager.js
       - desktop/lib/browser/session/browser-session-manager.js
     allowedDependencies: [desktop-resources, desktop-routing, desktop-profiles, desktop-platform]
@@ -91,6 +108,7 @@ modules:
   - id: desktop-routing
     paths: [desktop/lib/routing/**]
     publicEntrypoints:
+      - desktop/lib/routing/policy/campus-route.js
       - desktop/lib/routing/policy/domain-route-policy.js
       - desktop/lib/routing/rules/routing-policy-transaction.js
     allowedDependencies: [desktop-profiles, desktop-platform]
@@ -111,6 +129,7 @@ modules:
       - desktop/renderer/app.js
       - desktop/renderer/features/campus-data/index.mjs
       - desktop/renderer/features/official-favorites/index.mjs
+      - desktop/renderer/features/update-notices/index.mjs
       - desktop/preload.js
     allowedDependencies: [desktop-renderer]
     risk: high
@@ -120,6 +139,7 @@ modules:
     paths: [desktop/lib/platform/**, desktop/lib/network-environment/**]
     publicEntrypoints:
       - desktop/lib/platform/shell/desktop-shell.js
+      - desktop/lib/platform/storage/private-file.js
       - desktop/lib/network-environment/runtime/network-environment-service.js
     allowedDependencies: [desktop-diagnostics]
     risk: high
@@ -141,6 +161,7 @@ modules:
       - independent/src/gateway_auth.rs
       - independent/src/gateway_connector.rs
       - independent/src/gateway_http.rs
+      - independent/src/gateway_tls.rs
       - independent/src/modern.rs
       - independent/src/special_tls11.rs
     publicEntrypoints:
@@ -170,6 +191,8 @@ modules:
       - independent/src/bin/ec-proxy-command.rs
       - independent/src/bin/ec-gateway-probe.rs
       - independent/src/gateway_probe.rs
+      - independent/src/gateway_probe/**
+      - independent/src/gateway_locator.rs
     publicEntrypoints:
       - independent/src/bin/ec-proxy-command.rs
       - independent/src/bin/ec-gateway-probe.rs

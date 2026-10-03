@@ -1,6 +1,5 @@
-/* Canonical control-window stylesheet.
- * Rules retain their original cascade order; every repeated selector/context/property
- * has one authoritative declaration. Component source layers are compiled here.
+/* Shared control-window stylesheet. Feature-owned views load their scoped sheets
+ * at their explicit owners; shared rules retain their original cascade order.
  */
 
 /* Shared control primitives and views */
@@ -120,6 +119,10 @@ button, input, select, a, code { -webkit-app-region: no-drag; }
 .school-picker .primary { margin-top: 0; width: auto; }
 .gateway-confirmation { color: #41516a; font-size: 11.5px; line-height: 1.45; }
 .gateway-confirmation strong { color: var(--navy); font-size: 12.5px; }
+.gateway-confirmation #customGatewaySummary { white-space: pre-line; overflow-wrap: anywhere; }
+.gateway-confirmation #gatewayObservedFingerprint { display: block; overflow-wrap: anywhere; font-size: 11px; }
+.custom-school-panel .gateway-trust-options { color: var(--muted); font-size: 11px; }
+.custom-school-panel .gateway-trust-options summary { cursor: pointer; padding: 4px 0; }
 .gateway-warning { padding: 8px 9px; border-radius: 9px; color: #725300; background: #fff8df; border: 1px solid #f1dfac; }
 .school-error { min-height: 14px; color: var(--err); font-size: 11px; line-height: 1.35; }
 .integration-hint { margin: 2px 0 10px; }
@@ -1144,162 +1147,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 #power.connection-action { width: 52px; height: 29px; min-width: 52px; min-height: 29px; grid-column: 2; grid-row: 1 / span 2; padding: 2px; }
 #power.connection-action::after { width: 23px; height: 23px; }
 #power.connection-action.on::after { transform: translateX(23px); }
-.connection-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.connection-metric {
-  position: relative;
-  min-height: 96px;
-  padding: 13px 15px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: #fff;
-  box-shadow: var(--shadow-sm);
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.metric-label { color: var(--muted); font-size: 12px; }
-.metric-value { color: var(--navy); font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.metric-value.ip { max-width: 100%; font-size: 17px; overflow: hidden; text-overflow: ellipsis; }
-.metric-value.exit { overflow: hidden; font-size: 14px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
-.metric-hint { color: var(--muted); font-size: 10.5px; }
-.metric-copy { align-self: flex-start; padding: 2px 0; border: 0; color: var(--navy-2); background: transparent; font: inherit; font-size: 11px; cursor: pointer; }
-.latency-sparkline { width: 100%; height: 25px; overflow: visible; }
-.latency-sparkline path { fill: none; stroke: var(--ok); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.latency-metric.is-empty .latency-sparkline { display: none; }
-.network-topology {
-  min-height: 0;
-  padding: 16px;
-  border: 0;
-  border-radius: 0 0 14px 14px;
-  background: #fff;
-  box-shadow: none;
-}
-.network-path-details { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
-.network-path-details > summary {
-  min-height: 56px;
-  padding: 10px 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  color: var(--navy);
-  cursor: pointer;
-  list-style: none;
-}
-.network-path-details > summary::-webkit-details-marker { display: none; }
-.network-path-details > summary > span:first-child { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.network-path-details > summary strong { font-size: 13px; font-weight: 680; }
-.network-path-details > summary small { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.network-path-details[open] > summary { border-bottom: 1px solid var(--line); }
-.network-path-chevron { color: #65768c; transition: transform 180ms cubic-bezier(.2,.8,.2,1); }
-.network-path-details[open] .network-path-chevron { transform: rotate(180deg); }
-.topology-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.topology-heading h2 { margin: 0; color: var(--navy); font-size: 17px; font-weight: 700; }
-.topology-heading p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
-.network-tree { --tree-line: #cbd6e4; --tree-active: #20a66a; margin-top: 10px; }
-.network-tree-compact { display: grid; grid-template-columns: minmax(170px, .72fr) minmax(270px, 1.28fr); align-items: start; }
-.network-tree-root-wrap { position: relative; display: flex; justify-content: stretch; padding-right: 20px; }
-.network-tree-root-wrap::after { content: ""; position: absolute; top: 31px; right: 0; width: 20px; border-top: 2px solid var(--tree-line); }
-.network-tree-node {
-  position: relative;
-  min-width: 0;
-  min-height: 62px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #fff;
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  transition: border-color 180ms cubic-bezier(.2,.8,.2,1), background 180ms cubic-bezier(.2,.8,.2,1), transform 180ms cubic-bezier(.2,.8,.2,1);
-}
-.network-tree-node[data-status="healthy"] { border-color: #bfe4d1; background: #fbfefc; }
-.network-tree-node[data-status="warning"] { border-color: #e7d299; background: #fffdf7; }
-.network-tree-node[data-status="error"] { border-color: #edc8c5; background: #fffafa; }
-.network-tree-node[data-status="inactive"] { background: #f7f9fc; }
-.network-tree-root { width: 100%; border-color: #c8d7e8; background: linear-gradient(145deg, #f9fbff, #fff); }
-.network-tree-service { border-color: #c8e3d6; background: #fbfefc; }
-.network-tree-icon { width: 32px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 9px; color: var(--navy); background: #eaf0f8; font-size: 15px; }
-.network-tree-node > span:last-child, .network-underlay-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.network-tree-node strong, .network-underlay-copy strong {
-  overflow: hidden;
-  color: var(--navy);
-  font-size: 11.5px;
-  font-weight: 680;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.network-tree-node small, .network-underlay-copy small { overflow: hidden; color: var(--muted); font-size: 10.5px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
-.network-underlay-branch { position: relative; min-width: 0; padding: 10px 10px 10px 12px; border: 1px solid #eadcb8; border-radius: 12px; background: #fffdf7; }
-.network-tree-compact > .network-underlay-branch::before { content: ""; position: absolute; top: 30px; left: -20px; width: 20px; border-top: 2px solid var(--tree-line); }
-.network-underlay-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.network-underlay-heading > span { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.network-underlay-heading strong { color: var(--navy); font-size: 11px; }
-.network-underlay-heading small { color: var(--muted); font-size: 10.5px; }
-.network-underlay-options { position: relative; display: grid; gap: 7px; max-height: 254px; margin-top: 9px; padding-left: 20px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
-.network-underlay-options::before { content: ""; position: absolute; top: 0; bottom: 28px; left: 7px; border-left: 2px solid #d7deE8; }
-.network-underlay-interface {
-  position: relative;
-  width: 100%;
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #fff;
-  overflow: hidden;
-  transition: border-color 180ms cubic-bezier(.2,.8,.2,1), background 180ms cubic-bezier(.2,.8,.2,1);
-}
-.network-underlay-interface.active { border-color: #a9dcc4; background: #f8fcfa; }
-.network-interface-heading {
-  min-width: 0;
-  min-height: 42px;
-  padding: 6px 9px;
-  display: grid;
-  grid-template-columns: 29px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-}
-.network-interface-heading > strong { min-width: 0; overflow: hidden; color: var(--navy); font-size: 12px; font-weight: 680; text-overflow: ellipsis; white-space: nowrap; }
-.network-interface-heading .network-tree-icon { width: 29px; height: 29px; font-size: 13px; }
-.network-source-list { min-width: 0; border-top: 1px solid #edf1f6; }
-.network-underlay-source {
-  width: 100%;
-  min-width: 0;
-  min-height: 48px;
-  padding: 6px 9px;
-  border: 0;
-  border-bottom: 1px solid #edf1f6;
-  color: inherit;
-  background: transparent;
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  text-align: left;
-  cursor: pointer;
-  transition: background 150ms cubic-bezier(.2,.8,.2,1);
-}
-.network-underlay-source:last-child { border-bottom: 0; }
-.network-underlay-source:hover:not(:disabled) { background: #f5f8fc; }
-.network-underlay-source:focus-visible { position: relative; z-index: 1; outline: 2px solid var(--navy-2); outline-offset: -2px; }
-.network-underlay-source.active { background: #f0faf5; }
-.network-underlay-source.pending { background: #fff9e9; }
-.network-underlay-source:disabled { cursor: wait; opacity: .7; }
-.network-source-marker { width: 12px; height: 12px; border: 2px solid #aab6c6; border-radius: 50%; }
-.network-underlay-source.active .network-source-marker { border: 4px solid var(--tree-active); }
-.network-underlay-line { position: absolute; top: 50%; left: -21px; width: 21px; border-top: 2px dashed #bdc9d7; transition: border-color 180ms cubic-bezier(.2,.8,.2,1); }
-.network-underlay-interface.active .network-underlay-line { border-top-style: solid; border-color: var(--tree-active); }
-.network-underlay-interface:has(.network-underlay-source.pending) .network-underlay-line { border-color: var(--gold); animation: tree-line-pulse 800ms ease-in-out infinite alternate; }
-@keyframes tree-line-pulse {
-  to { opacity: .35; }
-}
-.network-underlay-badge { padding: 3px 6px; border-radius: 999px; color: #607087; background: #edf1f6; font-size: 10.5px; font-weight: 650; white-space: nowrap; }
-.network-underlay-interface.active .network-underlay-badge { color: #087048; background: #dff5e9; }
-.network-egress-relation { padding: 3px 6px; border-radius: 999px; color: #607087; background: #edf1f6; font-size: 10.5px; font-weight: 650; white-space: nowrap; }
-.network-egress-relation.baseline, .network-egress-relation.same { color: #087048; background: #dff5e9; }
-.network-egress-relation.different { color: #765500; background: #fff2c7; }
-.network-egress-note { margin: 7px 1px 0; color: var(--muted); font-size: 10.5px; line-height: 1.4; }
-.network-underlay-branch .settings-action-status { display: block; min-height: 14px; margin-top: 5px; font-size: 10.5px; }
 .connection-details { padding: 14px 18px; border: 1px solid var(--line); border-radius: 16px; background: #fff; box-shadow: var(--shadow-sm); }
 .connection-details summary { color: var(--navy); font-size: 12.5px; font-weight: 650; cursor: pointer; }
 .connection-detail-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
@@ -1870,16 +1717,7 @@ button.data-row:hover strong { color: var(--navy-2); }
   .sidebar { flex-basis: 64px; }
   .nav { width: 52px; }
   .page { padding: 16px 14px 24px; }
-  .network-tree-compact { grid-template-columns: 1fr; }
-  .network-tree-root-wrap { padding: 0 0 16px; }
-  .network-tree-root-wrap::after { top: auto; right: auto; bottom: 0; left: 24px; width: 0; height: 16px; border-top: 0; border-left: 2px solid var(--tree-line); }
-  .network-tree-compact > .network-underlay-branch::before { top: -16px; left: 24px; width: 0; height: 16px; border-top: 0; border-left: 2px solid var(--tree-line); }
   .connection-detail-grid { grid-template-columns: 1fr; }
-  .page[data-page="connect"] .connection-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .page[data-page="connect"] .connection-metric { min-width: 0; }
-  .page[data-page="connect"] .exit-metric { grid-column: 1 / -1; }
-  .page[data-page="connect"] .metric-label,
-  .page[data-page="connect"] .metric-hint { overflow-wrap: anywhere; }
   .category-stack-grid[data-stack-columns="1"] .category-site-list { column-gap: 10px; }
   .notification-backdrop { left: 64px; }
   .notification-drawer { width: calc(100vw - 64px); }
@@ -1943,24 +1781,6 @@ button.data-row:hover strong { color: var(--navy-2); }
   .page[data-page="connect"] { padding-top: 12px; gap: 12px; }
   .page[data-page="connect"] .hero-card { min-height: 108px; padding: 15px 16px; }
   .connection-primary { gap: 10px; }
-  .connection-metric { min-height: 86px; padding: 11px 12px; }
-  .metric-value { font-size: 19px; }
-  .metric-value.ip { font-size: 15px; }
-  .network-topology { padding: 14px 12px; }
-  .topology-heading h2 { font-size: 15px; }
-  .topology-heading p { font-size: 10.5px; }
-  .network-tree-node { min-height: 54px; padding: 8px 9px; }
-  .network-tree-root-wrap { padding-bottom: 12px; }
-  .network-tree-root-wrap::after { height: 12px; }
-  .network-tree-compact > .network-underlay-branch::before { top: -12px; height: 12px; }
-  .network-underlay-branch { padding: 9px; }
-  .network-underlay-options { max-height: 184px; gap: 5px; margin-top: 7px; padding-left: 17px; }
-  .network-underlay-options::before { left: 6px; }
-  .network-underlay-line { left: -18px; width: 18px; }
-  .network-interface-heading { min-height: 39px; grid-template-columns: 27px minmax(0, 1fr) auto; gap: 6px; padding: 5px 7px; }
-  .network-interface-heading .network-tree-icon { width: 27px; height: 27px; }
-  .network-underlay-source { min-height: 43px; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 6px; padding: 5px 7px; }
-  .network-egress-relation { padding: 1px 5px; font-size: 10px; }
   .category-stack-tabs { padding: 0 4px; }
   .category-card > header { min-height: 40px; padding: 9px 11px; }
   .category-site-list { padding: 4px 7px 8px; }
@@ -1979,7 +1799,6 @@ button.data-row:hover strong { color: var(--navy-2); }
   .page.active, .category-stack-grid.reordering .category-card, .category-stack-grid.reordering .stacked-category-tab {
     animation: none;
   }
-  .network-underlay-line { animation: none !important; }
-  .notification-drawer, .notification-backdrop, .stacked-category-tab, .network-tree-node, .network-underlay-interface, .network-underlay-source, .network-underlay-line { transition: none; }
+  .notification-drawer, .notification-backdrop, .stacked-category-tab { transition: none; }
   .module-state.is-loading .module-state-mark { animation: none; }
 }

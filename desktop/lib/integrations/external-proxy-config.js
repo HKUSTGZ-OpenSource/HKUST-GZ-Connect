@@ -1,15 +1,8 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const fs = require('node:fs');
 const path = require('node:path');
-const { atomicWritePrivateFile } = require('../platform/storage/atomic-private-file');
-const { ensureOwnerOnly, readPrivateFileBounded } = require('../platform/storage/private-file');
 const { validateProfileId } = require('../profiles/schema/school-profile-schema');
-const {
-  protectWindowsFileOwnerOnly,
-  verifyWindowsFileOwnerOnly,
-} = require('../platform/storage/windows-private-file');
 
 const LOOPBACK_HOST = '127.0.0.1';
 const MAX_PROXY_SIDECAR_BYTES = 1024;
@@ -46,13 +39,11 @@ function sidecarContents(port, credential, profileId = null) {
   );
 }
 
-function existingSidecarMatches(filePath, expected, { platform, fileSystem } = {}) {
+function existingSidecarMatches(filePath, expected, privateStorageEffects) {
   let existing = null;
   try {
-    existing = readPrivateFileBounded(filePath, {
+    existing = privateStorageEffects.readPrivateFileBounded(filePath, {
       maxBytes: MAX_PROXY_SIDECAR_BYTES,
-      platform,
-      fileSystem,
     }).data;
     return existing.length === expected.length && crypto.timingSafeEqual(existing, expected);
   } catch {
@@ -67,22 +58,27 @@ function ensureProxyCredentialSidecar({
   port,
   credential,
   profileId = null,
-  platform = process.platform,
-  fileSystem,
-  windowsAcl = {
-    protect: protectWindowsFileOwnerOnly,
-    verify: verifyWindowsFileOwnerOnly,
-  },
+  privateStorageEffects,
 } = {}) {
   if (typeof filePath !== 'string' || !filePath) {
     throw new TypeError('proxy credential sidecar path is invalid');
   }
+  const { fileSystem, platform, windowsAcl } = privateStorageEffects || {};
+  if (!fileSystem || typeof fileSystem.unlinkSync !== 'function' ||
+      !['darwin', 'linux', 'win32'].includes(platform) ||
+      typeof privateStorageEffects.readPrivateFileBounded !== 'function' ||
+      typeof privateStorageEffects.atomicWritePrivateFile !== 'function' ||
+      typeof privateStorageEffects.ensureOwnerOnly !== 'function' ||
+      (platform === 'win32' && (typeof windowsAcl?.protect !== 'function' ||
+        typeof windowsAcl?.verify !== 'function'))) {
+    throw new TypeError('proxy credential sidecar storage effects are invalid');
+  }
   const contents = sidecarContents(port, credential, profileId);
   try {
-    if (existingSidecarMatches(filePath, contents, { platform, fileSystem })) {
+    if (existingSidecarMatches(filePath, contents, privateStorageEffects)) {
       if (platform === 'win32' &&
           (!windowsAcl?.protect?.(filePath) || !windowsAcl?.verify?.(filePath))) {
-        try { (fileSystem || fs).unlinkSync(filePath); } catch {}
+        try { fileSystem.unlinkSync(filePath); } catch {}
         throw new Error('could not verify proxy helper credential ACL');
       }
       return { ok: true, changed: false, filePath };
@@ -92,12 +88,12 @@ function ensureProxyCredentialSidecar({
       verifyCommitted: (committed) => windowsAcl?.verify?.(committed) === true,
       removeCommittedOnFailure: true,
     } : {};
-    if (!atomicWritePrivateFile(filePath, contents, fileSystem, writeOptions)) {
-      try { (fileSystem || fs).unlinkSync(filePath); } catch {}
+    if (!privateStorageEffects.atomicWritePrivateFile(filePath, contents, writeOptions)) {
+      try { fileSystem.unlinkSync(filePath); } catch {}
       throw new Error('could not write proxy helper credential');
     }
-    if (platform !== 'win32' && !ensureOwnerOnly(filePath)) {
-      try { (fileSystem || fs).unlinkSync(filePath); } catch {}
+    if (platform !== 'win32' && !privateStorageEffects.ensureOwnerOnly(filePath)) {
+      try { fileSystem.unlinkSync(filePath); } catch {}
       throw new Error('could not protect proxy helper credential');
     }
     return { ok: true, changed: true, filePath };

@@ -15,7 +15,9 @@ const {
 } = require('../../../build/afterPack');
 const {
   TEST_ONLY_ENGINE_MARKER,
+  REQUIRED_CONNECTION_OVERVIEW_ENTRIES,
   archiveEntryPath,
+  assertPrivateEngineProfileBinding,
   assertMacDylibDependenciesAllowed,
   assertMacSystemOnlyDylibs,
   assertCustomResourceManager,
@@ -24,9 +26,74 @@ const {
   assertNoTestOnlyEngineMarker,
   assertNoTestOnlyNativeResources,
   assertNoTestOnlyPackageEntries,
+  assertRequiredPackageEntries,
+  assertConnectionOverviewPackageEntries,
+  assertConnectionOverviewNativeFeature,
   parseMachODylibDependencies,
   resolveResourcesDirectory,
 } = require('../../../build/verify-package');
+
+test('package verifier requires both native Connection Overview assets and rejects the legacy script', () => {
+  const verifierSource = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'build', 'verify-package.js'), 'utf8');
+  assert.match(verifierSource, /assertConnectionOverviewPackageEntries\(entries\)/u);
+  assert.deepEqual(REQUIRED_CONNECTION_OVERVIEW_ENTRIES, [
+    '/renderer/features/connection-overview/index.mjs',
+    '/renderer/features/connection-overview/view.css',
+  ]);
+  assert.doesNotThrow(() => assertConnectionOverviewPackageEntries(new Set(REQUIRED_CONNECTION_OVERVIEW_ENTRIES)));
+  for (const missing of REQUIRED_CONNECTION_OVERVIEW_ENTRIES) {
+    const entries = new Set(REQUIRED_CONNECTION_OVERVIEW_ENTRIES.filter(entry => entry !== missing));
+    entries.add('/renderer/connection-overview.js');
+    assert.throws(() => assertConnectionOverviewPackageEntries(entries), /missing required packaged file:/u, missing);
+  }
+  assert.throws(() => assertConnectionOverviewPackageEntries(new Set([
+    ...REQUIRED_CONNECTION_OVERVIEW_ENTRIES,
+    '/renderer/connection-overview.js',
+  ])), /legacy Renderer connection-overview script entered the package/u);
+});
+
+test('package verifier checks Connection Overview native host registration and app mount', () => {
+  const rendererRoot = path.join(__dirname, '..', '..', '..', 'renderer');
+  const verifierSource = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'build', 'verify-package.js'), 'utf8');
+  const appSource = fs.readFileSync(path.join(rendererRoot, 'app.js'), 'utf8');
+  const hostSource = fs.readFileSync(path.join(rendererRoot, 'features', 'feature-host', 'index.mjs'), 'utf8');
+  assert.match(verifierSource, /assertConnectionOverviewNativeFeature\(packagedRenderer,\s*packagedFeatureHost\)/u);
+  assert.doesNotThrow(() => assertConnectionOverviewNativeFeature(appSource, hostSource));
+
+  const rejectedSources = [
+    [appSource.replace("import { createRendererFeatures } from './features/feature-host/index.mjs';", ''), hostSource],
+    [appSource.replace("rendererFeatures.mount('connection-overview',", "rendererFeatures.mount('other-feature',"), hostSource],
+    [appSource, hostSource.replace("import { create as createConnectionOverview } from '../connection-overview/index.mjs';", '')],
+    [appSource, hostSource.replace("Object.freeze({ id: 'connection-overview', create: createConnectionOverview })", "Object.freeze({ id: 'other-feature', create: createConnectionOverview })")],
+    [appSource, hostSource.replace("Object.freeze({ id: 'connection-overview', create: createConnectionOverview })", "Object.freeze({ id: 'connection-overview', create: createOtherFeature })")],
+  ];
+  for (const [app, host] of rejectedSources) {
+    assert.throws(() => assertConnectionOverviewNativeFeature(app, host), /native Connection Overview feature/u);
+  }
+});
+
+test('package verifier requires the update notice ESM entry in the ASAR', () => {
+  const verifierSource = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'build', 'verify-package.js'), 'utf8');
+  assert.match(verifierSource,
+    /const requiredEntries = \[[\s\S]*?'\/renderer\/features\/update-notices\/index\.mjs'/u);
+  assert.match(verifierSource, /assertRequiredPackageEntries\(entries, requiredEntries\)/u);
+  const required = ['/renderer/features/update-notices/index.mjs'];
+  assert.doesNotThrow(() => assertRequiredPackageEntries(new Set(required), required));
+  assert.throws(() => assertRequiredPackageEntries(new Set(), required),
+    /missing required packaged file: \/renderer\/features\/update-notices\/index\.mjs/u);
+});
+
+test('package verifier requires the native notification owner and rejects retired globals', () => {
+  const verifierSource = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'build', 'verify-package.js'), 'utf8');
+  assert.match(verifierSource,
+    /const requiredEntries = \[[\s\S]*?'\/renderer\/features\/notifications\/index\.mjs'/u);
+  assert.match(verifierSource, /retired notification globals entered the package/u);
+  assert.doesNotMatch(verifierSource, /'\/renderer\/notification-(?:view|drawer)\.js',/u);
+  const required = ['/renderer/features/notifications/index.mjs'];
+  assert.doesNotThrow(() => assertRequiredPackageEntries(new Set(required), required));
+  assert.throws(() => assertRequiredPackageEntries(new Set(), required),
+    /missing required packaged file: \/renderer\/features\/notifications\/index\.mjs/u);
+});
 
 test('ASAR entry paths use the packaging host separator at every nesting level', () => {
   const entry = 'assets/profiles/hkustgz/school-profile.json';
@@ -35,6 +102,40 @@ test('ASAR entry paths use the packaging host separator at every nesting level',
     archiveEntryPath(entry, path.win32),
     'assets\\profiles\\hkustgz\\school-profile.json',
   );
+});
+
+test('profile binding verifier follows the packaged attempt owner and its Main injection', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
+  const owner = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
+  assert.doesNotThrow(() => assertPrivateEngineProfileBinding(main, entry => {
+    assert.equal(entry, 'lib/connection/engine/engine-process.js'); return owner;
+  }));
+});
+
+test('delegated binding rejects missing owner injection, argv digest, frame and ordering', () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
+  const owner = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
+  const changes = [
+    [main.replace("require('./lib/connection/engine/engine-process')", "require('./unreviewed-owner')"), owner],
+    [main.replace('verifyEngineLaunchBinding: () => activeSchoolProfile.verifyEngineLaunchBinding()', 'verifyEngineLaunchBinding: () => null'), owner],
+    [main, owner.replace('class EngineAttemptCoordinator', 'class UnreviewedOwner')],
+    [main, owner.replace("'--profile-binding-v1-stdin'", "'--config-sha256'")],
+    [main, owner.replace('${engineConfigBinding.stdinFrame}', '${unboundFrame}')],
+    [main, owner.replace('engineConfigBinding = this.profile.verifyEngineLaunchBinding();', 'engineConfigBinding = unverifiedBinding;')],
+    [main, owner.replace('const credentialOwner = this.openCredential(', 'const anotherOwner = this.openCredential(')],
+    [main, owner.replace('const started = this.engineSupervisor.start(', 'const started = unreviewedStart(')],
+  ];
+  for (const [root, implementation] of changes) {
+    assert.throws(() => assertPrivateEngineProfileBinding(root, () => implementation), /profile binding/u);
+  }
+  assert.throws(() => assertPrivateEngineProfileBinding(main, () => { throw new Error('missing owner'); }), /profile binding/u);
+});
+
+test('legacy inline binding keeps its original required flag and forbidden digest guard', () => {
+  assert.doesNotThrow(() => assertPrivateEngineProfileBinding("'--profile-binding-v1-stdin'", () => assert.fail('no delegated owner')));
+  for (const main of ['', "'--profile-binding-v1-stdin' '--config-sha256'"]) {
+    assert.throws(() => assertPrivateEngineProfileBinding(main, () => ''), /profile binding/u);
+  }
 });
 
 test('packaging maps each target to its required engine name', () => {

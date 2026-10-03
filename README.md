@@ -101,6 +101,18 @@ AppImage 是独立文件，下载新版后请用它替换旧 AppImage；应用�
 如果校园 DNS 的 UDP 响应被截断，应用会在同一校园 DNS 上自动改用隧道内 TCP，
 不会回退到公共或系统 DNS。
 
+## 开发版本：其他 EasyConnect 网关
+
+以下改动尚未进入已发布的 2.0.3 安装包。在登录页选择“其他学校”后，可填写
+`主机:端口`、HTTPS 网关地址，或只用于跳转的 HTTP/HTTPS 入口。应用先检查入口，
+显示最终 HTTPS 网关；只有确认并切换到独立配置后，才向该网关提交登录凭据。
+
+自签名网关通常不需要手填指纹：应用自动获取证书，并显示“首次信任并添加”。
+确认目标网关后，证书会在本机保存并自动比对；证书变化后会拒绝连接，不会关闭全局
+证书校验。首次信任本身不能证明服务器身份；管理员提供的指纹仍可在高级选项指定。
+当前生产协议仍是 EasyConnect 密码认证与 Modern L3；验证码、OTP、SSO 和其他 VPN
+协议不能仅凭网关识别成功就视为支持。跳转目标变化时需重新检查并确认。
+
 ## 选择“校园隧道”还是“直连”
 
 校园浏览器会按域名自动选择网络路径：
@@ -317,6 +329,23 @@ DNS supplied by the authenticated school session and sends those queries only
 through the campus tunnel without changing operating-system DNS.
 If a campus DNS UDP response is truncated, the app retries that same campus
 resolver over tunnel TCP and never falls back to a public or system resolver.
+
+## Development builds: other EasyConnect gateways
+
+These changes are not in the published 2.0.3 installers. Select Other School on
+the login page and enter host:port, an HTTPS gateway, or an HTTP/HTTPS redirect
+entry. The app checks and displays the final HTTPS origin before creating and
+switching to an isolated Profile. Credentials are never sent to the entry or
+over HTTP.
+
+For an eligible self-signed gateway, the app observes the certificate and asks
+you to trust it on first use; manual fingerprint entry is normally unnecessary.
+Trust applies only to the confirmed origin and certificate; a changed certificate
+blocks connection without disabling global verification. First-use trust alone
+does not prove server identity. An administrator-provided fingerprint remains
+an optional advanced setting. Production support remains EasyConnect password authentication
+and Modern L3, not arbitrary VPN protocols, CAPTCHA, OTP or SSO. A changed
+redirect target requires another check and confirmation.
 
 ## Campus tunnel or Direct
 

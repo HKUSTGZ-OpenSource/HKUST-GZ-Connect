@@ -23,7 +23,9 @@ final credential/settings snapshot and process spawn.
 Promotion still requires both listener readiness and a connected candidate in the
 same admitted generation. Browser activation must settle before promotion; duplicate
 signals do not repeat activation or telemetry. Stale-context activation completion
-does not publish. Existing connected-but-Browser-degraded behavior is retained.
+does not publish. A separate callback-fence repair also revalidates the promoted
+context/FSM after synchronous notification effects before emitting a degraded notice.
+Existing current-context connected-but-Browser-degraded behavior is retained.
 Typed failure classification consumes the current shared Engine output module, so
 post-v2.0.3 pre-login classification is not replaced by a historical implementation.
 

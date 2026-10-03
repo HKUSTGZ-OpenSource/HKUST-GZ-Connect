@@ -3,8 +3,10 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const util = require('node:util');
+const path = require('node:path');
 const {
   EphemeralProxyCredential,
+  ProxyAccessCoordinator,
   RANDOM_SECRET_BYTES,
   cleanupProxyAccessForEngineClose,
 } = require('../../../../lib/persistence/credentials/proxy-credential');
@@ -118,4 +120,136 @@ test('a stale Engine close cannot remove a newer generation proxy sidecar', () =
   }), true);
   assert.deepEqual(cleared, [32]);
   assert.equal(removals, 1);
+});
+
+function proxyAccessFixture(overrides = {}) {
+  const calls = [];
+  let loaded = 0;
+  const stable = {
+    destroyed: false,
+    copyForEngine() {
+      calls.push('copy');
+      return { username: Buffer.from('A'.repeat(32)), password: Buffer.from('B'.repeat(32)) };
+    },
+    destroy() { this.destroyed = true; calls.push('destroy-stable'); return true; },
+  };
+  const sidecarFile = path.resolve('synthetic-proxy-sidecar');
+  const dependencies = {
+    store: { loadOrCreate: () => { loaded++; calls.push('load'); return stable; } },
+    sidecarFile,
+    fileSystem: { unlinkSync: (file) => { calls.push(['remove', file]); } },
+    currentProfileId: () => 'synthetic-profile',
+    writeSidecar: (options) => { calls.push(['sidecar', options]); return true; },
+    ...overrides,
+  };
+  return { owner: new ProxyAccessCoordinator(dependencies), calls, stable, sidecarFile,
+    loadCount: () => loaded, dependencies };
+}
+
+test('proxy access owns one stable credential and zeroes every copied Engine input', () => {
+  const f = proxyAccessFixture();
+  assert.equal(f.owner.hasStable(), false);
+  const stable = f.owner.ensureSidecar(6180);
+  assert.equal(stable, f.stable);
+  assert.equal(f.owner.ensureSidecar(6180), stable);
+  assert.equal(f.loadCount(), 1);
+  const sidecarCalls = f.calls.filter(value => Array.isArray(value) && value[0] === 'sidecar');
+  assert.equal(sidecarCalls.length, 2);
+  assert.deepEqual(sidecarCalls[0][1], {
+    filePath: f.sidecarFile, port: 6180, credential: f.stable,
+    profileId: 'synthetic-profile',
+  });
+  let copied;
+  f.owner.createEphemeral = ({ credential }) => {
+    copied = credential;
+    return new EphemeralProxyCredential({ credential });
+  };
+  const generation = f.owner.generationCredential(6180);
+  assert.ok(copied.username.every(byte => byte === 0));
+  assert.ok(copied.password.every(byte => byte === 0));
+  assert.equal(generation.bindGeneration(7, 6180), true);
+  assert.equal(generation.stdinSuffix(7), `${'A'.repeat(32)}\n${'B'.repeat(32)}\n`);
+  assert.doesNotMatch(util.inspect(f.owner), /A{32}|B{32}/u);
+  generation.destroy(7);
+});
+
+test('a failed Engine credential constructor still zeroes both copied buffers', () => {
+  const f = proxyAccessFixture();
+  let copied;
+  f.owner.createEphemeral = ({ credential }) => {
+    copied = credential;
+    throw new Error('synthetic injection failure');
+  };
+  assert.throws(() => f.owner.generationCredential(6180), /synthetic injection failure/u);
+  assert.ok(copied.username.every(byte => byte === 0));
+  assert.ok(copied.password.every(byte => byte === 0));
+});
+
+test('store or sidecar failure cannot publish an Engine credential', () => {
+  const unavailable = new Error('synthetic protected store unavailable');
+  let writes = 0;
+  const failedStore = proxyAccessFixture({
+    store: { loadOrCreate: () => { throw unavailable; } },
+    writeSidecar: () => { writes++; },
+  });
+  assert.throws(() => failedStore.owner.generationCredential(6180), error => error === unavailable);
+  assert.equal(writes, 0);
+  assert.equal(failedStore.owner.hasStable(), false);
+
+  const failedSidecar = proxyAccessFixture({
+    writeSidecar: () => { writes++; throw new Error('synthetic private sidecar denied'); },
+  });
+  assert.throws(() => failedSidecar.owner.generationCredential(6180),
+    /synthetic private sidecar denied/u);
+  assert.equal(writes, 1);
+  assert.ok(failedSidecar.owner.hasStable());
+  assert.ok(!failedSidecar.calls.includes('copy'),
+    'Engine secret copy must follow the confirmed private sidecar write');
+  assert.equal(failedSidecar.owner.revoke(), true);
+  assert.ok(failedSidecar.stable.destroyed);
+});
+
+test('proxy access retires only its generation and gates exact Basic challenge', () => {
+  const f = proxyAccessFixture();
+  const active = f.owner.generationCredential(6180);
+  assert.equal(active.bindGeneration(9, 6180), true);
+  f.owner.setActive(active);
+  const info = { isProxy: true, scheme: 'basic', host: '127.0.0.1', port: 6180 };
+  const answers = [];
+  assert.equal(f.owner.matchesProxyChallenge(info, 9), true);
+  assert.equal(f.owner.answerProxyChallenge(info, 9,
+    (username, password) => answers.push([username, password])), true);
+  assert.deepEqual(answers, [[ 'A'.repeat(32), 'B'.repeat(32) ]]);
+  assert.equal(f.owner.clearActive(8), false);
+  assert.equal(f.owner.matchesProxyChallenge(info, 9), true);
+  assert.equal(f.owner.clearActive(9), true);
+  assert.equal(f.owner.matchesProxyChallenge(info, 9), false);
+  assert.equal(f.owner.socksAuthentication(9), null);
+});
+
+test('revocation zeroes both owners even when sidecar removal fails', () => {
+  const denied = new Error('synthetic permission denied');
+  denied.code = 'EPERM';
+  const f = proxyAccessFixture({ fileSystem: { unlinkSync: () => { throw denied; } } });
+  const active = f.owner.generationCredential(6180);
+  assert.equal(active.bindGeneration(11, 6180), true);
+  const borrowed = active.socksAuthentication(11);
+  f.owner.setActive(active);
+  assert.equal(f.owner.revoke(), false);
+  assert.equal(f.owner.hasStable(), false);
+  assert.ok(f.stable.destroyed);
+  assert.ok(borrowed.username.every(byte => byte === 0));
+  assert.ok(borrowed.password.every(byte => byte === 0));
+  assert.equal(f.owner.socksAuthentication(11), null);
+  assert.equal(f.owner.revoke(), false);
+});
+
+test('quit destroys the stable secret and treats absent sidecar as removed', () => {
+  const absent = new Error('synthetic absent');
+  absent.code = 'ENOENT';
+  const f = proxyAccessFixture({ fileSystem: { unlinkSync: () => { throw absent; } } });
+  f.owner.loadStable();
+  assert.equal(f.owner.disposeForQuit(), true);
+  assert.equal(f.owner.hasStable(), false);
+  assert.ok(f.stable.destroyed);
 });

@@ -16,6 +16,9 @@ const {
 const {
   ActiveContextSwitchJournalStore,
 } = require('../../../../lib/switching/active-context/active-context-switch-store');
+const { createPrivateStorageEffects } = require('../../../../lib/platform/storage/private-file');
+
+const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
 
 function key(name, seed) { return `${name}-${String(seed).repeat(32)}`; }
 
@@ -78,6 +81,7 @@ function fixture(t, overrides = {}) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const store = new ActiveContextSwitchJournalStore({
     filePath: path.join(root, 'global', 'active-context-switch.json'),
+    profileStorageEffects,
   });
   let currentReceipt = overrides.currentReceipt || activationState(activation(1), 'before');
   const calls = [];
@@ -175,6 +179,26 @@ test('failed cleanup leaves prepared authority gated and a later recovery resume
   assert.equal(recovered.status, 'activated');
   assert.equal(value.calls.filter(([name]) => name === 'gateBrowser').length, 2);
   assert.equal(value.store.read(), null);
+});
+
+test('unconfirmed Browser close keeps Engine and Profile cleanup behind the Browser barrier', async (t) => {
+  const value = fixture(t, { outcomes: { closeBrowserWorkspace: false } });
+  await assert.rejects(value.coordinator.begin(switchRequest()), (error) => (
+    error.code === 'ACTIVE_CONTEXT_SWITCH_BROWSER_CLOSE_FAILED'
+  ));
+
+  assert.equal(value.store.read().state, 'prepared');
+  assert.deepEqual(value.receipt(), activationState(activation(1), 'before'));
+  assert.deepEqual(value.calls.map(([name]) => name), [
+    'gateBrowser',
+    'validateSource',
+    'cancelContinuations',
+    'closeBrowserWorkspace',
+  ]);
+  assert.equal(value.calls.some(([name]) => name === 'stopEngine'), false);
+  assert.equal(value.calls.some(([name]) => name === 'revokeProxyAccess'), false);
+  assert.equal(value.calls.some(([name]) => name === 'clearServerState'), false);
+  assert.equal(value.calls.some(([name]) => name === 'applyActivation'), false);
 });
 
 test('ready journal recovers both before-activation and after-activation crash points', async (t) => {

@@ -14,6 +14,12 @@ const scriptIndex = file => scriptEntries.findIndex(entry =>
 const css = fs.readFileSync(path.join(rendererDir, 'styles.css'), 'utf8')
   + fs.readFileSync(path.join(rendererDir, 'features/campus-data/view.css'), 'utf8');
 const appJs = fs.readFileSync(path.join(rendererDir, 'app.js'), 'utf8');
+const connectionOverviewJs = fs.readFileSync(
+  path.join(rendererDir, 'features/connection-overview/index.mjs'), 'utf8',
+);
+const updateNoticesJs = fs.readFileSync(
+  path.join(rendererDir, 'features/update-notices/index.mjs'), 'utf8',
+);
 const categoryStacksJs = fs.readFileSync(path.join(rendererDir, 'campus-category-stacks.js'), 'utf8');
 const serviceWorkspaceJs = fs.readFileSync(path.join(rendererDir, 'campus-service-workspace.js'), 'utf8');
 const campusDataModulesJs = fs.readFileSync(path.join(rendererDir, 'features/campus-data/controller.mjs'), 'utf8')
@@ -82,10 +88,36 @@ test('dashboard separates connection, personal Campus Workspace, advanced tower,
 test('Connection keeps student essentials visible and progressively discloses network diagnostics', () => {
   assert.match(html, /id="currentNetworkExit"/u);
   assert.match(html, /id="networkPathDetails"[^>]*class="network-path-details"/u);
+  assert.match(html, /class="connection-layout connection-overview"/u);
   assert.match(html, /data-i18n="connect\.networkPathAction"/u);
   assert.match(html, /data-i18n="stats\.connections">正在使用校园隧道的应用/u);
   assert.match(html, /id="latencyHint"[^>]*data-i18n="connect\.latencyEmpty"/u);
-  assert.match(css, /\.latency-metric\.is-empty \.latency-sparkline\s*\{[^}]*display:\s*none/u);
+  const overviewCss = fs.readFileSync(path.join(rendererDir, 'features/connection-overview/view.css'), 'utf8');
+  assert.match(overviewCss, /:where\(\.connection-overview\) \.latency-metric\.is-empty \.latency-sparkline\s*\{[^}]*display:\s*none/u);
+});
+
+test('connection detail rendering belongs to the existing owner while App retains orchestration', () => {
+  assert.match(appJs, /rendererFeatures\.mount\('connection-overview'/u);
+  assert.match(appJs, /connectionOverviewFeature\?\.renderStatus\(s, t\)/u);
+  assert.match(appJs, /connectionOverviewFeature\?\.renderTelemetry\(tele, t\)/u);
+  assert.doesNotMatch(appJs, /\b(?:connectedAt|durTimer|fmtDur|startDur|stopDur|dnsModeLabel)\b/u,
+    'duration state, ticker and DNS display formatting have one Renderer owner');
+  assert.doesNotMatch(appJs, /\$\('(stDur|stDns|stPing|stConn|appList|appsCard|statGrid|latencyMetric|latencyHint)'\)/u,
+    'connection detail DOM is projected by the existing feature');
+  assert.match(appJs, /if \(typeof s\.locale === 'string'\) applyLocale\(s\.locale\)/u,
+    'effective locale remains app-level orchestration');
+  assert.match(appJs, /\$\('power'\)\.addEventListener\('click'/u,
+    'the connection command remains in App');
+  assert.match(connectionOverviewJs, /power\.classList\.toggle\('on', state\.connected\)/u,
+    'the control card status is projected by the connection owner');
+  assert.match(appJs, /rendererFeatures\.mount\('notifications'/u,
+    'notification content and drawer use one registered owner');
+  assert.match(appJs, /notificationsFeature\.renderStatus\(s\)/u);
+  assert.doesNotMatch(appJs, /window\.(?:notificationView|notificationDrawer)/u);
+  assert.match(appJs, /updateLoginProgress\(s\)/u,
+    'login progression remains in App');
+  assert.match(appJs, /document\.querySelectorAll\('\.nav'\)\.forEach/u,
+    'navigation remains in App');
 });
 
 test('Campus Workspace exposes plain-language actions without a nested surface shell', () => {
@@ -228,8 +260,10 @@ test('control panel has responsive wide and compact layout rules', () => {
 });
 
 test('Control Tower distinguishes a committed save from a failed reconnect', () => {
-  assert.match(appJs, /outcome === 'saved_reconnect_failed'/u);
-  assert.match(appJs, /`\$\{t\('tower\.saved'\)\} · \$\{result\.warning/u);
+  const owner = fs.readFileSync(path.join(rendererDir, 'features/control-tower/index.mjs'), 'utf8');
+  assert.match(appJs, /rendererFeatures\.mount\('control-tower', \{/u);
+  assert.match(owner, /outcome === 'saved_reconnect_failed'/u);
+  assert.match(owner, /`\$\{translate\('tower\.saved'\)\} · \$\{result\.warning/u);
 });
 
 test('Campus Browser chrome keeps the minimum task set and exposes app settings', () => {
@@ -304,7 +338,12 @@ test('connected status remains static instead of continuously repainting Electro
 });
 
 test('update download uses one stable delegated listener', () => {
-  assert.match(appJs, /\$\('updateHint'\)\.addEventListener\('click'/);
-  assert.match(appJs, /event\.target\?\.closest\?\.\('#updateDownload'\)/);
-  assert.doesNotMatch(appJs, /\$\('updateDownload'\)\.addEventListener/);
+  assert.match(appJs, /rendererFeatures\.mount\('update-notices'/u);
+  assert.match(appJs, /if \(page === 'settings'\) updateNoticesFeature\.runCheck\(false\)/u);
+  assert.match(appJs, /updateNoticesFeature\.renderResult\(s\.update\)/u);
+  assert.match(updateNoticesJs, /listen\(hint, onHintClick\)/u);
+  assert.match(updateNoticesJs, /event\.target\?\.closest\?\.\('#updateDownload'\)/u);
+  assert.match(updateNoticesJs, /openExternal\(updateDownloadUrl\)/u);
+  assert.doesNotMatch(appJs, /updateHintTimer|updateDownloadUrl|function renderUpdateResult/u);
+  assert.doesNotMatch(appJs, /\$\('updateDownload'\)\.addEventListener/u);
 });

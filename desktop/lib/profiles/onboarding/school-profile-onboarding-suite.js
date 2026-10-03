@@ -7,6 +7,7 @@ const { SchoolProfileOnboardingCoordinator } = require('./school-profile-onboard
 
 function createSchoolProfileOnboardingRuntime({
   userData,
+  profileStorageEffects,
   executablePath,
   probeLaunch = null,
   spawnProcess,
@@ -32,7 +33,7 @@ function createSchoolProfileOnboardingRuntime({
   return new SchoolProfileOnboardingCoordinator({
     probeRunner,
     confirmationOwner: new CustomGatewayConfirmationOwner(),
-    provisioningRuntime: new CustomProfileProvisioningRuntime({ userData }),
+    provisioningRuntime: new CustomProfileProvisioningRuntime({ userData, profileStorageEffects }),
     getActiveContext,
     listProfiles,
     onDiagnostic,

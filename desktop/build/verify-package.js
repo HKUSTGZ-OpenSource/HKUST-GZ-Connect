@@ -20,6 +20,41 @@ const MARKER_SCAN_CHUNK_BYTES = 64 * 1024;
 const MAC_SYSTEM_DYLIB_PREFIXES = ['/usr/lib/', '/System/Library/'];
 const MAX_PACKAGED_PROFILE_BYTES = 256 * 1024;
 const MAX_PACKAGED_PROFILE_ASSET_BYTES = 4 * 1024 * 1024;
+const REQUIRED_CONNECTION_OVERVIEW_ENTRIES = Object.freeze([
+  '/renderer/features/connection-overview/index.mjs',
+  '/renderer/features/connection-overview/view.css',
+]);
+
+function assertConnectionOverviewPackageEntries(entries) {
+  for (const entry of REQUIRED_CONNECTION_OVERVIEW_ENTRIES) {
+    if (!entries.has(entry)) throw new Error(`missing required packaged file: ${entry}`);
+  }
+  if (entries.has('/renderer/connection-overview.js')) {
+    throw new Error('legacy Renderer connection-overview script entered the package');
+  }
+}
+
+function assertRequiredPackageEntries(entries, requiredEntries) {
+  for (const entry of requiredEntries) {
+    if (!entries.has(entry)) throw new Error(`missing required packaged file: ${entry}`);
+  }
+}
+
+function assertConnectionOverviewNativeFeature(appSource, featureHostSource) {
+  const appImportsHost = appSource.includes(
+    "import { createRendererFeatures } from './features/feature-host/index.mjs';",
+  );
+  const appMountsFeature = appSource.includes("rendererFeatures.mount('connection-overview',");
+  const hostImportsFeature = featureHostSource.includes(
+    "import { create as createConnectionOverview } from '../connection-overview/index.mjs';",
+  );
+  const hostRegistersFeature = featureHostSource.includes(
+    "Object.freeze({ id: 'connection-overview', create: createConnectionOverview })",
+  );
+  if (!(appImportsHost && appMountsFeature && hostImportsFeature && hostRegistersFeature)) {
+    throw new Error('packaged Renderer does not load the native Connection Overview feature');
+  }
+}
 
 function sha256(data) {
   return crypto.createHash('sha256').update(data).digest('hex');
@@ -358,6 +393,30 @@ function assertExactNativeResources(engineDirectory, expectedNames) {
   return actual;
 }
 
+function assertPrivateEngineProfileBinding(main, readPackagedSource) {
+  const fail = () => {
+    throw new Error('packaged Desktop does not enforce private Engine profile binding');
+  };
+  let owner = main;
+  if (/new EngineAttemptCoordinator\(/u.test(main)) {
+    if (!main.includes("require('./lib/connection/engine/engine-process')") ||
+        !/verifyEngineLaunchBinding:\s*\(\)\s*=>\s*activeSchoolProfile\.verifyEngineLaunchBinding\(\)/u.test(main)) fail();
+    try {
+      owner = readPackagedSource('lib/connection/engine/engine-process.js');
+    } catch {
+      fail();
+    }
+    if (typeof owner !== 'string' || !owner.includes('class EngineAttemptCoordinator')) fail();
+    const binding = owner.indexOf('engineConfigBinding = this.profile.verifyEngineLaunchBinding();');
+    const credential = owner.indexOf('const credentialOwner = this.openCredential(');
+    const spawn = owner.indexOf('const started = this.engineSupervisor.start(');
+    const frame = owner.indexOf('${engineConfigBinding.stdinFrame}\\n${username}\\n${pw}');
+    if (!(binding >= 0 && credential > binding && spawn > credential && frame > spawn)) fail();
+  }
+  if (!owner.includes("'--profile-binding-v1-stdin'") ||
+      `${main}\n${owner}`.includes("'--config-sha256'")) fail();
+}
+
 function verifyPackage({ resourcesArgument, platform = process.platform, architecture = process.arch, requireAppleSignature = false }) {
   if (!resourcesArgument) {
     throw new Error('usage: node build/verify-package.js <app-or-resources-dir> [platform] [arch] [--require-apple-signature]');
@@ -416,6 +475,9 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     '/lib/connection/recovery/tunnel-health.js',
     '/lib/platform/update/update-check.js',
     '/renderer/app.js',
+    '/renderer/features/feature-host/index.mjs',
+    '/renderer/features/update-notices/index.mjs',
+    '/renderer/features/notifications/index.mjs',
     '/renderer/features/auth-challenge/index.mjs',
     '/renderer/features/auth-challenge/controller.mjs',
     '/renderer/features/auth-challenge/lifecycle.mjs',
@@ -429,7 +491,6 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     '/renderer/certificate-manager.js',
     '/renderer/group-dialog.js',
     '/renderer/campus-service-workspace.js',
-    '/renderer/notification-view.js',
     '/renderer/browser-data-settings.js',
     '/renderer/proxy-auth-migration.js',
     '/renderer/i18n.js',
@@ -442,8 +503,6 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     '/renderer/campus-workspace-model.js',
     '/renderer/campus-workspace.css',
     '/renderer/campus-category-stacks.js',
-    '/renderer/connection-overview.js',
-    '/renderer/notification-drawer.js',
     '/renderer/styles.css',
     '/lib/browser/workspace/campus-workspace-controller.js',
     '/lib/browser/workspace/campus-workspace-preload.js',
@@ -453,8 +512,11 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     '/assets/profiles/hkustgz/builtin-resources.json',
     '/assets/profiles/hkustgz/builtin-service-desk.json',
   ];
-  for (const entry of requiredEntries) {
-    if (!entries.has(entry)) throw new Error(`missing required packaged file: ${entry}`);
+  assertRequiredPackageEntries(entries, requiredEntries);
+  assertConnectionOverviewPackageEntries(entries);
+  if (entries.has('/renderer/notification-view.js') ||
+      entries.has('/renderer/notification-drawer.js')) {
+    throw new Error('retired notification globals entered the package');
   }
   if (entries.has('/assets/campus-resources.json')) {
     throw new Error('legacy duplicate campus resource asset entered the package');
@@ -477,6 +539,9 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
 
   const packagedIndex = extractArchiveFile(archive, 'renderer/index.html').toString('utf8');
   const packagedRenderer = extractArchiveFile(archive, 'renderer/app.js').toString('utf8');
+  const packagedFeatureHost = extractArchiveFile(archive, 'renderer/features/feature-host/index.mjs')
+    .toString('utf8');
+  assertConnectionOverviewNativeFeature(packagedRenderer, packagedFeatureHost);
   const packagedPreload = extractArchiveFile(archive, 'preload.js').toString('utf8');
   const packagedMain = extractArchiveFile(archive, 'main.js').toString('utf8');
   const packagedControlDataIpc = extractArchiveFile(archive, 'lib/ipc/control-data-ipc.js')
@@ -487,10 +552,8 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     .toString('utf8');
   const packagedServiceWorkspace = extractArchiveFile(archive, 'renderer/campus-service-workspace.js')
     .toString('utf8');
-  if (!packagedMain.includes("'--profile-binding-v1-stdin'") ||
-      packagedMain.includes("'--config-sha256'")) {
-    throw new Error('packaged Desktop does not enforce private Engine profile binding');
-  }
+  assertPrivateEngineProfileBinding(packagedMain,
+    entry => extractArchiveFile(archive, entry).toString('utf8'));
   if (!packagedMain.includes('customGatewayProductAvailability()') ||
       /customGatewayOnboardingEnabled\s*=\s*!app\.isPackaged/u.test(packagedMain)) {
     throw new Error('packaged product does not expose safe Other-school onboarding');
@@ -513,8 +576,8 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
   }
   for (const feature of [
     'routing-manager', 'certificate-manager', 'group-dialog',
-    'proxy-auth-migration', 'notification-view', 'notification-drawer',
-    'connection-overview', 'campus-category-stacks', 'campus-service-workspace',
+    'proxy-auth-migration',
+    'campus-category-stacks', 'campus-service-workspace',
     'browser-data-settings',
   ]) {
     const featureScript = packagedIndex.indexOf(`src="${feature}.js"`);
@@ -619,7 +682,11 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
 
 module.exports = {
   TEST_ONLY_ENGINE_MARKER,
+  REQUIRED_CONNECTION_OVERVIEW_ENTRIES,
   archiveEntryPath,
+  assertConnectionOverviewPackageEntries,
+  assertConnectionOverviewNativeFeature,
+  assertPrivateEngineProfileBinding,
   assertMacDylibDependenciesAllowed,
   assertMacAppIcon,
   assertMacSystemOnlyDylibs,
@@ -631,6 +698,7 @@ module.exports = {
   assertPackagedSchoolProfiles,
   assertNoTestOnlyNativeResources,
   assertNoTestOnlyPackageEntries,
+  assertRequiredPackageEntries,
   parseArguments,
   parseMachODylibDependencies,
   readMacSignature,

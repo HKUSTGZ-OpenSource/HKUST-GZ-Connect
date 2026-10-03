@@ -5,7 +5,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { moduleCoverage, moduleMapErrors, parseModuleMap, sourceInScope } = require('../../scripts/module-map-coverage');
+const {
+  moduleCoverage, moduleEdgeDebtErrors, moduleImportViolations,
+  moduleMapErrors, parseModuleMap, sourceInScope,
+} = require('../../scripts/module-map-coverage');
+const {
+  architectureErrors, architectureSnapshot, moduleEdgeRatchetErrors, relativeRequires,
+} = require('../../scripts/check-architecture');
 
 function fixture() {
   const record = id => ({ id, paths: [`desktop/lib/${id}/**`],
@@ -126,4 +132,131 @@ test('actual repository inventory is covered without treating the dependency inv
   assert.equal(result.owners['desktop/lib/ipc/ipc-handlers.js'], 'desktop-ipc');
   assert.equal(result.owners['independent/src/bin/ec-proxy-command.rs'], 'engine-helpers');
   assert.equal(result.owners['independent/src/bin/ec-auth-fixture.rs'], 'engine-test-support');
+});
+
+test('Main composition has a narrower owner than reusable App modules', () => {
+  const root = path.resolve(__dirname, '../../..');
+  const source = fs.readFileSync(path.join(root, 'docs/architecture/module-map.yml'), 'utf8');
+  const map = parseModuleMap(source);
+  const main = map.modules.find(module => module.id === 'desktop-main');
+  const app = map.modules.find(module => module.id === 'desktop-app');
+  const files = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' }).split('\0').filter(Boolean);
+  const coverage = moduleCoverage(source, files);
+
+  assert.deepEqual(coverage.errors, []);
+  assert.equal(coverage.owners['desktop/main.js'], 'desktop-main');
+  assert.equal(coverage.owners['desktop/lib/app/desktop-runtime-composition.js'], 'desktop-app');
+  assert.deepEqual(main.paths, ['desktop/main.js']);
+  assert.deepEqual(main.publicEntrypoints, [], 'composition root is not imported by another module');
+  assert.deepEqual(app.paths, ['desktop/lib/app/**']);
+  assert.ok(main.allowedDependencies.includes('desktop-ipc'));
+  assert.ok(main.allowedDependencies.includes('desktop-diagnostics'));
+  assert.ok(!app.allowedDependencies.includes('desktop-ipc'));
+  assert.ok(!app.allowedDependencies.includes('desktop-diagnostics'));
+  assert.equal(map.dependencyEnforcement, 'inventory-only',
+    'ownership split must not be misreported as full dependency enforcement');
+});
+
+test('static module imports distinguish undeclared edges from private entrypoints', () => {
+  const f = fixture();
+  f.document.modules[0].allowedDependencies = ['b'];
+  const source = JSON.stringify(f.document);
+  const imports = [
+    ['desktop/lib/a/private.js', 'desktop/lib/b/index.js'],
+    ['desktop/lib/a/private.js', 'desktop/lib/b/private.js'],
+  ];
+  assert.deepEqual(moduleImportViolations(source, imports), {
+    errors: [],
+    violations: ['desktop/lib/a/private.js -> desktop/lib/b/private.js [private-entrypoint]'],
+  });
+  f.document.modules[0].allowedDependencies = [];
+  assert.deepEqual(moduleImportViolations(JSON.stringify(f.document), imports).violations, [
+    'desktop/lib/a/private.js -> desktop/lib/b/index.js [undeclared-dependency]',
+    'desktop/lib/a/private.js -> desktop/lib/b/private.js [undeclared-dependency+private-entrypoint]',
+  ]);
+  assert.ok(moduleImportViolations(source,
+    [['desktop/lib/a/private.js', 'desktop/lib/missing/unsafe.js']]).errors
+    .includes('unowned import target: desktop/lib/missing/unsafe.js'));
+});
+
+test('static relative template specifiers cannot bypass the import graph', () => {
+  assert.deepEqual(relativeRequires([
+    'const owner = require(`../b/private.js`);',
+    'const module = import(`../b/index.js`);',
+    'const dollar = require(`../b/$special.js`);',
+    'const computed = import(`../b/${name}.js`);',
+  ].join('\n')), ['../b/private.js', '../b/index.js', '../b/$special.js']);
+});
+
+test('exact static-edge debt rejects new bypasses and stale exceptions', () => {
+  const old = 'desktop/lib/a/private.js -> desktop/lib/b/private.js [private-entrypoint]';
+  const next = 'desktop/lib/a/index.js -> desktop/lib/b/private.js [private-entrypoint]';
+  const debt = { schemaVersion: 1, baseSha: 'a'.repeat(40), exceptions: [old] };
+  assert.deepEqual(moduleEdgeDebtErrors([old], debt), []);
+  assert.deepEqual(moduleEdgeDebtErrors([old, next], debt), [`new module edge bypass: ${next}`]);
+  assert.deepEqual(moduleEdgeDebtErrors([], debt), [`stale module edge debt: ${old}`]);
+  for (const invalid of [null, { ...debt, exceptions: [old, old] },
+    { ...debt, extra: true }, { ...debt, baseSha: 'short' },
+    { ...debt, exceptions: Array.from({ length: 114 }, (_, index) =>
+      `desktop/lib/a/${index}.js -> desktop/lib/b/private.js [private-entrypoint]`).sort() }]) {
+    assert.deepEqual(moduleEdgeDebtErrors([old], invalid), ['module edge debt manifest is invalid']);
+  }
+});
+
+test('the production architecture gate includes the reviewed static-edge ratchet', () => {
+  const desktopRoot = path.resolve(__dirname, '../..');
+  const snapshot = architectureSnapshot(desktopRoot);
+  assert.deepEqual(snapshot.moduleEdgeRatchetErrors, []);
+  const failure = 'new module edge bypass: desktop/lib/a/x.js -> desktop/lib/b/y.js [private-entrypoint]';
+  assert.ok(architectureErrors({ ...snapshot, moduleEdgeRatchetErrors: [failure] }).includes(failure));
+  const added = new Map([[path.join(desktopRoot, 'lib/app/card-board-main-runtime.js'), [
+    path.join(desktopRoot, 'lib/browser/session/campus-browser.js'),
+  ]]]);
+  assert.ok(moduleEdgeRatchetErrors(desktopRoot, added).some(error =>
+    error.startsWith('new module edge bypass: desktop/lib/app/card-board-main-runtime.js')));
+});
+
+test('the existing campus route module is a declared file-level Routing entrypoint', () => {
+  const root = path.resolve(__dirname, '../../..');
+  const source = fs.readFileSync(path.join(root, 'docs/architecture/module-map.yml'), 'utf8');
+  const routing = parseModuleMap(source).modules.find(module => module.id === 'desktop-routing');
+  const entry = 'desktop/lib/routing/policy/campus-route.js';
+  assert.ok(routing.publicEntrypoints.includes(entry));
+  assert.ok(!routing.publicEntrypoints.includes('desktop/lib/routing/rules/routing-rule-store.js'));
+  assert.ok(!routing.publicEntrypoints.includes('desktop/lib/routing/policy/host-safety.js'));
+  const imports = [
+    ['desktop/lib/browser/session/browser-session-manager.js', entry],
+    ['desktop/lib/browser/session/campus-browser-manager.js', entry],
+    ['desktop/lib/browser/session/campus-browser.js', entry],
+    ['desktop/lib/browser/tabs/tab-manager.js', entry],
+    ['desktop/lib/browser/workspace/campus-workspace-controller.js', entry],
+    ['desktop/lib/integrations/profile-network-rules.js', entry],
+    ['desktop/lib/resources/runtime/campus-resources.js', entry],
+    ['desktop/lib/resources/schema/campus-resource-contract.js', entry],
+  ];
+  assert.equal(imports.length, 8);
+  assert.deepEqual(moduleImportViolations(source, imports), { errors: [], violations: [] });
+  const debt = JSON.parse(fs.readFileSync(path.join(root, 'desktop/scripts/module-edge-debt.json'), 'utf8'));
+  assert.ok(debt.exceptions.every(value => !value.includes(` -> ${entry} [`)));
+});
+
+test('Main certificate dispatch uses the public Browser consent entrypoint', () => {
+  const root = path.resolve(__dirname, '../../..');
+  const source = fs.readFileSync(path.join(root, 'docs/architecture/module-map.yml'), 'utf8');
+  const browser = parseModuleMap(source).modules.find(module => module.id === 'desktop-browser');
+  const entry = 'desktop/lib/browser/certificates/certificate-controller.js';
+  const retired = 'desktop/lib/browser/certificates/certificate-error-boundary.js';
+  assert.ok(browser.publicEntrypoints.includes(entry));
+  assert.ok(!browser.publicEntrypoints.includes(
+    'desktop/lib/browser/certificates/campus-certificate-trust.js'));
+  assert.deepEqual(moduleImportViolations(source, [['desktop/main.js', entry]]),
+    { errors: [], violations: [] });
+  const main = fs.readFileSync(path.join(root, 'desktop/main.js'), 'utf8');
+  assert.match(main, /require\('\.\/lib\/browser\/certificates\/certificate-controller'\)/u);
+  assert.doesNotMatch(main, /certificate-error-boundary/u);
+  assert.doesNotMatch(main, /require\('\.\/lib\/browser\/certificates\/campus-certificate-trust'\)/u);
+  assert.equal(fs.existsSync(path.join(root, retired)), false);
+  const debt = JSON.parse(fs.readFileSync(path.join(root, 'desktop/scripts/module-edge-debt.json'), 'utf8'));
+  assert.ok(debt.exceptions.every(value => !value.includes(` -> ${entry} [`) &&
+    !value.includes(` -> ${retired} [`)));
 });

@@ -12,7 +12,9 @@ pub mod engine;
 pub mod gateway_auth;
 pub mod gateway_connector;
 pub mod gateway_http;
+pub mod gateway_locator;
 pub mod gateway_probe;
+pub mod gateway_tls;
 pub mod modern;
 #[cfg(feature = "compatibility-lab")]
 pub mod probe;

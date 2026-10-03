@@ -19,12 +19,14 @@ const {
 const { createProfileAccountWorkspaceLayout } = require('../../../lib/persistence/paths/profile-workspace-layout');
 const { ReviewedProfileAnchorStore } = require('../../../lib/profiles/registry/reviewed-profile-anchor-store');
 const { createSchoolProfileView, PROTOCOL_FAMILY } = require('../../../lib/profiles/schema/school-profile-schema');
+const { createPrivateStorageEffects } = require('../../../lib/platform/storage/private-file');
 const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../../lib/platform/storage/windows-private-file');
 
 const DESKTOP = path.resolve(__dirname, '..', '..', '..');
 const PROFILE_KEY = `profile-${'11'.repeat(16)}`;
 const ACCOUNT_KEY = `account-${'22'.repeat(16)}`;
 const WORKSPACE_KEY = `workspace-${'33'.repeat(16)}`;
+const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
 
 function root(t) {
   const value = fs.mkdtempSync(path.join(os.tmpdir(), 'profile-candidate-directory-'));
@@ -203,6 +205,7 @@ function provisionCustom(userData) {
   let provisionSeed = 60;
   return new CustomProfileProvisioningRuntime({
     userData,
+    profileStorageEffects,
     randomBytes: (length) => Buffer.alloc(length, ++provisionSeed),
     now: () => 1_800_000_000_100,
   }).begin(confirmation);
@@ -214,8 +217,42 @@ function directory(userData) {
     packageRoot: DESKTOP,
     desktopDir: DESKTOP,
     isPackaged: false,
+    profileStorageEffects,
   });
 }
+
+test('candidate storage effects reject a separately overridden filesystem', (t) => {
+  const userData = root(t);
+  assert.throws(() => new ProfileCandidateDirectory({
+    userData,
+    packageRoot: DESKTOP,
+    desktopDir: DESKTOP,
+    profileStorageEffects,
+    fileSystem: Object.create(fs),
+  }), /does not match/u);
+});
+
+test('an explicitly isolated packaged-only directory reads assets without private storage', (t) => {
+  const userData = root(t);
+  const packagedRegistry = {
+    createView() { throw new Error('there are no persisted anchors'); },
+  };
+  const customRegistry = {
+    reload() { return this; },
+    listViews() { return []; },
+  };
+  const anchorStore = { read: () => ({ entries: [] }) };
+  const candidates = new ProfileCandidateDirectory({
+    userData,
+    packageRoot: DESKTOP,
+    desktopDir: DESKTOP,
+    packagedRegistry,
+    customRegistry,
+    anchorStore,
+  });
+  assert.deepEqual(candidates.listViews(), []);
+  assert.throws(() => candidates.anchorReviewedCurrent({}), /private storage effects are required/u);
+});
 
 test('reviewed anchor and custom index form one restart-safe candidate directory', (t) => {
   const userData = root(t);
@@ -289,7 +326,7 @@ test('reviewed anchor is additive immutable owner-only and link-free', {
   skip: process.platform === 'win32',
 }, (t) => {
   const userData = root(t);
-  const store = new ReviewedProfileAnchorStore({ userData });
+  const store = new ReviewedProfileAnchorStore({ userData, profileStorageEffects });
   const value = {
     profileId: 'hkustgz', profileKey: PROFILE_KEY, accountKey: ACCOUNT_KEY,
     createdAt: 1_700_000_000_000,
@@ -343,6 +380,7 @@ test('second synthetic reviewed Profile switches without inheriting HKUST worksp
     desktopDir: second.desktopDir,
     isPackaged: false,
     packagedRegistry: second.packagedRegistry,
+    profileStorageEffects,
   });
   const hkustRecord = candidates.anchorReviewedCurrent({
     profileId: 'hkustgz', profileKey: PROFILE_KEY, accountKey: ACCOUNT_KEY,
@@ -371,11 +409,12 @@ test('second synthetic reviewed Profile switches without inheriting HKUST worksp
   let active = hkustRecord.context;
   const journalStore = new ActiveContextSwitchJournalStore({
     filePath: path.join(userData, 'global', 'active-context-switch.json'),
+    profileStorageEffects,
   });
   const switching = new ProfileSwitchRuntime({
     directory: candidates,
     journalStore,
-    activationStore: new ActiveContextActivationStore({ userData }),
+    activationStore: new ActiveContextActivationStore({ userData, profileStorageEffects }),
     barrier: new ActiveContextSwitchBarrier({
       invalidateContext: () => {},
       suspendBrowser: async () => {},
@@ -400,7 +439,7 @@ test('second synthetic reviewed Profile switches without inheriting HKUST worksp
     assert.equal(journalStore.read(), null);
   }
   assert.equal(active.profileId, 'hkustgz');
-  assert.equal(new ReviewedProfileAnchorStore({ userData }).read().entries.length, 2);
+  assert.equal(new ReviewedProfileAnchorStore({ userData, profileStorageEffects }).read().entries.length, 2);
   assert.notEqual(hkust.layout.profile.root, example.layout.profile.root);
 });
 
@@ -427,8 +466,9 @@ test('real P4 authority alternates reviewed and custom Profiles without residue'
   let active = reviewed.context;
   const journalStore = new ActiveContextSwitchJournalStore({
     filePath: path.join(userData, 'global', 'active-context-switch.json'),
+    profileStorageEffects,
   });
-  const activationStore = new ActiveContextActivationStore({ userData });
+  const activationStore = new ActiveContextActivationStore({ userData, profileStorageEffects });
   const barrier = new ActiveContextSwitchBarrier({
     invalidateContext: () => {},
     suspendBrowser: async () => {},
@@ -464,5 +504,5 @@ test('real P4 authority alternates reviewed and custom Profiles without residue'
   }
   assert.equal(active.activeContextEpoch, 22);
   assert.equal(candidates.listViews({ locale: 'en' }).length, 2);
-  assert.equal(new ReviewedProfileAnchorStore({ userData }).read().entries.length, 1);
+  assert.equal(new ReviewedProfileAnchorStore({ userData, profileStorageEffects }).read().entries.length, 1);
 });

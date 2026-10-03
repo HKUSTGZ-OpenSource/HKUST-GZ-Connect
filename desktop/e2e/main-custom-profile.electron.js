@@ -9,7 +9,12 @@ const { CustomGatewayConfirmationOwner } = require('../lib/profiles/onboarding/c
 const { CustomProfileProvisioningRuntime } = require('../lib/profiles/provisioning/custom-profile-provisioning-runtime');
 const { PROTOCOL_FAMILY } = require('../lib/profiles/schema/school-profile-schema');
 
-const { ensureOwnerOnly } = require('../lib/platform/storage/private-file');
+const {
+  createPrivateStorageEffects,
+  ensureOwnerOnly,
+} = require('../lib/platform/storage/private-file');
+
+const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
 
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'campus-custom-main-e2e-'));
 fs.chmodSync(userData, 0o700);
@@ -26,9 +31,10 @@ function writeJson(file, value) {
 
 function provision() {
   let seed = 1;
+  const fixtureTimestamp = Date.now();
   const owner = new CustomGatewayConfirmationOwner({
     randomBytes: (length) => Buffer.alloc(length, seed++),
-    now: () => 1_800_000_000_000,
+    now: () => fixtureTimestamp,
     ttlMs: 10_000,
   });
   const active = {
@@ -49,12 +55,25 @@ function provision() {
   let provisionSeed = 80;
   return new CustomProfileProvisioningRuntime({
     userData,
+    profileStorageEffects,
     randomBytes: (length) => Buffer.alloc(length, ++provisionSeed),
-    now: () => 1_800_000_000_100,
+    now: () => fixtureTimestamp,
   }).begin(confirmation);
 }
 
 const custom = provision();
+const syntheticMutationErrors = [];
+for (const [modulePath, className, method] of [
+  ['../lib/persistence/credentials/profile-workspace-credential-store', 'ProfileWorkspaceCredentialStore', 'replace'],
+  ['../lib/persistence/settings/profile-workspace-settings-store', 'ProfileWorkspaceSettingsStore', 'save'],
+]) {
+  const Owner = require(modulePath)[className];
+  const original = Owner.prototype[method];
+  Owner.prototype[method] = function (...args) {
+    try { return original.apply(this, args); }
+    catch (error) { syntheticMutationErrors.push(`${className}: ${error.message}`); throw error; }
+  };
+}
 writeJson(path.join(userData, 'global', 'settings.json'), {
   schemaVersion: 1,
   activeProfileKey: custom.context.profileKey,
@@ -101,6 +120,25 @@ async function run() {
   assert.equal(profiles.profiles[0].profileId, custom.profileId);
   assert.equal(profiles.profiles[0].active, true);
   assert.equal(Object.hasOwn(profiles.profiles[0], 'accountKey'), false);
+
+  const saved = await control.webContents.executeJavaScript(`window.api.save({
+    expectedProfileId: ${JSON.stringify(custom.profileId)},
+    username: 'synthetic-custom-user', password: 'synthetic-custom-password',
+  })`);
+  assert.equal(saved.ok, true, `first custom credential save must succeed: ${syntheticMutationErrors.join('; ')}`);
+  const persisted = await control.webContents.executeJavaScript('window.api.getState()');
+  assert.equal(persisted.hasPassword, true);
+  assert.equal(persisted.settings.username, 'syn********', 'state must retain its account redaction boundary');
+  const replaced = await control.webContents.executeJavaScript(`window.api.save({
+    expectedProfileId: ${JSON.stringify(custom.profileId)},
+    username: 'synthetic-custom-user-next', password: 'synthetic-custom-password-next',
+  })`);
+  assert.equal(replaced.ok, true, 'custom credential replacement must succeed');
+  assert.equal((await control.webContents.executeJavaScript('window.api.getState()')).connected, false,
+    'synthetic credential saves must not authenticate a Gateway');
+  const cleared = await control.webContents.executeJavaScript('window.api.logout()');
+  assert.equal(cleared.ok, true, 'custom credential clearing must not require unrelated legacy retirement');
+  assert.equal((await control.webContents.executeJavaScript('window.api.getState()')).hasPassword, false);
 
   const opened = await control.webContents.executeJavaScript('window.api.openCampusBrowser({})');
   assert.deepEqual(opened, { ok: true, url: 'about:blank', route: 'direct' });

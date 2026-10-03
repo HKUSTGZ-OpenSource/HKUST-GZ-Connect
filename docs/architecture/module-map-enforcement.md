@@ -1,10 +1,12 @@
 # Module map coverage contract
 
-- Status: Path-coverage contract for M5; dependency enforcement remains incomplete
+- Status: Path-coverage contract plus static-JS edge ratchet for M5; full dependency enforcement remains incomplete
 - Owner: architecture and repository maintainers
-- Last verified: 2026-09-25
-- Applies to: `module-map.yml` schema 2 and `desktop/scripts/module-map-coverage.js`
-- Scope: path coverage, ownership uniqueness, schema and public-entrypoint existence
+- Last verified: 2026-09-29
+- Applies to: `module-map.yml` schema 2, `desktop/scripts/module-map-coverage.js`,
+  `desktop/scripts/check-architecture.js` and `desktop/scripts/module-edge-debt.json`
+- Scope: path coverage, ownership uniqueness, schema, public-entrypoint existence and
+  no-growth checking for resolved static Desktop JavaScript imports
 
 ## What is enforced
 
@@ -33,6 +35,45 @@ YAML duplicate keys, unsafe YAML tags and unsupported schema versions fail close
 The check uses the Git tracked-path inventory and the current working module-map contents. It does
 not replace the separate exact-tree secret/syntax gates or no-symlink governance rules.
 
+## Static JavaScript edge ratchet
+
+`npm run check:architecture` resolves the existing production JavaScript import/require graph and
+maps each edge to the declared source and target module. Cross-module imports must point to a
+declared allowed dependency and a target public entrypoint. At the reviewed
+`main@381c5f29c6784615fa04b1ac9174f5763178c670` baseline, 124 existing edges did not meet
+both conditions; their exact source, target and violation kind are frozen in
+`desktop/scripts/module-edge-debt.json`. A new bypass, a missing owner, a malformed manifest or a
+stale exception fails the architecture gate. Fixing an old edge removes its exact exception in the
+same reviewable change; the debt list is not a blanket permission for another edge in its place.
+
+The Routing-owned `campus-route.js` is an explicit **file-level** public entrypoint. Browser,
+Resources and Integrations already consumed that same route/partition module; their eight existing
+edges use only `ROUTE_CAMPUS`, `ROUTE_DIRECT`, `routeForUrl`, `CAMPUS_PARTITION` and
+`NEUTRAL_CAMPUS_PARTITION`. The module map does not enforce a symbol-level allowlist: the whole
+existing file, including other exported Routing helpers, is importable. This declares the actual
+shared boundary rather than pretending those helpers have a curated façade. It changes no runtime
+behavior. The rule store, host-safety logic and PAC files remain private. The debt inventory and
+hard cap are 116 edges, down from the 124-edge baseline.
+
+The follow-on [Routing coordinator](desktop-routing-policy-coordinator.md) removes Main's direct
+private PAC-file import by placing derived publication in the existing public Routing owner.
+Its candidate inventory and hard cap are 115; no additional runtime module is introduced.
+
+The [Browser certificate entrypoint](browser-certificate-entrypoint.md) candidate puts the
+unchanged owned/main-frame dispatch helpers beside the existing consent controller and exposes
+that file as Browser's certificate boundary. Main no longer imports the separate private
+dispatch leaf or the private trust-store file; it constructs the unchanged store through the
+public class re-export. Its candidate inventory/cap fall to 113, Main's direct dependencies to 30
+and transitive modules to 169. Low-level trust persistence remains private; consent is unchanged.
+
+This is an explicit migration ratchet, not a claim that all current imports already respect the
+module map. A reviewed policy change can alter the debt manifest, so its diff and the resulting
+edge inventory must be inspected rather than treating a green check as self-authenticating proof.
+Quoted specifiers and no-substitution template-literal specifiers are included in the static graph;
+computed template substitutions remain outside this ratchet.
+The map keeps `dependencyEnforcement: inventory-only` until the old debt is eliminated and the
+dynamic Renderer and Rust visibility boundaries are separately covered.
+
 ## Corrected ownership gaps
 
 The previous map left 26 runtime source/entry paths unowned. Schema 2 assigns the IPC suite to
@@ -46,13 +87,21 @@ These labels do not activate a protocol provider, alter Cargo feature selection,
 test-support/compatibility module is unreachable from production. Those require the separate Rust
 visibility, feature and package gates.
 
+The Electron composition root is now the exact-path `desktop-main` owner. Reusable
+`desktop/lib/app/**` modules remain under `desktop-app`; only the root's inventory names IPC and
+diagnostics as allowed dependencies. This prevents the map from treating every App module as a
+composition root. It does not make Main's existing private IPC imports public or switch dependency
+enforcement on.
+
 ## What remains incomplete
 
-`dependencyEnforcement: inventory-only` is an explicit schema field. This check validates referenced
-module IDs but does not prove cross-module dependency direction or prohibit importing a private
-file. Do not change the field to claim otherwise. The existing Desktop architecture and Renderer
-feature checks cover their separately documented subset; complete M5 import and Rust visibility
-enforcement remains outstanding, alongside M2–M4 ownership extraction.
+`dependencyEnforcement: inventory-only` is an explicit schema field. The path-coverage checker
+validates referenced module IDs, while the separate architecture ratchet rejects new resolved
+static-JS violations but still records 113 legacy exceptions at the certificate-entrypoint candidate.
+It does not resolve computed
+`require()`/`import()` targets or Rust visibility and cannot prove full cross-module enforcement.
+Do not change the field to claim otherwise. The existing Renderer feature checks cover their
+separately documented subset; complete M5 enforcement remains outstanding, alongside M2–M4.
 
 `requiredChecks` records module review requirements; this checker accepts only its closed reviewed
 vocabulary of existing GitHub contexts and local acceptance aliases, rejecting typos and invented

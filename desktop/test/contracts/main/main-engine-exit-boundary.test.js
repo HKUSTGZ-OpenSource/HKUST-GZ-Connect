@@ -4,73 +4,81 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
 const servingSource = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-connection-runtime'), 'utf8');
+const termination = servingSource.slice(servingSource.indexOf('class EngineTerminationCoordinator'));
+const operations = fs.readFileSync(require.resolve('../../../lib/connection/state/connection-state-machine'), 'utf8');
 
 test('engine exit closes the browser request boundary before stdio close cleanup', () => {
-  const boundaryStart = source.indexOf('function revokeEngineServing(');
-  const connectStart = source.indexOf('async function connectOnce(');
-  assert.ok(boundaryStart >= 0 && connectStart > boundaryStart);
-  const boundary = source.slice(boundaryStart, connectStart);
-  assert.match(boundary, /engineSupervisor\.isCurrent\(generation\)/);
-  assert.match(boundary, /isCurrentContext\(generation\)/);
-  assert.match(boundary, /connectionState\.markEngineStopping\(generation, \{ uptimeMs \}\)/);
-  assert.match(boundary, /clearActiveProxyCredential\(generation\)/);
-  assert.match(boundary, /suspendOpenBrowserPolicy\(\)/);
+  assert.match(source, /engineTermination\.exit\(\.\.\.args\)/u);
+  assert.match(source, /isGenerationCurrent: generation => engineSupervisor\.isCurrent\(generation\)/u);
+  assert.match(source, /clearCredential: clearActiveProxyCredential, removeSidecar: removeExternalProxySidecar/u);
+  assert.match(source, /suspendBrowser: suspendOpenBrowserPolicy, clearPresentation: clearConnectionPresentation/u);
+  assert.match(termination, /this\.isGenerationCurrent\(generation\)/);
+  assert.match(termination, /isCurrentContext\(generation\)/);
+  assert.match(termination, /this\.connectionState\.markEngineStopping\(generation, \{ uptimeMs \}\)/);
+  assert.match(termination, /this\.clearCredential\(generation\)/);
+  assert.match(termination, /this\.suspendBrowser\(\)/);
 
-  const startCall = source.slice(source.indexOf('const started = engineSupervisor.start({'));
-  assert.match(startCall, /onExit:\s*\(result\) => \{\s*engineRuntime\?\.beginExitDrain\(\);\s*handleEngineExitBoundary\(result, isCurrentEngineContext\);\s*\},\s*onClose:/);
+  const startCall = attempt.slice(attempt.indexOf('const started = this.engineSupervisor.start({'));
+  assert.match(source, /engineAttempts\.run\(isRetry, intent\)/u);
+  assert.match(startCall, /onExit:\s*\(result\) => \{\s*engineRuntime\?\.beginExitDrain\(\);\s*this\.handleEngineExitBoundary\(result, isCurrentEngineContext\);\s*\},\s*onClose:/);
   assert.match(startCall, /const structuredStopReason = engineRuntime\?\.stoppedReason \|\| null;\s*engineRuntime\?\.dispose\(\)/);
 });
 
 test('fatal, stopping, and exit boundaries revoke in-flight serving promotion', () => {
-  const revokeStart = source.indexOf('function revokeEngineServing(');
-  const exitStart = source.indexOf('function handleEngineExitBoundary(', revokeStart);
-  assert.ok(revokeStart >= 0 && exitStart > revokeStart);
-  const revoke = source.slice(revokeStart, exitStart);
-  assert.match(revoke, /connectionState\.markEngineStopping\(generation, \{ uptimeMs \}\)/);
-  assert.match(revoke, /suspendOpenBrowserPolicy\(\)/);
-  assert.match(revoke, /clearConnectionPresentation\(\)/);
+  const revoke = termination.slice(termination.indexOf('  revokeServing('), termination.indexOf('  exit('));
+  assert.match(source, /engineTermination\.revokeServing\(\.\.\.args\)/u);
+  assert.match(revoke, /this\.connectionState\.markEngineStopping\(generation, \{ uptimeMs \}\)/);
+  assert.match(revoke, /this\.suspendBrowser\(\)/);
+  assert.match(revoke, /this\.clearPresentation\(\)/);
 
-  assert.match(source, /handlers: serving\.handlers/u);
-  assert.match(source, /revokeServing: \(\) => revokeEngineServing\(engineGeneration, isCurrentEngineContext\)/u);
-  assert.match(source, /stopEngine: \(\) => engineSupervisor\.stop\(\{ graceMs: 1000, forceWaitMs: STOP_FORCE_WAIT_MS \}\)/u);
+  assert.match(attempt, /handlers: serving\.handlers/u);
+  assert.match(attempt, /revokeServing: \(\) => this\.revokeEngineServing\(engineGeneration, isCurrentEngineContext\)/u);
+  assert.match(attempt, /stopEngine: \(\) => this\.engineSupervisor\.stop\(\{ graceMs: 1000, forceWaitMs: STOP_FORCE_WAIT_MS \}\)/u);
   const handlers = servingSource.slice(servingSource.indexOf('class EngineServingCoordinator'));
   assert.match(handlers, /onStopping:.*this\.revokeServing\(\)/);
   assert.match(handlers, /onListenerMismatch:[\s\S]*?this\.revokeServing\(\)[\s\S]*?this\.stopEngine\(\)/);
   assert.match(handlers, /onFatalError:[\s\S]*?this\.revokeServing\(\)/);
   assert.match(handlers, /onProtocolTimeout:[\s\S]*?this\.revokeServing\(\)/);
-  const close = source.slice(source.indexOf('function handleEngineClose('), revokeStart);
+  assert.match(source, /engineTermination\.close\(\.\.\.args\)/u);
+  const close = termination.slice(termination.indexOf('  close('), termination.indexOf('  revokeServing('));
   assert.match(close, /closeSnapshot\.wasConnectedBeforeStop/);
   assert.match(close, /closeSnapshot\.connectedUptimeBeforeStop/);
-  assert.match(close, /engineSupervisor\.isCurrent\(generation\) && isCurrentContext\(generation\)/);
-  assert.match(close, /cleanupProxyAccessForEngineClose\(\{[\s\S]*generation,[\s\S]*supervisorGenerationCurrent,[\s\S]*connectionGenerationCurrent: connectionState\.isCurrentGeneration\(generation\),[\s\S]*clearCredential: clearActiveProxyCredential,[\s\S]*removeSidecar: removeExternalProxySidecar/);
+  assert.match(close, /this\.isGenerationCurrent\(generation\) && isCurrentContext\(generation\)/);
+  assert.match(source, /cleanupProxyAccess: cleanupProxyAccessForEngineClose/u);
+  assert.match(close, /this\.cleanupProxyAccess\(\{[\s\S]*generation,[\s\S]*supervisorGenerationCurrent,[\s\S]*connectionGenerationCurrent: this\.connectionState\.isCurrentGeneration\(generation\),[\s\S]*clearCredential: this\.clearCredential,[\s\S]*removeSidecar: this\.removeSidecar/);
   assert.match(close, /\}\)\) return;/);
 });
 
 test('an unclean stop releases the local process but blocks automatic reconnect', () => {
-  const recoveryStart = source.indexOf('async function recoverConnectivity(');
-  const connectStart = source.indexOf('\nasync function connect(', recoveryStart);
-  const recovery = source.slice(recoveryStart, connectStart);
+  const recovery = operations.slice(
+    operations.indexOf('  async recoverConnectivity('),
+    operations.indexOf('  onConnectivityRecoveryDeclined('),
+  );
   assert.match(recovery, /stopped\.cleanExit === false/);
-  assert.match(recovery, /connectionState\.failIntent\(intent\)/);
+  assert.match(recovery, /this\.connectionState\.failIntent\(intent\)/);
   assert.match(recovery, /error\.engineCleanupUnconfirmed/);
+  assert.match(source, /reconnect: \(intent, reason\) => connectionOperations\.recoverConnectivity\(intent, reason\)/u,
+    'Main delegates connectivity restart admission to the existing operation owner');
 
-  const reconnectStart = source.indexOf('async function reconnect(');
-  const pacStart = source.indexOf('// ---------- PAC file', reconnectStart);
-  const reconnect = source.slice(reconnectStart, pacStart);
+  assert.match(source, /connectionOperations\.reconnect\(expectedGeneration\)/u);
+  const reconnect = operations.slice(operations.indexOf('  async reconnect('));
   assert.match(reconnect, /stopResult\.cleanExit === false/);
   assert.match(reconnect, /connectionState\.failIntent\(intent\)/);
   assert.match(reconnect, /error\.engineCleanupUnconfirmed/);
 });
 
 test('orphan cleanup and Windows owner recording are mandatory start boundaries', () => {
-  const connect = source.slice(source.indexOf('async function connectOnce('));
+  const connect = attempt;
+  assert.match(source, /engineOwnerFile: ENGINE_OWNER/u);
+  assert.match(attempt, /writeOwnerRecord: writeEngineOwnerRecord/u);
   assert.match(connect,
     /killStrayEngines\(resolvedBin\) !== true[\s\S]*cleanupUnconfirmed: true/u,
     'an unconfirmed orphan cleanup must stop before spawning a replacement Engine');
   assert.match(connect,
-    /writeEngineOwnerRecord\(ENGINE_OWNER, ownedEngine\);[\s\S]*catch \{[\s\S]*engineSupervisor\.stop/u,
+    /this\.writeOwnerRecord\(this\.engineOwnerFile, ownedEngine\);[\s\S]*catch \{[\s\S]*engineSupervisor\.stop/u,
     'a Windows Engine without a durable owner record must be stopped immediately');
 });

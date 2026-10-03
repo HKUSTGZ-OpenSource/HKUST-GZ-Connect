@@ -8,14 +8,13 @@ const {
   ROUTE_CAMPUS,
   ROUTE_DIRECT,
 } = require('../../routing/policy/campus-route');
-const { resolveDomainRouteForUrl } = require('../../routing/policy/domain-route-policy');
 const { normalizeRuleHost } = require('../../routing/rules/routing-rule-store');
-const { normalizeToolbarCommand } = require('../toolbar/campus-toolbar-contract');
+const { BrowserToolbarCommandOwner, BrowserToolbarOwner } = require('../toolbar/browser-toolbar-owner');
 const { BrowserWorkspaceOwner, projectBrowserWorkspaceResources, MAX_WORKSPACE_HOME_RESOURCES } =
   require('../workspace/campus-workspace-controller');
 const { CertificateController } = require('../certificates/certificate-controller');
 const { BrowserDownloadController } = require('../downloads/download-controller');
-const { CredentialController } = require('../credentials/credential-controller');
+const { CredentialController, ManagedCredentialPopupOwner } = require('../credentials/credential-controller');
 const {
   BrowserSessionManager,
   applyCampusSessionPolicy,
@@ -23,7 +22,7 @@ const {
   createMemoryRoutingPolicy,
   pacDataUrl,
 } = require('./browser-session-manager');
-const { DEFAULT_MAX_TABS, BrowserTabLifecycle } = require('../tabs/tab-manager');
+const { DEFAULT_MAX_TABS, BrowserNavigationOwner, BrowserTabLifecycle } = require('../tabs/tab-manager');
 const { createT } = require('../../platform/i18n/i18n');
 const TOOLBAR_HEIGHT = 108;
 const FIND_BAR_HEIGHT = 34;
@@ -174,6 +173,7 @@ class CampusBrowser {
   constructor({
     BrowserWindow,
     WebContentsView,
+    createWindowOwner = null,
     session,
     dialog,
     certificateTrust,
@@ -274,7 +274,34 @@ class CampusBrowser {
       t: (key, vars) => this.t(key, vars),
       onError: (message) => this.onError?.(message),
     });
-    this.window = null;
+    if (createWindowOwner != null && typeof createWindowOwner !== 'function') {
+      throw new TypeError('Campus Browser window owner factory is invalid');
+    }
+    this.windowOwner = typeof createWindowOwner === 'function'
+      ? createWindowOwner({
+        BrowserWindow,
+        toolbarFile: this.toolbarFile,
+        toolbarPreload: this.toolbarPreload,
+        getProfilePresentation: () => this.profilePresentation,
+        getLocale: () => this.locale,
+        getTranslator: () => this.t,
+        parentWindow: this.parentWindow,
+        platform: process.platform,
+        windowChrome: campusWindowChrome,
+        onToolbarCommand: payload => this.handleToolbarCommand(payload),
+        onResize: () => this.scheduleLayout(),
+        onBeforeCreate: () => { this.cancelScheduledUpdates(); this.toolbarOwner?.reset(); },
+        onClosed: () => this.handleWindowClosed(),
+        onMissingWindow: () => this.close(),
+      })
+      : null;
+    if (this.windowOwner && (typeof this.windowOwner.createWindow !== 'function' ||
+        typeof this.windowOwner.show !== 'function' ||
+        typeof this.windowOwner.requestClose !== 'function' ||
+        typeof this.windowOwner.closeForContextSwitch !== 'function' ||
+        typeof this.windowOwner.clear !== 'function' || typeof this.windowOwner.assertContextCurrent !== 'function' || !('window' in this.windowOwner))) {
+      throw new TypeError('Campus Browser window owner is invalid');
+    }
     // Only the active tab is attached to the native View hierarchy. Hiding a
     // WebContentsView stops painting, but Electron can still expose its page
     // through the platform accessibility tree. Detached views retain their
@@ -315,6 +342,18 @@ class CampusBrowser {
       },
       onSessionReady: (browserSession) => this.applyDownloadHandler(browserSession),
     });
+    this.popupOwner = new ManagedCredentialPopupOwner({
+      BrowserWindow,
+      getParentWindow: () => this.window,
+      getCampusSession: () => this.browserSessionManager.sessionForRoute(ROUTE_CAMPUS),
+      isContextCurrent: () => this.windowOwner?.contextRetired !== true,
+      campusPreload: this.campusPreload, credentialController: this.credentialController,
+      safePopupUrl,
+      openOrdinaryPopup: (url) => this.createTab(url, this.resolveRoute(url).route),
+      reportCreateFailure: () => this.onError?.(this.t('tab.createFailed')),
+      markNavigation: (popup, url, code) => this.markCredentialNavigation(popup, url, code),
+      recordPortalSessionUrl: (url) => this.recordPortalSessionUrl(url),
+    });
     // One-release compatibility for diagnostics/tests; ownership and mutation
     // live exclusively in CertificateController.
     this.certificateDecisions = this.certificateController.decisions;
@@ -330,7 +369,7 @@ class CampusBrowser {
     // of being flattened into tabs. Some IdPs complete SMS MFA through
     // window.opener/postMessage and window.close; preserving that relationship
     // is required for the opener to observe a successful challenge.
-    this.managedCredentialPopups = new Set();
+    this.managedCredentialPopups = this.popupOwner.popups;
     this.workspaceOwner = new BrowserWorkspaceOwner({
       getWorkspaceResources: () => this.getWorkspaceResources(),
       getWorkspaceGroups: () => this.getWorkspaceGroups(),
@@ -344,16 +383,68 @@ class CampusBrowser {
       t: (key, vars) => this.t(key, vars), onError: message => this.onError?.(message),
       updateToolbar: () => this.updateToolbar(),
     });
+    this.navigationOwner = new BrowserNavigationOwner({
+      blankUrl: BLANK_CAMPUS_HOME, normalizeUrl: normalizeCampusUrl,
+      getHomeUrl: () => this.homeUrl, getNewTabUrl: () => this.getNewTabUrl(),
+      getTranslator: () => this.t, reportError: (message) => this.onError?.(message),
+      getActiveTab: () => this.activeTab(), getTabs: () => this.tabs,
+      containsTab: (tab) => this.tabManager.contains(tab),
+      getConfiguredPort: () => this.configuredPort,
+      resolvePolicyRoute: (url, inheritedRoute) => this.routingPolicy.resolve(url, inheritedRoute),
+      ensureRoutingReady: (resolution, port) => this.ensureRoutingReady(resolution, port),
+      createTab: (...args) => this.createTab(...args),
+      focusWorkspaceSearch: () => this.focusWorkspaceSearch(),
+      scheduleToolbarUpdate: () => this.scheduleToolbarUpdate(),
+    });
     this.findOpen = false;
-    this.lastFindQuery = '';
     this.scheduledLayout = null;
-    this.scheduledToolbarUpdate = null;
     this.routingActivationInFlight = null;
-    this.lastToolbarState = null;
+    this.toolbarOwner = new BrowserToolbarOwner({
+      getWindow: () => this.window,
+      getActiveTab: () => this.activeTab(),
+      getTabs: () => this.tabs,
+      getActiveTabId: () => this.activeTabId,
+      getFindOpen: () => this.findOpen,
+      getDownloadState: () => this.downloadState,
+      currentUrl: tab => this.currentUrl(tab),
+      bookmarkBarState: () => this.bookmarkBarState(),
+      pageFavoriteState: tab => this.pageFavoriteState(tab),
+      navigationForContents,
+      translate: (key, vars) => this.t(key, vars),
+      campusRoute: ROUTE_CAMPUS,
+      directRoute: ROUTE_DIRECT,
+    });
+    this.toolbarCommands = new BrowserToolbarCommandOwner({
+      getActiveTab: () => this.activeTab(), getTabs: () => this.tabs,
+      getWindow: () => this.window, getBookmarkBarState: () => this.bookmarkBarState(),
+      getBookmarkMenu: () => this.showBookmarkMenu,
+      getOpenResource: () => this.onOpenResource,
+      navigationForContents, workspaceSearchQuery, nextZoomFactor,
+      translate: (key, vars) => this.t(key, vars),
+      reportError: (message) => this.onError?.(message),
+      actions: {
+        openNewTab: () => this.openNewTab(), openHome: () => this.openHome(),
+        focusWorkspace: (target, query) => this.focusWorkspace(target, query),
+        updateToolbar: () => this.updateToolbar(),
+        switchTab: (id) => this.switchTab(id), closeTab: (id) => this.closeTab(id),
+        setTabRoute: (id, route) => this.setTabRoute(id, route),
+        manageCredential: (tab) => this.manageCredential(tab),
+        openSettings: () => this.onOpenSettings(),
+        toggleFavorite: (tab) => this.toggleActivePageFavorite(tab),
+        focusWorkspaceSearch: () => this.focusWorkspaceSearch(),
+        beginNavigationIntent: (tab) => this.beginNavigationIntent(tab),
+        reloadWhenReady: (tab) => this.reloadWhenReady(tab),
+        navigateWhenReady: (url, tab) => this.navigateWhenReady(url, tab),
+        setFindBar: (open) => this.setFindBar(open),
+        tabAt: (index) => this.tabManager.at(index),
+      },
+    });
   }
 
   // Keep the existing CampusBrowser diagnostics/test surface while all state
   // mutations flow through the dedicated managers.
+  get window() { return this.windowOwner?.window || null; }
+  get scheduledToolbarUpdate() { return this.toolbarOwner.scheduledUpdate; }
   get downloadSessions() { return this.downloadController.downloadSessions; }
   get downloadState() { return this.downloadController.downloadState; }
   get view() { return this.tabManager.view; }
@@ -407,58 +498,22 @@ class CampusBrowser {
   }
 
   beginNavigationIntent(tab = this.activeTab()) {
-    if (!tab || tab.view.webContents.isDestroyed()) return null;
-    tab.navigationIntent = (tab.navigationIntent || 0) + 1;
-    return tab.navigationIntent;
+    return this.navigationOwner.beginNavigationIntent(tab);
   }
 
   navigationIntentCurrent(tab, intent) {
-    return Number.isSafeInteger(intent) && this.tabManager.contains(tab) &&
-      tab.navigationIntent === intent && !tab.view.webContents.isDestroyed();
+    return this.navigationOwner.navigationIntentCurrent(tab, intent);
   }
 
-  async openHome() {
-    if (this.homeUrl === BLANK_CAMPUS_HOME) {
-      return this.focusWorkspaceSearch();
-    }
-    const active = this.activeTab();
-    const intent = active ? this.beginNavigationIntent(active) : null;
-    const port = this.configuredPort || 1080;
-    const resolution = this.resolveRoute(this.homeUrl);
-    if (!await this.ensureRoutingReady(resolution, port)) return false;
-    if (active && !this.navigationIntentCurrent(active, intent)) return false;
-    if (active && active.kind !== 'workspace') {
-      return this.navigate(this.homeUrl, active);
-    }
-    return !!this.createTab(this.homeUrl);
-  }
+  async openHome() { return this.navigationOwner.openHome(); }
 
-  openBlankTab() {
-    return !!this.createTab(BLANK_CAMPUS_HOME, ROUTE_DIRECT, { blankPage: true });
-  }
+  openBlankTab() { return this.navigationOwner.openBlankTab(); }
 
-  async openNewTab() {
-    let url;
-    try { url = normalizeCampusUrl(this.getNewTabUrl(), BLANK_CAMPUS_HOME, this.t); }
-    catch (error) {
-      this.onError?.(error.message);
-      return false;
-    }
-    if (url === BLANK_CAMPUS_HOME) return this.openBlankTab();
-    const port = this.configuredPort || 1080;
-    // The saved new-tab URL is a destination preference, not an implicit
-    // routing override. Resolve it through the same policy that generates the
-    // Session PAC so the toolbar can never claim Direct while Chromium is
-    // actually using the fail-safe Campus default. Users can persist an exact
-    // Direct choice through the routing-rule UI, where it becomes PAC input.
-    const resolution = this.resolveRoute(url);
-    if (!await this.ensureRoutingReady(resolution, port)) return false;
-    return !!this.createTab(url);
-  }
+  async openNewTab() { return this.navigationOwner.openNewTab(); }
 
   async ensureRoutingReady(resolution, port = this.configuredPort || 1080) {
     if (!resolution || ![ROUTE_CAMPUS, ROUTE_DIRECT].includes(resolution.route)) return false;
-    if (resolution.route === ROUTE_CAMPUS && !await this.ensureCampusReady()) return false;
+    if ((resolution.route === ROUTE_CAMPUS && !await this.ensureCampusReady()) || this.windowOwner?.contextRetired) return false;
     const activated = await this.activateRoutingPolicy(port);
     // A superseding suspend intent makes BrowserSessionManager activation
     // resolve null. Never start a navigation while its fail-closed gate remains
@@ -488,36 +543,11 @@ class CampusBrowser {
   }
 
   async navigateWhenReady(rawUrl, tab = this.activeTab()) {
-    let url;
-    try {
-      url = normalizeCampusUrl(rawUrl, this.homeUrl, this.t);
-    } catch (error) {
-      this.onError?.(error.message);
-      return false;
-    }
-    if (!tab || tab.view.webContents.isDestroyed()) return false;
-    const intent = this.beginNavigationIntent(tab);
-    const resolution = this.resolveRoute(url);
-    if (!await this.ensureRoutingReady(resolution)) return false;
-    if (!this.navigationIntentCurrent(tab, intent)) return false;
-    if (tab.kind === 'workspace') return !!this.createTab(url);
-    return this.navigate(url, tab);
+    return this.navigationOwner.navigateWhenReady(rawUrl, tab);
   }
 
   async reloadWhenReady(tab = this.activeTab()) {
-    if (!tab || tab.kind === 'workspace' || tab.view.webContents.isDestroyed()) return false;
-    const url = tab.failedUrl || this.currentUrl(tab);
-    if (!url || url === BLANK_CAMPUS_HOME) {
-      tab.view.webContents.reload();
-      return true;
-    }
-    const intent = this.beginNavigationIntent(tab);
-    const resolution = this.resolveRoute(url);
-    if (!await this.ensureRoutingReady(resolution)) return false;
-    if (!this.navigationIntentCurrent(tab, intent)) return false;
-    if (tab.failedUrl) return this.navigate(url, tab);
-    tab.view.webContents.reload();
-    return true;
+    return this.navigationOwner.reloadWhenReady(tab);
   }
 
   pageFavoriteState(tab = this.activeTab()) { return this.workspaceOwner.pageFavoriteState(tab); }
@@ -602,70 +632,27 @@ class CampusBrowser {
   }
 
   currentUrl(tab) {
-    if (!tab) return '';
-    if (tab.kind === 'workspace') return BLANK_CAMPUS_HOME;
-    if (tab.failedUrl) return tab.failedUrl;
-    if (tab.view.webContents.isDestroyed()) return '';
-    try {
-      const current = tab.view.webContents.getURL();
-      return current.startsWith('data:') ? '' : current;
-    } catch {
-      return '';
-    }
+    return this.navigationOwner.currentUrl(tab);
   }
 
   resolveRoute(rawUrl, inheritedRoute = null, requestedRoute = null) {
-    if (rawUrl === BLANK_CAMPUS_HOME) {
-      return { route: ROUTE_DIRECT, source: 'local-blank', matchedRule: null };
-    }
-    let resolution;
-    try {
-      resolution = this.routingPolicy.resolve(rawUrl, inheritedRoute);
-    } catch {
-      resolution = null;
-    }
-    if (!resolution || ![ROUTE_CAMPUS, ROUTE_DIRECT].includes(resolution.route)) {
-      resolution = resolveDomainRouteForUrl(rawUrl, { inheritedRoute });
-    }
-    if (resolution.source === 'default' &&
-        [ROUTE_CAMPUS, ROUTE_DIRECT].includes(requestedRoute)) {
-      return { route: requestedRoute, source: 'requested', matchedRule: null };
-    }
-    return resolution;
+    return this.navigationOwner.resolveRoute(rawUrl, inheritedRoute, requestedRoute);
   }
 
   updateTabRoute(tab, rawUrl = this.currentUrl(tab), requestedRoute = null) {
-    if (!tab || !rawUrl) return null;
-    const resolution = this.resolveRoute(rawUrl, null, requestedRoute);
-    tab.route = resolution.route;
-    tab.routeSource = resolution.source;
-    tab.matchedRule = resolution.matchedRule;
-    return resolution;
+    return this.navigationOwner.updateTabRoute(tab, rawUrl, requestedRoute);
   }
 
   updateAllTabRoutes() {
-    for (const tab of this.tabs) {
-      const url = tab.failedUrl || this.currentUrl(tab);
-      if (url) this.updateTabRoute(tab, url);
-    }
+    return this.navigationOwner.updateAllTabRoutes();
   }
 
   cancelScheduledToolbarUpdate() {
-    if (this.scheduledToolbarUpdate === null) return;
-    clearImmediate(this.scheduledToolbarUpdate);
-    this.scheduledToolbarUpdate = null;
+    this.toolbarOwner.cancel();
   }
 
   scheduleToolbarUpdate() {
-    if (this.scheduledToolbarUpdate !== null ||
-        !this.window || this.window.isDestroyed()) return;
-    const scheduledWindow = this.window;
-    this.scheduledToolbarUpdate = setImmediate(() => {
-      this.scheduledToolbarUpdate = null;
-      if (this.window !== scheduledWindow || scheduledWindow.isDestroyed()) return;
-      this.sendToolbarState();
-    });
-    this.scheduledToolbarUpdate.unref?.();
+    this.toolbarOwner.schedule();
   }
 
   cancelScheduledUpdates() {
@@ -674,142 +661,15 @@ class CampusBrowser {
   }
 
   sendToolbarState() {
-    if (!this.window || this.window.isDestroyed()) return;
-    const active = this.activeTab();
-    // A crashed or closed renderer (e.g. the page died while the slow-load
-    // timer was pending) must not take the main process down with it.
-    if (active && active.view.webContents.isDestroyed()) return;
-    const activeTitle = active?.view.webContents.getTitle() || '';
-    const navigation = navigationForContents(active?.view.webContents);
-    const state = {
-      url: this.currentUrl(active),
-      title: activeTitle,
-      loading: !!active?.loading,
-      loadingLabel: active?.loading ? active.loadingLabel || '' : '',
-      slow: !!active?.slow,
-      findOpen: this.findOpen,
-      route: active?.route || ROUTE_CAMPUS,
-      routeSource: active?.routeSource || 'default',
-      routeLabel: active?.route === ROUTE_DIRECT ? this.t('route.direct') : this.t('route.campus'),
-      canGoBack: !!active && navigation.canGoBack(),
-      canGoForward: !!active && navigation.canGoForward(),
-      activeTabId: this.activeTabId,
-      tabs: this.tabs.map((tab) => ({
-        id: tab.id,
-        title: tab.view.webContents.isDestroyed()
-          ? this.t('tab.new')
-          : tab.view.webContents.getTitle() || tab.loadingLabel || this.t('tab.new'),
-        loading: tab.loading,
-        route: tab.route,
-      })),
-      download: this.downloadState,
-      workspace: active?.kind === 'workspace',
-      bookmarks: this.bookmarkBarState(),
-      ...this.pageFavoriteState(active),
-    };
-    const serialized = JSON.stringify(state);
-    if (serialized === this.lastToolbarState) return;
-    const send = this.window.webContents?.send;
-    if (typeof send !== 'function') return;
-    try {
-      send.call(this.window.webContents, 'campus-toolbar-state', state);
-      this.lastToolbarState = serialized;
-    } catch {
-      // Window teardown can race the final page event. The closed handler also
-      // cancels future updates, so there is nothing useful to surface here.
-    }
+    this.toolbarOwner.send();
   }
 
   updateToolbar() {
-    this.cancelScheduledToolbarUpdate();
-    this.sendToolbarState();
+    this.toolbarOwner.update();
   }
 
   handleToolbarCommand(input) {
-    const normalized = input && typeof input === 'object'
-      ? normalizeToolbarCommand(input.command, input.value)
-      : null;
-    if (!normalized) return false;
-    const { command, value } = normalized;
-    const active = this.activeTab();
-    const navigation = navigationForContents(active?.view.webContents);
-
-    if (command === 'new-tab') {
-      Promise.resolve(this.openNewTab()).catch(() => this.onError?.(this.t('tab.createFailed')));
-    }
-    else if (command === 'home') {
-      Promise.resolve(this.openHome()).catch(() => this.onError?.(this.t('tab.createFailed')));
-    }
-    else if (command === 'manage-bookmarks') this.focusWorkspace('manage');
-    else if (command === 'open-bookmark-menu' && this.showBookmarkMenu) {
-      this.showBookmarkMenu(this.bookmarkBarState());
-    }
-    else if (command === 'open-bookmark-folder' && this.showBookmarkMenu) {
-      const folder = this.bookmarkBarState().find(({ type, id }) => type === 'folder' && id === value);
-      if (folder) this.showBookmarkMenu(folder.children);
-    }
-    else if (command === 'open-resource' && this.onOpenResource) {
-      Promise.resolve(this.onOpenResource(value)).then(() => this.updateToolbar()).catch((error) => {
-        this.onError?.(error?.message || this.t('browser.favoriteFailed'));
-      });
-    }
-    else if (command === 'switch-tab') this.switchTab(Number(value));
-    else if (command === 'close-tab') this.closeTab(Number(value));
-    else if (command === 'set-route' && active) {
-      this.setTabRoute(active.id, value).catch((error) => {
-        if (this.onError) this.onError(this.t('route.switchFailed', { message: error.message }));
-      });
-    }
-    else if (command === 'manage-credential' && active) {
-      this.manageCredential(active);
-    }
-    else if (command === 'open-settings') this.onOpenSettings();
-    else if (command === 'toggle-favorite' && active) {
-      this.toggleActivePageFavorite(active).catch((error) => {
-        this.onError?.(error.message || this.t('browser.favoriteFailed'));
-      });
-    }
-    else if (command === 'focus-workspace') {
-      this.focusWorkspaceSearch();
-    }
-    else if (command === 'back' && navigation.canGoBack()) {
-      this.beginNavigationIntent(active);
-      navigation.goBack();
-    } else if (command === 'forward' && navigation.canGoForward()) {
-      this.beginNavigationIntent(active);
-      navigation.goForward();
-    } else if (command === 'reload' && active) {
-      Promise.resolve(this.reloadWhenReady(active)).catch((error) => {
-        this.onError?.(error?.message || this.t('error.connectTimeout'));
-      });
-    } else if (command === 'navigate' && active) {
-      const query = workspaceSearchQuery(value);
-      if (query) this.focusWorkspace('search', query);
-      else Promise.resolve(this.navigateWhenReady(value, active)).catch((error) => {
-        this.onError?.(error?.message || this.t('error.connectTimeout'));
-      });
-    } else if (command === 'find-open') {
-      this.setFindBar(true);
-    } else if (command === 'find-close') {
-      this.setFindBar(false);
-    } else if (command === 'find' && active) {
-      this.lastFindQuery = value;
-      const contents = active.view.webContents;
-      if (contents.isDestroyed()) return;
-      if (value && typeof contents.findInPage === 'function') contents.findInPage(value);
-      if (!value && typeof contents.stopFindInPage === 'function') {
-        contents.stopFindInPage('clearSelection');
-      }
-    } else if ((command === 'find-next' || command === 'find-prev') &&
-               active && this.lastFindQuery &&
-               !active.view.webContents.isDestroyed() &&
-               typeof active.view.webContents.findInPage === 'function') {
-      active.view.webContents.findInPage(this.lastFindQuery, {
-        forward: command === 'find-next',
-        findNext: true,
-      });
-    }
-    return true;
+    return this.toolbarCommands.handleCommand(input);
   }
 
   // The find bar is per-window: it stays open across tab switches, but matches
@@ -841,118 +701,15 @@ class CampusBrowser {
   }
 
   windowOpenResponse(tab, url) {
-    if (!safePopupUrl(url)) return { action: 'deny' };
-    const credentialReservation = this.credentialController.reservePopup(tab);
-    if (credentialReservation) {
-      return {
-        action: 'allow',
-        outlivesOpener: false,
-        createWindow: (options) => this.createManagedCredentialPopup(
-          options,
-          credentialReservation,
-        ),
-      };
-    }
-    setImmediate(() => {
-      try { this.createTab(url, this.resolveRoute(url).route); }
-      catch { this.onError?.(this.t('tab.createFailed')); }
-    });
-    return { action: 'deny' };
+    return this.popupOwner.windowOpenResponse(tab, url);
   }
 
   createManagedCredentialPopup(options, credentialReservation) {
-    const targetWindow = this.window;
-    const routeSession = this.browserSessionManager.sessionForRoute(ROUTE_CAMPUS);
-    if (!targetWindow || targetWindow.isDestroyed() || !routeSession) {
-      this.credentialController.releasePopup(credentialReservation);
-      throw new Error('campus browser unavailable during authentication popup creation');
-    }
-
-    let popupWindow = null;
-    let popup = null;
-    try {
-      popupWindow = new this.BrowserWindow({
-        ...(options && typeof options === 'object' ? options : {}),
-        parent: targetWindow,
-        show: true,
-        minWidth: 420,
-        minHeight: 360,
-        backgroundColor: '#f7f9fc',
-        autoHideMenuBar: true,
-        webPreferences: {
-          ...(options?.webPreferences || {}),
-          session: routeSession,
-          preload: this.campusPreload,
-          devTools: false,
-          nodeIntegration: false,
-          contextIsolation: true,
-          sandbox: true,
-          webSecurity: true,
-          safeDialogs: true,
-          backgroundThrottling: true,
-        },
-      });
-      popup = {
-        window: popupWindow,
-        view: { webContents: popupWindow.webContents },
-        pendingCredential: null,
-        pendingCredentialTimer: null,
-      };
-      if (!this.credentialController.linkPopup(credentialReservation, popup)) {
-        throw new Error('authentication popup lost its credential flow');
-      }
-      this.managedCredentialPopups.add(popup);
-      this.attachManagedCredentialPopupEvents(popup);
-      popupWindow.setMenuBarVisibility?.(false);
-      return popupWindow.webContents;
-    } catch (error) {
-      if (popup) {
-        this.managedCredentialPopups.delete(popup);
-        this.credentialController.closeTab(popup);
-      }
-      else this.credentialController.releasePopup(credentialReservation);
-      try {
-        if (popupWindow && !popupWindow.isDestroyed()) popupWindow.close();
-      } catch {}
-      this.onError?.(this.t('tab.createFailed'));
-      throw error;
-    }
+    return this.popupOwner.createManagedCredentialPopup(options, credentialReservation);
   }
 
   attachManagedCredentialPopupEvents(popup) {
-    const popupWindow = popup.window;
-    const contents = popup.view.webContents;
-    let cleaned = false;
-    const cleanup = () => {
-      if (cleaned) return;
-      cleaned = true;
-      this.managedCredentialPopups.delete(popup);
-      this.credentialController.closeTab(popup);
-    };
-    const rejectNonWebNavigation = (event, url) => {
-      if (!safePopupUrl(url)) event?.preventDefault?.();
-    };
-    contents.setWindowOpenHandler(({ url }) => this.windowOpenResponse(popup, url));
-    contents.on('will-navigate', rejectNonWebNavigation);
-    contents.on('will-redirect', rejectNonWebNavigation);
-    contents.on('did-navigate', (_event, url, httpResponseCode = 0) => {
-      this.markCredentialNavigation(popup, url, httpResponseCode);
-      this.recordPortalSessionUrl(url);
-    });
-    contents.on('did-navigate-in-page', (_event, url) => this.recordPortalSessionUrl(url));
-    contents.on('ipc-message', (_event, channel, candidate) => {
-      if (channel === 'campus-credential-candidate') {
-        this.credentialController.stage(popup, candidate);
-      } else if (channel === 'campus-credential-page-state') {
-        this.credentialController.confirmPageState(popup, candidate).catch(() => {});
-      }
-    });
-    contents.on('render-process-gone', (_event, details = {}) => {
-      if (details.reason !== 'clean-exit') this.credentialController.clear(popup);
-      try { if (!popupWindow.isDestroyed()) popupWindow.close(); } catch {}
-    });
-    contents.once('destroyed', cleanup);
-    popupWindow.once('closed', cleanup);
+    return this.popupOwner.attachManagedCredentialPopupEvents(popup);
   }
 
   attachPageEvents(tab) {
@@ -1040,46 +797,7 @@ class CampusBrowser {
       this.handleRendererCrash(tab, details);
     });
     contents.on('before-input-event', (event, input) => {
-      const commandKey = process.platform === 'darwin' ? input.meta : input.control;
-      const key = String(input.key || '').toLowerCase();
-      const navigation = navigationForContents(contents);
-      if (commandKey && key === 't') {
-        event.preventDefault();
-        Promise.resolve(this.openNewTab())
-          .catch(() => this.onError?.(this.t('tab.createFailed')));
-      } else if (commandKey && key === 'w') {
-        event.preventDefault();
-        this.closeTab(tab.id);
-      } else if (commandKey && key === 'l') {
-        event.preventDefault();
-        this.window?.webContents.send?.('campus-toolbar-focus', 'address');
-      } else if (commandKey && key === 'k' && input.type === 'keyDown') {
-        event.preventDefault();
-        this.focusWorkspaceSearch();
-      } else if (commandKey && key === 'r') {
-        event.preventDefault();
-        Promise.resolve(this.reloadWhenReady(tab)).catch((error) => {
-          this.onError?.(error?.message || this.t('error.connectTimeout'));
-        });
-      } else if (commandKey && key === 'f' && input.type === 'keyDown') {
-        event.preventDefault();
-        this.setFindBar(true);
-      } else if (commandKey && ['=', '+', '-', '0'].includes(key) &&
-                 input.type === 'keyDown') {
-        event.preventDefault();
-        contents.setZoomFactor(nextZoomFactor(contents.getZoomFactor(), key));
-      } else if (input.alt && ['left', 'arrowleft'].includes(key) && navigation.canGoBack()) {
-        event.preventDefault();
-        navigation.goBack();
-      } else if (input.alt && ['right', 'arrowright'].includes(key) && navigation.canGoForward()) {
-        event.preventDefault();
-        navigation.goForward();
-      } else if (commandKey && /^[1-9]$/.test(key)) {
-        event.preventDefault();
-        const index = key === '9' ? this.tabs.length - 1 : Number(key) - 1;
-        const selected = this.tabManager.at(index);
-        if (selected) this.switchTab(selected.id);
-      }
+      this.toolbarCommands.handleKeyboard(tab, event, input);
     });
   }
 
@@ -1218,7 +936,7 @@ class CampusBrowser {
   }
 
   createTab(rawUrl = null, route = null, options = {}) {
-    if (!this.window || this.window.isDestroyed()) return null;
+    if (this.windowOwner?.contextRetired || !this.window || this.window.isDestroyed()) return null;
     const targetWindow = this.window;
     if (!this.tabManager.canAdd()) {
       if (this.onError) this.onError(this.t('tab.limit', { count: MAX_TABS }));
@@ -1241,7 +959,7 @@ class CampusBrowser {
   }
 
   createWorkspaceTab() {
-    if (!this.workspaceController || !this.window || this.window.isDestroyed()) return null;
+    if (this.windowOwner?.contextRetired || !this.workspaceController || !this.window || this.window.isDestroyed()) return null;
     const existing = this.tabs.find((tab) => tab.kind === 'workspace');
     if (existing) { this.switchTab(existing.id); this.workspaceController.sendState(existing.view.webContents); return existing; }
     if (!this.tabManager.canAdd()) {
@@ -1302,85 +1020,31 @@ class CampusBrowser {
   closeTab(id) { return this.tabManager.close(id); }
 
   async createWindow() {
+    if (!this.windowOwner) throw new Error('Campus Browser window owner is unavailable');
+    await this.windowOwner.createWindow();
+  }
+
+  async showReadyWindow() {
+    if (!this.windowOwner) throw new Error('Campus Browser window owner is unavailable');
+    const window = await this.windowOwner.createWindow();
+    this.windowOwner.show(window);
+  }
+
+  handleWindowClosed() {
     this.cancelScheduledUpdates();
-    this.lastToolbarState = null;
-    this.window = new this.BrowserWindow({
-      width: 1040,
-      height: 740,
-      minWidth: 660,
-      minHeight: 460,
-      title: this.t('browser.windowTitleForSchool', {
-        school: this.profilePresentation.schoolName,
-        trust: this.profilePresentation.unverified ? this.t('browser.unverifiedSuffix') : '',
-      }),
-      backgroundColor: '#f7f9fc',
-      autoHideMenuBar: true,
-      ...campusWindowChrome(process.platform),
-      parent: process.platform === 'darwin' ? undefined : this.parentWindow(),
-      webPreferences: {
-        preload: this.toolbarPreload,
-        devTools: false,
-        nodeIntegration: false,
-        contextIsolation: true,
-        sandbox: true,
-        webSecurity: true,
-        safeDialogs: true,
-      },
-    });
-    await this.window.loadFile(this.toolbarFile, { query: {
-      lang: this.locale,
-      school: this.profilePresentation.schoolName,
-      unverified: this.profilePresentation.unverified ? '1' : '0',
-    } });
-    this.window.webContents.on('ipc-message', (_event, channel, payload) => {
-      if (channel === 'campus-toolbar-command') this.handleToolbarCommand(payload);
-    });
-    this.window.on('resize', () => this.scheduleLayout());
-    this.window.on('closed', () => {
-      this.cancelScheduledUpdates();
-      this.certificateController.cancelAll();
-      this.tabManager.closeViews();
-      for (const popup of [...this.managedCredentialPopups]) {
-        this.credentialController.closeTab(popup);
-        try {
-          if (!popup.window.isDestroyed()) popup.window.close();
-        } catch {}
-      }
-      this.managedCredentialPopups.clear();
-      this.tabManager.clear();
-      this.view = null;
-      this.attachedView = null;
-      this.routingActivationInFlight = null;
-      this.window = null;
-      this.findOpen = false;
-      this.lastToolbarState = null;
-    });
+    this.certificateController.cancelAll();
+    this.tabManager.closeViews();
+    this.popupOwner.closeAll();
+    this.tabManager.clear();
+    this.view = null;
+    this.attachedView = null;
+    this.routingActivationInFlight = null;
+    this.findOpen = false;
+    this.toolbarOwner.reset();
   }
 
   navigate(rawUrl, tab = this.activeTab(), requestedRoute = null) {
-    let url;
-    try {
-      url = normalizeCampusUrl(rawUrl, this.homeUrl, this.t);
-    } catch (error) {
-      if (this.onError) this.onError(error.message);
-      return false;
-    }
-    if (!tab || tab.view.webContents.isDestroyed()) return false;
-    // `open()` may carry a route already resolved from the active Profile or
-    // an ID-only WebResource. Keep that decision through the first load when
-    // the generic policy has no matching rule; later user navigation resolves
-    // afresh from the live Profile-backed policy.
-    this.updateTabRoute(tab, url, requestedRoute);
-    tab.failedUrl = '';
-    tab.renderingError = false;
-    tab.crashed = false;
-    const loading = tab.view.webContents.loadURL(url);
-    loading.catch(() => {
-      // did-fail-load renders a local error page. A superseded navigation can
-      // reject this promise even though the newer page loaded successfully.
-    });
-    this.scheduleToolbarUpdate();
-    return true;
+    return this.navigationOwner.navigate(rawUrl, tab, requestedRoute);
   }
 
   async open(rawUrl, port, route = null, options = {}) {
@@ -1392,13 +1056,9 @@ class CampusBrowser {
     if (!await this.ensureRoutingReady(resolution, port)) {
       throw new Error(this.t('error.connectTimeout'));
     }
-    if (!this.window || this.window.isDestroyed()) await this.createWindow();
-
-    if (this.window.isMinimized()) this.window.restore();
-    this.window.show();
-    this.window.focus();
+    await this.showReadyWindow();
     if (url === BLANK_CAMPUS_HOME) {
-      const existing = this.tabs.find((tab) => tab.kind === 'workspace');
+      const existing = this.windowOwner.assertContextCurrent(this.tabs.find((tab) => tab.kind === 'workspace'));
       if (existing) {
         this.switchTab(existing.id);
         this.workspaceController.sendState(existing.view.webContents);
@@ -1408,7 +1068,7 @@ class CampusBrowser {
     } else {
       this.createTab(url, resolution.route, { displayName: options.displayName || '' });
     }
-    return url;
+    return this.windowOwner?.assertContextCurrent(url) ?? url;
   }
 
   async openWorkspace(port) {
@@ -1416,63 +1076,38 @@ class CampusBrowser {
       throw new TypeError('Campus Workspace port is invalid');
     }
     if (!this.configuredPort && !this.routingSuspended) await this.configure(port);
-    if (!this.window || this.window.isDestroyed()) await this.createWindow();
-    if (this.window.isMinimized()) this.window.restore();
-    this.window.show();
-    this.window.focus();
-    const existing = this.tabs.find((tab) => tab.kind === 'workspace');
+    await this.showReadyWindow();
+    const existing = this.windowOwner.assertContextCurrent(this.tabs.find((tab) => tab.kind === 'workspace'));
     if (existing) {
       this.switchTab(existing.id);
       this.workspaceController.sendState(existing.view.webContents);
     } else {
       this.createWorkspaceTab();
     }
-    return BLANK_CAMPUS_HOME;
+    return this.windowOwner?.assertContextCurrent(BLANK_CAMPUS_HOME) ?? BLANK_CAMPUS_HOME;
   }
 
   close() {
     this.cancelScheduledUpdates();
     this.certificateController.cancelAll();
-    if (this.window && !this.window.isDestroyed()) {
-      this.window.close();
-      return;
-    }
+    if (this.windowOwner?.requestClose() === true) return;
+    const retired = this.windowOwner?.clear();
+    if (retired === true || this.windowOwner?.window) return;
     this.tabManager.clearTransientState();
-    this.window = null;
     this.view = null;
     this.attachedView = null;
     this.routingActivationInFlight = null;
     this.tabManager.clear();
     this.findOpen = false;
-    this.lastToolbarState = null;
+    this.toolbarOwner.reset();
   }
 
-  closeForContextSwitch({ timeoutMs = 5_000, setTimeoutFn = setTimeout,
-    clearTimeoutFn = clearTimeout } = {}) {
-    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30_000 ||
-        typeof setTimeoutFn !== 'function' || typeof clearTimeoutFn !== 'function') {
-      return Promise.reject(new TypeError('Campus Browser close deadline is invalid'));
-    }
-    const window = this.window;
-    if (!window || window.isDestroyed()) {
+  closeForContextSwitch(options = {}) {
+    if (!this.windowOwner) {
       this.close();
       return Promise.resolve(true);
     }
-    return new Promise((resolve) => {
-      let settled = false;
-      let timer = null;
-      const finish = (closed) => {
-        if (settled) return;
-        settled = true;
-        clearTimeoutFn(timer);
-        resolve(closed);
-      };
-      window.once('closed', () => finish(true));
-      timer = setTimeoutFn(() => finish(false), timeoutMs);
-      timer?.unref?.();
-      try { window.close(); }
-      catch { finish(false); }
-    });
+    return this.windowOwner.closeForContextSwitch(options);
   }
 }
 

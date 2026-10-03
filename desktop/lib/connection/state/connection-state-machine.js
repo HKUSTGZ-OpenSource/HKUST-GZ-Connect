@@ -51,7 +51,7 @@ function validGeneration(value) {
 }
 
 // Pure connection-lifecycle decisions. Process ownership and all I/O remain in
-// main.js/EngineSupervisor; this object owns only the user intent, desired
+// the injected operation effects/EngineSupervisor; this object owns only the user intent, desired
 // state, retry budget, and the generation token accepted by lifecycle events.
 class ConnectionStateMachine {
   #intent;
@@ -328,10 +328,235 @@ class ConnectionStateMachine {
   }
 }
 
+// Imperative operation ownership is separate from the pure FSM above. All
+// process, Browser, recovery and presentation effects are injected by Main.
+class ConnectionOperationCoordinator {
+  constructor(options) {
+    Object.assign(this, options);
+    this.connectInFlight = null;
+    this.disconnectInFlight = null;
+    this.reconnectInFlight = null;
+  }
+
+  currentRecoveryIntent() {
+    return this.connectionState.currentRecoveryIntent({ isQuitting: this.isQuitting() === true });
+  }
+
+  invalidateForConnectivity(reason, intent) {
+    if (!this.connectionState.pauseForConnectivity(intent, {
+      isQuitting: this.isQuitting() === true,
+    })) return false;
+    // Keep the lifecycle intent stable: resume/online is allowed to recover
+    // this exact user-requested connection, while generation invalidation makes
+    // every old engine event, retry, and health probe inert immediately.
+    this.engineSupervisor.invalidate();
+    this.clearPresentation();
+    this.getPresentation().lastError = this.getTranslator()(reason === 'suspend'
+      ? 'error.connectionSuspended'
+      : 'error.networkUnavailable');
+    this.emit();
+    return this.ensureEngineStopped().then((result) => {
+      if (!this.connectionState.canContinue(intent) || result.ok) return;
+      this.getPresentation().lastError = this.getTranslator()('error.engineStuck');
+      this.emit();
+    }).catch(() => {});
+  }
+
+  shouldReconnectForConnectivity(intent, reason) {
+    try {
+      return this.connectionState.canRecover(intent, {
+        isQuitting: this.isQuitting() === true,
+        autoReconnect: reason === 'initial-network-online' ||
+          (this.loadSettingsOrReport().autoReconnect !== false),
+      });
+    } catch {
+      this.connectionState.failIntent(intent);
+      this.emit();
+      return false;
+    }
+  }
+
+  async recoverConnectivity(intent, reason) {
+    let autoReconnect;
+    try {
+      autoReconnect = reason === 'initial-network-online' ||
+        (this.loadSettingsOrReport().autoReconnect !== false);
+    } catch {
+      this.connectionState.failIntent(intent);
+      this.emit();
+      return false;
+    }
+    if (!this.connectionState.canRecover(intent, {
+      isQuitting: this.isQuitting() === true,
+      autoReconnect,
+    })) return false;
+    const stopped = await this.ensureEngineStopped();
+    if (!stopped.ok || stopped.cleanExit === false || !this.connectionState.canContinue(intent, {
+      isQuitting: this.isQuitting() === true,
+    })) {
+      if ((!stopped.ok || stopped.cleanExit === false) &&
+          this.connectionState.isCurrentIntent(intent)) {
+        this.connectionState.failIntent(intent);
+        this.getPresentation().lastError = this.getTranslator()(stopped.cleanExit === false
+          ? 'error.engineCleanupUnconfirmed'
+          : 'error.engineStuck');
+        this.emit();
+      }
+      return false;
+    }
+    if (!this.connectionState.resumeConnectivity(intent, {
+      isQuitting: this.isQuitting() === true,
+      autoReconnect,
+    })) return false;
+    const result = await this.connect(false, intent);
+    return result.ok === true;
+  }
+
+  onConnectivityRecoveryDeclined(intent, reason) {
+    if (reason !== 'initial-network-online' && this.connectionState.failIntent(intent)) this.emit();
+  }
+
+  rejectConnectionWhileQuitting(intent = this.connectionState.snapshot().intent) {
+    if (this.isQuitting() !== true) return null;
+    this.connectionState.failIntent(intent); this.emit();
+    return { ok: false, stale: true, quitting: true, intent };
+  }
+
+  beginLifecycleIntent() {
+    this.cancelRecovery();
+    return this.connectionState.beginConnectIntent();
+  }
+
+  async connect(isRetry = false, expectedIntent = null) {
+    let rejected = this.rejectConnectionWhileQuitting(expectedIntent ?? undefined);
+    if (rejected) return rejected;
+    let intent = expectedIntent;
+    if (intent === null && !isRetry) {
+      if (this.disconnectInFlight) await this.disconnectInFlight;
+      rejected = this.rejectConnectionWhileQuitting(); if (rejected) return rejected;
+      const current = this.connectionState.snapshot();
+      if (current.desiredConnected) {
+        if (this.connectInFlight?.intent === current.intent) return this.connectInFlight.promise;
+        return { ok: true, existing: this.engineSupervisor.hasActive,
+          pending: !this.engineSupervisor.hasActive, intent: current.intent };
+      }
+      intent = this.beginLifecycleIntent();
+    } else if (intent === null) intent = this.connectionState.snapshot().intent;
+    if (!this.connectionState.canContinue(intent)) return { ok: false, stale: true, intent };
+    // Never start another process in the previous Engine's exit/close interval.
+    if (this.disconnectInFlight) await this.disconnectInFlight;
+    rejected = this.rejectConnectionWhileQuitting(intent); if (rejected) return rejected;
+    if (!this.connectionState.canContinue(intent)) return { ok: false, stale: true, intent };
+    if (this.engineSupervisor.hasActive) return { ok: true, existing: true, intent };
+    if (this.connectInFlight) {
+      await this.connectInFlight.promise;
+      rejected = this.rejectConnectionWhileQuitting(intent); if (rejected) return rejected;
+      if (!this.connectionState.canContinue(intent)) return { ok: false, stale: true, intent };
+      if (this.engineSupervisor.hasActive) return { ok: true, existing: true, intent };
+    }
+    const operation = (async () => ({ ...await this.runAttempt(isRetry, intent), intent }))();
+    const record = { intent, promise: operation }; this.connectInFlight = record;
+    try { return await operation; }
+    finally { if (this.connectInFlight === record) this.connectInFlight = null; }
+  }
+
+  // The Browser's boolean request gate and open-result path intentionally keep
+  // their previous failure timing. Both wait on the same intent-bound registry
+  // only when their own admission contract calls for it.
+  async ensureBrowserReady() {
+    if (this.connectionState.isConnected()) return true;
+    const result = await this.connect();
+    if (!result?.ok && !this.connectionState.isConnecting()) return false;
+    return this.waitForConnected(result.intent);
+  }
+
+  async ensureBrowserConnected() {
+    if (!this.connectionState.isConnected()) {
+      const result = await this.connect();
+      if (!await this.waitForConnected(result.intent)) {
+        return { ok: false, error: this.getPresentation().lastError ||
+          this.getTranslator()('error.connectTimeout') };
+      }
+    }
+    return { ok: true };
+  }
+
+  ensureEngineStopped() {
+    if (this.disconnectInFlight) return this.disconnectInFlight;
+    // The injected effect establishes the Browser gate before freeing the
+    // listener. Its policy/timeout authority remains in the existing owners.
+    const operation = this.stopEngine();
+    this.disconnectInFlight = operation;
+    operation.finally(() => {
+      this.removeSidecar();
+      if (this.disconnectInFlight === operation) this.disconnectInFlight = null;
+    });
+    return operation;
+  }
+
+  initiateStop(wantsConnectedAfterStop) {
+    this.cancelRecovery();
+    const intent = this.connectionState.beginStop(wantsConnectedAfterStop);
+    this.engineSupervisor.invalidate();
+    this.clearProxyCredential();
+    this.clearPresentation();
+    this.emit();
+    return { intent, stopped: this.ensureEngineStopped() };
+  }
+
+  async disconnect() {
+    const { intent, stopped } = this.initiateStop(false);
+    const result = await stopped;
+    this.removeSidecar();
+    this.connectionState.stopCompleted(intent, result);
+    if (this.connectionState.isCurrentIntent(intent) && !result.ok) {
+      this.getPresentation().lastError = this.getTranslator()('error.engineStuck');
+      this.emit();
+    } else if (this.connectionState.isCurrentIntent(intent) && result.cleanExit === false) {
+      this.getPresentation().lastError = this.getTranslator()('error.engineCleanupUnconfirmed');
+      this.emit();
+    }
+    return { ok: result.ok };
+  }
+
+  async reconnect(expectedGeneration = null) {
+    let rejected = this.rejectConnectionWhileQuitting(); if (rejected) return rejected;
+    if (expectedGeneration !== null && !this.engineSupervisor.isCurrent(expectedGeneration)) {
+      return { ok: false, stale: true };
+    }
+    if (this.reconnectInFlight && this.connectionState.isCurrentIntent(this.reconnectInFlight.intent) &&
+        this.connectionState.snapshot().desiredConnected) return this.reconnectInFlight.promise;
+    if (this.reconnectInFlight) await this.reconnectInFlight.promise;
+    rejected = this.rejectConnectionWhileQuitting(); if (rejected) return rejected;
+    if (expectedGeneration !== null && !this.engineSupervisor.isCurrent(expectedGeneration)) {
+      return { ok: false, stale: true };
+    }
+    const { intent, stopped } = this.initiateStop(true);
+    const operation = (async () => {
+      const stopResult = await stopped;
+      const quitResult = this.rejectConnectionWhileQuitting(intent); if (quitResult) return quitResult;
+      this.connectionState.stopCompleted(intent, stopResult);
+      if (!stopResult.ok || stopResult.cleanExit === false) {
+        this.connectionState.failIntent(intent);
+        this.getPresentation().lastError = this.getTranslator()(stopResult.cleanExit === false
+          ? 'error.engineCleanupUnconfirmed' : 'error.engineStuck');
+        this.emit();
+        return { ok: false };
+      }
+      if (!this.connectionState.resumeAfterStop(intent)) return { ok: false, stale: true };
+      return this.connect(false, intent);
+    })();
+    const record = { intent, promise: operation }; this.reconnectInFlight = record;
+    try { return await operation; }
+    finally { if (this.reconnectInFlight === record) this.reconnectInFlight = null; }
+  }
+}
+
 module.exports = {
   CONNECTION_PHASE,
   ConnectionWaitRegistry,
   ConnectionStateMachine,
+  ConnectionOperationCoordinator,
   connectionPresentation,
   projectConnectionStatus,
 };

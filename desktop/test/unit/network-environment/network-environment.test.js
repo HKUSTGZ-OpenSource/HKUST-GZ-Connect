@@ -1,7 +1,9 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
 const test = require('node:test');
+const { inventoryFromNode } = require('../../../lib/network-environment/platform/interface-inventory');
 const { detectLinux } = require('../../../lib/network-environment/providers/linux-network-provider');
 const { detectMacos } = require('../../../lib/network-environment/providers/macos-network-provider');
 const { detectWindows } = require('../../../lib/network-environment/providers/windows-network-provider');
@@ -12,6 +14,7 @@ const { projectNetworkEnvironment, usableSourceAddress } =
   require('../../../lib/network-environment/schema/network-environment-schema');
 
 const address = (value) => ({ address: value, family: 4, internal: false });
+const windowsFallbackId = (alias) => `win:${createHash('sha256').update(alias, 'utf8').digest('hex').slice(0, 60)}`;
 
 test('platform commands complete asynchronously and collapse failures to unknown output', async () => {
   let callback = null;
@@ -50,6 +53,16 @@ test('macOS separates the system TUN route from the default physical underlay', 
   assert.equal(result.interfaces.find(({ id }) => id === 'utun4').systemDefault, true);
   assert.deepEqual(result.systemProxy.owner, { provider: 'mihomo', name: 'Mihomo / Clash', mode: 'rule',
     tunEnabled: false, confidence: 'confirmed' });
+
+  const service = new NetworkEnvironmentService({ platform: 'darwin',
+    networkInterfaces: () => ({ en0: [address('10.0.0.8')], utun4: [address('100.64.0.2')] }), run });
+  await service.refresh();
+  assert.deepEqual(service.engineArguments(''), [
+    '--source-interface', 'en0', '--source-address', '10.0.0.8',
+  ]);
+  assert.deepEqual(service.engineArguments('100.64.0.2'), [
+    '--source-interface', 'utun4', '--source-address', '100.64.0.2',
+  ]);
 });
 
 test('Linux detects physical underlay, TUN system route, desktop proxy, and advertised Mihomo mode', async () => {
@@ -81,12 +94,10 @@ test('Linux detects physical underlay, TUN system route, desktop proxy, and adve
 });
 
 test('Windows uses interface indices as safe IDs and separates Wintun from hardware underlay', async () => {
-  const interfaces = [
-    { id: 'Ethernet 2', name: 'Ethernet 2', kind: 'unknown', active: true,
-      addresses: [address('192.0.2.10')] },
-    { id: 'Mihomo', name: 'Mihomo', kind: 'virtual', active: true,
-      addresses: [address('198.18.0.1')] },
-  ];
+  const interfaces = inventoryFromNode({
+    'Ethernet 2': [address('192.0.2.10')],
+    Mihomo: [address('198.18.0.1')],
+  }, 'win32');
   const run = (command, args) => {
     const call = args.join(' ');
     if (command === 'curl.exe') return JSON.stringify({ mode: 'direct', 'mixed-port': 7897,
@@ -107,9 +118,93 @@ test('Windows uses interface indices as safe IDs and separates Wintun from hardw
   const virtual = result.interfaces.find(({ name }) => name === 'Mihomo');
   assert.equal(physical.id, 'if:7');
   assert.equal(physical.default, true);
+  assert.equal(physical.kind, 'physical');
   assert.equal(virtual.systemDefault, true);
   assert.equal(virtual.kind, 'virtual');
   assert.equal(result.systemProxy.owner.mode, 'direct');
+});
+
+test('Windows fallback IDs hash exact aliases while preserving bounded display names', () => {
+  const aliases = [
+    'Ethernet 2',
+    'Ethernet2',
+    '以太网 2 🚀',
+    'Café 2',
+    'Cafe\u0301 2',
+    `Long Adapter ${'port-'.repeat(13)}`,
+    'VPN Tunnel',
+  ];
+  const networkInterfaces = Object.fromEntries(aliases.map((alias, index) => (
+    [alias, [address(`192.0.2.${40 + index}`)]]
+  )));
+  const first = inventoryFromNode(networkInterfaces, 'win32');
+  const refreshed = inventoryFromNode(networkInterfaces, 'win32');
+  assert.deepEqual(first.map(({ id }) => id), aliases.map(windowsFallbackId));
+  assert.deepEqual(refreshed.map(({ id }) => id), first.map(({ id }) => id));
+  assert.equal(new Set(first.map(({ id }) => id)).size, aliases.length,
+    'near-identical aliases remain distinct');
+  for (const [index, item] of first.entries()) {
+    assert.equal(item.id.length, 64);
+    assert.match(item.id, /^win:[0-9a-f]{60}$/u);
+    assert.equal(item.name, aliases[index]);
+    assert.equal(item.active, true);
+  }
+  assert.equal(first.find(({ name }) => name === 'VPN Tunnel').kind, 'virtual');
+  assert.equal(inventoryFromNode({ en0: [address('192.0.2.99')] }, 'darwin')[0].id, 'en0',
+    'non-Windows interface IDs remain unchanged');
+});
+
+test('Windows fallback identity collisions fail closed', () => {
+  const collidingId = () => `win:${'a'.repeat(60)}`;
+  assert.throws(() => inventoryFromNode({
+    'Ethernet 2': [address('192.0.2.44')],
+    'Ethernet 3': [address('192.0.2.45')],
+  }, 'win32', collidingId), /Windows network interface fallback identity collision/u);
+});
+
+test('Windows PowerShell failure and invalid JSON preserve explicit source selection safely', async (t) => {
+  const sourceAddress = '192.0.2.44';
+  const networkInterfaces = () => ({
+    'Ethernet 2': [address(sourceAddress)],
+    'VPN Tunnel': [address('10.0.0.44')],
+  });
+  const cases = [
+    ['PowerShell rejection', async () => { throw new Error('synthetic PowerShell rejection'); }],
+    ['invalid PowerShell JSON', async () => '{invalid-json'],
+  ];
+  for (const [name, powershellResult] of cases) {
+    await t.test(name, async () => {
+      const service = new NetworkEnvironmentService({
+        platform: 'win32',
+        networkInterfaces,
+        run: async (command) => command === 'powershell.exe' ? powershellResult() : '',
+      });
+      const snapshot = await service.refresh(sourceAddress);
+      const ethernet = snapshot.interfaces.find(({ name: alias }) => alias === 'Ethernet 2');
+      const vpn = snapshot.interfaces.find(({ name: alias }) => alias === 'VPN Tunnel');
+      assert.equal(ethernet.id, windowsFallbackId('Ethernet 2'));
+      assert.equal(ethernet.name, 'Ethernet 2');
+      assert.equal(ethernet.kind, 'unknown');
+      assert.equal(vpn.kind, 'virtual');
+      assert.equal(snapshot.selection.available, true);
+      assert.equal(snapshot.selection.interfaceId, ethernet.id);
+      const refreshed = await service.refresh(sourceAddress);
+      assert.deepEqual(refreshed.interfaces.map(({ id, name }) => ({ id, name })),
+        snapshot.interfaces.map(({ id, name }) => ({ id, name })),
+        'fallback identities and interface order remain stable across refresh');
+      assert.deepEqual(service.engineArguments(sourceAddress), [
+        '--source-interface', ethernet.id, '--source-address', sourceAddress,
+      ]);
+      assert.equal(service.engineArguments('192.0.2.99'), null,
+        'an absent address remains fail closed');
+      assert.equal(service.engineArguments('127.0.0.1'), null,
+        'an unusable address remains fail closed');
+      assert.equal(service.engineArguments('not-an-ip'), null,
+        'an invalid address remains fail closed');
+      assert.deepEqual(service.engineArguments(''), [],
+        'the empty default selection keeps its existing no-explicit-binding behavior');
+    });
+  }
 });
 
 test('public projection is bounded and resolves only usable addresses', () => {

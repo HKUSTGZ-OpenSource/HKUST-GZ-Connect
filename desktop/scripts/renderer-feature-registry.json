@@ -138,20 +138,11 @@
     "renderer/components/card-board/card-board-view.js": [
       "cardBoardView"
     ],
-    "renderer/connection-overview.js": [
-      "connectionOverview"
-    ],
     "renderer/group-dialog.js": [
       "categoryGroupDialog"
     ],
     "renderer/i18n.js": [
       "I18N"
-    ],
-    "renderer/notification-drawer.js": [
-      "notificationDrawer"
-    ],
-    "renderer/notification-view.js": [
-      "notificationView"
     ],
     "renderer/proxy-auth-migration.js": [
       "proxyAuthMigration"
@@ -194,7 +185,35 @@
       "root": "renderer/features/feature-host",
       "entrypoint": "renderer/features/feature-host/index.mjs",
       "exports": ["FEATURE_DEFINITIONS", "createRendererFeatures"],
-      "allowedDependencies": ["campus-data", "official-favorites", "auth-challenge", "integration-center"]
+      "allowedDependencies": ["campus-data", "official-favorites", "auth-challenge", "integration-center", "connection-overview", "update-notices", "notifications", "control-tower"]
+    },
+    {
+      "id": "connection-overview",
+      "root": "renderer/features/connection-overview",
+      "entrypoint": "renderer/features/connection-overview/index.mjs",
+      "exports": ["buildUnderlayOptions", "create", "networkPathSummary", "sparkline"],
+      "allowedDependencies": []
+    },
+    {
+      "id": "update-notices",
+      "root": "renderer/features/update-notices",
+      "entrypoint": "renderer/features/update-notices/index.mjs",
+      "exports": ["create"],
+      "allowedDependencies": []
+    },
+    {
+      "id": "notifications",
+      "root": "renderer/features/notifications",
+      "entrypoint": "renderer/features/notifications/index.mjs",
+      "exports": ["applyState", "create", "publicRecovery", "render", "runAction"],
+      "allowedDependencies": []
+    },
+    {
+      "id": "control-tower",
+      "root": "renderer/features/control-tower",
+      "entrypoint": "renderer/features/control-tower/index.mjs",
+      "exports": ["create"],
+      "allowedDependencies": []
     },
     {
       "id": "campus-data",

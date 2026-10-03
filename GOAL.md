@@ -4,8 +4,8 @@
 - Authority: project maintainer
 - Baseline: `main@15738338ff2a280300b66e98a1823659f24630a4`
 - Started: 2026-09-04
-- Last verified: 2026-09-27 (before this documentation PR)
-- Development main at verification: `5cec683c4bdcb3e6663572943d8799f6eccb79b3`
+- Last verified: 2026-10-03 (before this documentation PR)
+- Development main at verification: `a86f93a7f4ac0f49cae044dad3f18ae7bca68585`
 - Scope: repository governance, documentation truth, agent instructions, module boundaries,
   contributor workflow, GitHub protections and organization migration
 
@@ -38,24 +38,43 @@ high-risk rules. No instruction file is treated as a substitute for review or te
    `main`; runtime modularization must now consume those boundaries rather than create alternatives.
 2. `desktop/main.js`, `desktop/lib/browser/session/campus-browser.js` and the Renderer
    bootstrap/CSS remain concurrency hot spots. Rust process composition M4 is completed through
-   #148/#82; its root is 498 lines and default production excludes compatibility laboratories.
+   #148/#82; its root is 498 lines and default production gates the five research modules
+   specified in ADR-0034. The additional config/tunnel ownership ambiguity remains M5 work.
 3. Legacy Renderer globals and HTML script order remain migration debt. The merged static policy
    and feature host enforce new boundaries, but `app.js` is not yet only a composition root.
 4. Stable `v2.0.3` is published from `main@b57c394c73e0b07a0076e26f58e1666e29f00135`.
    Four platform installers, a build receipt and SHA-256
    manifest are uploaded. The repository-ID updater is shipped; the historical 2.0.1 bridge
-   requirement is satisfied. Published packages and the currently installed Mac candidate are
-   distinct evidence, not interchangeable versions.
+   requirement is satisfied. Published packages, the installed Mac copy and development
+   source have separate identities; post-tag source is not silently injected into a release.
    The post-tag crypto migration #146 closes #105 at `71dc05e` without rewriting release artifacts.
    Post-tag #149/#150 restore verified update opening and move update scheduling into its owner.
-   #152 closes the reproduced unavailable-store memory-credential defect #151; #153 moves Engine
-   serving coordination into the existing runtime. Main is 1,604 lines, still above M3's target.
-   These changes are not in 2.0.3. M1/M2/M3/M5 and the original Windows report #127 remain open.
+   #152 closes the reproduced unavailable-store memory-credential defect #151. #153/#155/#158/#159
+   move Engine serving, termination, startup attempts and pending connection operations into their
+   owners; #157 closes the reproduced retired-context error defect #156. #160 moves persistence
+   read adaptation/feedback; #161 adds the independently tested Browser window owner.
+   Later #184/#188/#189/#190/#191 narrow Main's policy, proxy-access, settings, readiness and
+   resource transactions; #192-#195 move Browser navigation/route/popup/toolbar ownership;
+   #179/#187/#196 move connection, Control Tower and notification presentation into native owners.
+   Main is 819 lines with 30 direct / 44 effective / 170 transitive dependencies; Browser is
+   1,137 lines, Renderer bootstrap 412 and Engine root 498. M3's first line target is met, but
+   its dependency and final composition targets are not. M2's full ownership target is not met.
+   #162's reproduced window cleanup is merged; #178 fixes the reproduced calendar source query,
+   but #177 still requires a sanitized reporter retest. #200 closes custom-Profile credential
+   retirement failure #199; #198 closes #197's bounded Gateway locator/explicit TLS source scope.
+   #205 removes the vulnerable Desktop build/download dependency chain while keeping Electron
+   43.7.7 and older supported platforms. Its build tool is pinned to an explicitly reviewed
+   prerelease (`electron-builder@27.0.0-alpha.9`), not silently represented as stable tooling.
+   None of these post-tag changes is in 2.0.3. M1/M2/M3/M5 and the original Windows report #127
+   remain open. An empty PR queue is not completion; active candidates are not released capabilities.
 5. Repository Rulesets, CODEOWNERS, templates, Dependabot, release Environment and immutable Action
    policies are active. Two Organization owners are present. Protected `main` still requires one
    approval and seven strict checks; the maintainer authorized one-time administrator squash merges
    for the current convergence queue after its exact-head checks, without changing that protection.
    Team ownership and post-transfer security settings remain incomplete.
+   Read-only API verification on 2026-10-03 confirms Dependabot security updates enabled,
+   while GitHub Secret Scanning and Push Protection remain disabled. The independent
+   exact-tree secret gate is active, not a substitute for those missing repository features.
    Security/Release team membership is explicitly deferred by heeh02 on 2026-09-26; revisit before
    enabling role-specific ownership/review/release qualification. No placeholder team or approval
    is invented, and existing protections remain unchanged.
@@ -191,9 +210,9 @@ release assumptions.
 
 Stable remains immutable `v2.0.3@b57c394c73e0b07a0076e26f58e1666e29f00135`.
 Development source at this checkpoint is
-`main@5cec683c4bdcb3e6663572943d8799f6eccb79b3`; later source fixes and owner extractions
-do not silently alter that release or the installed application. The original PR queue is
-converged, but an empty queue is not goal completion. M4/#82 and dependency backlog #105 are
+`main@a86f93a7f4ac0f49cae044dad3f18ae7bca68585`; later source fixes and owner extractions
+do not silently alter that release or the installed application. An empty PR queue is not
+goal completion. M4/#82 and dependency backlog #105 are
 closed; Renderer, remaining Browser, Main composition, full dependency enforcement, deferred
 role-specific governance and the unreproduced Windows report remain separate acceptance work.
 

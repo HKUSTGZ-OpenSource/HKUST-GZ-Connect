@@ -33,7 +33,7 @@ test('dependency parser accepts only static relative CommonJS imports', () => {
 });
 
 test('Browser orchestration cannot regrow and the native tab owner stays below 600 lines', () => {
-  assert.equal(BASELINE.campusBrowserLines, 1502);
+  assert.equal(BASELINE.campusBrowserLines, 1476);
   assert.equal(BASELINE.browserTabOwnerLines, 600);
   for (const key of ['campusBrowserLines', 'browserTabOwnerLines']) {
     assert.ok(architectureErrors({ cycles: [], [key]: BASELINE[key] + 1 })
@@ -201,9 +201,11 @@ test('current production graph has no cycle and stays within debt growth caps', 
   assert.deepEqual(snapshot.rootLibraryDebtErrors, []);
 });
 
-test('Main line budget preserves update and serving ownership extractions', () => {
-  assert.equal(BASELINE.mainLines, 1604);
-  assert.ok(architectureErrors({ cycles: [], mainLines: 1605 })
+test('Main line budget preserves connection and persistence-read ownership', () => {
+  assert.equal(BASELINE.mainLines, 1084);
+  assert.equal(BASELINE.mainDirectDependencies, 33);
+  assert.equal(BASELINE.mainEffectiveDirectDependencies, 47);
+  assert.ok(architectureErrors({ cycles: [], mainLines: 1085 })
     .some(error => error.includes('mainLines')));
 });
 

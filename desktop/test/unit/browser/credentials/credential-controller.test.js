@@ -408,9 +408,18 @@ test('CampusBrowser delegates candidate state and keeps all lifecycle clear call
   assert.match(owner.slice(owner.indexOf('\n  close(id)'), owner.indexOf('\n  clearTransientState()')),
     /this\.effects\.closeTabState\(tab\)/,
     'closing a popup must unlink it without copying or prematurely consuming the owner secret');
-  const windowClose = source.indexOf("this.window.on('closed'");
+  const manager = fs.readFileSync(
+    path.join(desktopRoot, 'lib', 'browser', 'session', 'campus-browser-manager.js'),
+    'utf8',
+  );
+  const windowClose = manager.indexOf("window.on('closed'");
   assert.notEqual(windowClose, -1);
-  assert.match(source.slice(windowClose, windowClose + 350), /this\.tabManager\.closeViews\(\)/);
+  assert.match(manager.slice(windowClose, windowClose + 120), /this\.retire\(record\)/);
+  assert.match(manager, /this\.onClosed\(record\.window\)/);
+  assert.match(source, /onClosed: \(\) => this\.handleWindowClosed\(\)/);
+  const browserClose = source.indexOf('\n  handleWindowClosed()');
+  assert.notEqual(browserClose, -1);
+  assert.match(source.slice(browserClose, browserClose + 350), /this\.tabManager\.closeViews\(\)/);
   assert.match(source, /clearCredentialCandidate: tab => this\.clearCredentialCandidate\(tab\)/);
   for (const method of ['clearTransientState', 'closeViews']) {
     const start = owner.indexOf(`\n  ${method}()`);

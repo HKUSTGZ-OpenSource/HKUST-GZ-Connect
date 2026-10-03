@@ -11,6 +11,7 @@ function fixture(overrides = {}) {
   const handlers = new Map();
   const calls = [];
   let blocked = false;
+  const { credentialTransactions: transactionOverrides = {}, ...dependencyOverrides } = overrides;
   let current = {
     username: 'alice',
     port: 1080,
@@ -30,22 +31,6 @@ function fixture(overrides = {}) {
     saveSettings: (settings) => { current = settings; calls.push(['save', settings]); return settings; },
     savePassword: (password, username) => { calls.push(['password', password, username]); return true; },
     removePassword: () => { calls.push(['remove-password']); return true; },
-    runCredentialMutation: ({ mutate }) => {
-      try { return { ok: true, value: mutate() }; }
-      catch (error) { return { ok: false, error, recovery: { status: 'recovered' } }; }
-    },
-    credentialJournalPath: '/fixture/credential-transaction.json',
-    credentialPaths: {
-      settings: '/fixture/settings.json',
-      settingsBackup: '/fixture/settings.json.bak',
-      credential: '/fixture/credential.bin',
-    },
-    applyCredentialRecovery: (recovery, options) => {
-      calls.push(['recovery', recovery?.status, options]);
-      blocked = recovery?.status === 'blocked';
-    },
-    isCredentialBlocked: () => blocked,
-    retryCredentialRecovery: () => { blocked = false; return { status: 'recovered' }; },
     runPolicyTransaction: runOperations,
     runSerialTransaction: runOperations,
     assertPersistence: () => calls.push(['assert-persistence']),
@@ -56,7 +41,20 @@ function fixture(overrides = {}) {
     reconnect: async () => { calls.push(['reconnect']); return { ok: true }; },
     disconnect: async () => { calls.push(['disconnect']); return { ok: true }; },
     getActiveProfileId: () => 'hkustgz',
-    ...overrides,
+    credentialTransactions: {
+      runCredentialMutation: ({ mutate }) => {
+        try { return { ok: true, value: mutate() }; }
+        catch (error) { return { ok: false, error, recovery: { status: 'recovered' } }; }
+      },
+      applyCredentialRecoveryOutcome: (recovery, options) => {
+        calls.push(['recovery', recovery?.status, options]);
+        blocked = recovery?.status === 'blocked';
+      },
+      isCredentialTransactionBlocked: () => blocked,
+      retryCredentialTransactionRecovery: () => { blocked = false; return { status: 'recovered' }; },
+      ...transactionOverrides,
+    },
+    ...dependencyOverrides,
   };
   registerSettingsCredentialIpc(dependencies);
   return {
@@ -210,7 +208,9 @@ test('a thrown credential transaction cannot leave a staged one-shot password li
     credentialStorageAvailable: () => false,
     stageOneShotCredential: () => ({ ok: true, revision: 10, storage: 'memory_only' }),
     clearOneShotCredential: (revision) => { cleared.push(revision); return true; },
-    runCredentialMutation: ({ mutate }) => { mutate(); throw new Error('transaction crashed'); },
+    credentialTransactions: {
+      runCredentialMutation: ({ mutate }) => { mutate(); throw new Error('transaction crashed'); },
+    },
   });
   const result = await f.handlers.get('save')({}, {
     username: 'bob', password: 'synthetic-password', expectedProfileId: 'hkustgz',
@@ -302,11 +302,13 @@ test('username changes without a password fail and credential recovery errors st
   assert.equal(username.error, 'error.usernameNeedsPassword');
 
   const failed = fixture({
-    runCredentialMutation: () => ({
-      ok: false,
-      recovery: { status: 'credential-cleared' },
-      error: { credentialStoreUnavailable: true },
-    }),
+    credentialTransactions: {
+      runCredentialMutation: () => ({
+        ok: false,
+        recovery: { status: 'credential-cleared' },
+        error: { credentialStoreUnavailable: true },
+      }),
+    },
   });
   const payload = { password: 'synthetic-password', expectedProfileId: 'hkustgz' };
   const result = await failed.handlers.get('save')({}, payload);
@@ -350,7 +352,9 @@ test('logout clears an unconsumed one-shot credential after the Engine stops', a
 });
 
 test('blocked logout retries recovery and never mutates while the block remains', async () => {
-  const f = fixture({ retryCredentialRecovery: () => ({ status: 'blocked' }) });
+  const f = fixture({ credentialTransactions: {
+    retryCredentialTransactionRecovery: () => ({ status: 'blocked' }),
+  } });
   f.blocked = true;
   const result = await f.handlers.get('logout')();
   assert.equal(result.ok, false);

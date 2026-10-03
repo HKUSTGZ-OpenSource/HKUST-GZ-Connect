@@ -5,7 +5,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
-const { ensureOwnerOnly } = require('../../../../lib/platform/storage/private-file');
+const {
+  createPrivateStorageEffects,
+  ensureOwnerOnly,
+} = require('../../../../lib/platform/storage/private-file');
 const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../../../../lib/platform/storage/windows-private-file');
 const { ActiveContextActivationStore } = require('../../../../lib/switching/active-context/active-context-activation-store');
 const {
@@ -39,6 +42,17 @@ function writeJson(file, value) {
   // as their default owner; creation protection is distinct from tightening an existing file.
   assert.equal(process.platform === 'win32' ? protectWindowsFileOwnerOnly(file) : ensureOwnerOnly(file),
     true, 'fixture must satisfy the real private-file boundary');
+}
+
+function createStore(options) {
+  const fileSystem = options.fileSystem || fs;
+  const platform = options.platform || process.platform;
+  const profileStorageEffects = createPrivateStorageEffects({
+    fileSystem,
+    platform,
+    windowsAcl: options.windowsAcl,
+  });
+  return new ActiveContextActivationStore({ ...options, profileStorageEffects });
 }
 
 function fixture(t) {
@@ -80,7 +94,7 @@ function fixture(t) {
     to,
     toLayout,
     globalSettings,
-    store: new ActiveContextActivationStore({ userData }),
+    store: createStore({ userData }),
   };
 }
 
@@ -130,7 +144,7 @@ test('crash between Workspace and GlobalSettings writes resumes mixed activation
     if (destination === value.globalSettings) throw new Error('synthetic activation crash');
     return fs.renameSync(source, destination);
   };
-  const crashing = new ActiveContextActivationStore({
+  const crashing = createStore({
     userData: value.userData,
     fileSystem: injected,
   });
@@ -180,7 +194,7 @@ test('simulated Windows verifies source ACLs and protects both committed targets
     protect(file) { protectedPaths.push(file); return true; },
     verify(file) { verifiedPaths.push(file); return fs.existsSync(file); },
   };
-  const store = new ActiveContextActivationStore({
+  const store = createStore({
     userData: value.userData,
     platform: 'win32',
     windowsAcl,

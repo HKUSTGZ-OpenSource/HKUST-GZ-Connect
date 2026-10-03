@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
+const persistence = fs.readFileSync(require.resolve('../../../lib/persistence/runtime/desktop-persistence-runtime'), 'utf8');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
 const shellSource = fs.readFileSync(
@@ -18,9 +20,23 @@ function section(startText, endText) {
   return source.slice(start, end);
 }
 
+test('Main injects persistence-read presentation and legacy files instead of owning their algorithms', () => {
+  assert.match(source, /legacy: DesktopPersistenceRuntime\.createLegacyAdapter\(\{/u);
+  assert.match(source, /settingsFile: SETTINGS, credentialFile: CRED, safeStorage, platform: process\.platform/u);
+  assert.match(source, /settingsPresentation: \{\s*getState: \(\) => state,\s*translate: \(key\) => t\(key\),\s*emit,\s*getAdditionalNotice: \(\) => settingsRecoveryNoticeText,\s*\}/u);
+  assert.match(source, /return persistenceRuntime\.reportSettingsReadFailure\(cause, options\)/u);
+  assert.match(source, /return persistenceRuntime\.loadSettingsOrReport\(options\)/u);
+  assert.doesNotMatch(source, /function (?:loadLegacySettings|saveLegacySettings|openLegacyCredential)\(/u);
+  assert.match(persistence, /const settings = loadSettings\(\);[\s\S]*io\.readPasswordResult\(credentialFile, safeStorage, platform\)/u);
+  assert.match(persistence, /new LegacyMigrationCredentialOwner\(settings\.username, result\.password\)/u);
+  assert.match(persistence, /state\.settingsError === this\.settingsReadErrorText/u);
+});
+
 test('engine close settles fail-closed when retry settings are temporarily unreadable', () => {
-  const body = section('function handleEngineClose(', '\nasync function connectOnce(');
-  assert.match(body, /try \{\s*cfg = loadSettings\(\);\s*\} catch \(error\)/);
+  assert.match(source, /loadSettings, reportSettingsReadFailure, emit/u);
+  assert.match(source, /engineTermination\.close\(\.\.\.args\)/u);
+  const body = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-connection-runtime'), 'utf8');
+  assert.match(body, /try \{\s*cfg = this\.loadSettings\(\);\s*\} catch \(error\)/);
   assert.match(body, /connectionState\.engineClosed\(\{[\s\S]*terminalFailure: true/);
   assert.doesNotMatch(source, /state\.(?:connected|connecting)\s*=/,
     'UI connection flags must be projected from the authoritative FSM');
@@ -28,11 +44,13 @@ test('engine close settles fail-closed when retry settings are temporarily unrea
 });
 
 test('final connection snapshot fails the FSM and classifies credential availability', () => {
-  const body = section('async function connectOnce(', '\nfunction ensureEngineStopped(');
+  const body = attempt;
+  assert.match(source, /engineAttempts\.run\(isRetry, intent\)/u);
   const marker = body.indexOf('// FINAL_CONNECTION_SNAPSHOT:');
-  const spawn = body.indexOf('const started = engineSupervisor.start(');
+  const spawn = body.indexOf('const started = this.engineSupervisor.start(');
   const guardedStart = body.slice(marker, spawn);
-  assert.match(guardedStart, /s = loadSettings\(\);[\s\S]*persistenceRuntime\.openCredential\(\)/);
+  assert.match(guardedStart, /s = this\.loadSettings\(\);[\s\S]*this\.openCredential\(/);
+  assert.match(source, /openPersistent: \(\) => persistenceRuntime\.openCredential\(\)/);
   assert.match(guardedStart, /credentialOwner\.withStrings/);
   assert.match(guardedStart, /credentialOwner\.destroy\(\)/);
   assert.match(guardedStart, /connectionState\.failIntent\(intent\);/);

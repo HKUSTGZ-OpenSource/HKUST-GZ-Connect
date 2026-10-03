@@ -51,7 +51,7 @@ async function detectWindows({ interfaces, run }) {
   const processes = windowsProcessTable(JSON.stringify(parsed.processes));
   const owner = await mihomoOwner({ processes, endpoint: proxy.endpoint, run, platform: 'win32' });
   const projected = interfaces.map((item) => {
-    const adapter = parsed.byName.get(item.id);
+    const adapter = parsed.byName.get(item.name);
     return { ...item, id: adapter ? `if:${Number(adapter.InterfaceIndex)}` : item.id,
       active: adapter ? adapter.Status === 'Up' : item.active,
       default: Number(adapter?.InterfaceIndex) === physicalRoute?.interfaceIndex,

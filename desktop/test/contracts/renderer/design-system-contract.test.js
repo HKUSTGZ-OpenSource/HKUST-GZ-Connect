@@ -10,6 +10,7 @@ const tokens = fs.readFileSync(path.join(renderer, 'design-tokens.css'), 'utf8')
 const controlHtml = fs.readFileSync(path.join(renderer, 'index.html'), 'utf8');
 const browserHtml = fs.readFileSync(path.join(renderer, 'campus-browser.html'), 'utf8');
 const controlCss = fs.readFileSync(path.join(renderer, 'styles.css'), 'utf8');
+const connectionOverviewCss = fs.readFileSync(path.join(renderer, 'features', 'connection-overview', 'view.css'), 'utf8');
 const cardBoardCss = fs.readFileSync(path.join(renderer, 'components', 'card-board', 'card-board.css'), 'utf8');
 const browserCss = fs.readFileSync(path.join(renderer, 'campus-browser.css'), 'utf8');
 const workspaceCss = fs.readFileSync(path.join(renderer, 'campus-workspace.css'), 'utf8');
@@ -41,8 +42,8 @@ test('control panel and Campus Browser share one bounded design-token vocabulary
     assert.ok(tokensAt > 0 && tokensAt < surfaceAt, 'design tokens must load before surface CSS');
   }
   assert.deepEqual([...controlHtml.matchAll(/<link rel="stylesheet" href="([^"]+)"/gu)].map(match => match[1]),
-    ['design-tokens.css', 'styles.css', 'features/campus-data/view.css', 'components/card-board/card-board.css'],
-    'load tokens, shared shell, owned calendar presentation and shared card-board in order');
+    ['design-tokens.css', 'styles.css', 'features/connection-overview/view.css', 'features/campus-data/view.css', 'components/card-board/card-board.css'],
+    'load tokens, shared shell, owned feature views and shared card-board in order');
   assert.ok(controlHtml.indexOf('styles.css') < controlHtml.indexOf('components/card-board/card-board.css'),
     'component CSS must be layered after the canonical shell surface');
   assert.doesNotMatch(controlHtml, /styles\/(?:connection-strip|product-shell)\.css/u);
@@ -92,7 +93,7 @@ test('connection-first shell preserves restrained brand controls and progressive
   assert.match(controlCss, /\.sidebar\s*\{[^}]*flex:\s*0 0 72px/u);
   assert.match(controlCss, /\.nav\.active\s*\{[^}]*box-shadow:\s*0 6px 16px/u);
   assert.match(controlCss, /\.connection-layout\s*\{[^}]*grid-template-columns:/u);
-  assert.match(controlCss, /\.network-path-details\s*\{[^}]*border-radius:\s*14px/u);
+  assert.match(connectionOverviewCss, /:where\(\.connection-overview\) \.network-path-details\s*\{[^}]*border-radius:\s*14px/u);
   assert.match(controlHtml, /id="networkPathDetails"[^>]*class="network-path-details"/u);
   assert.match(controlHtml, /id="power"[^>]*class="connection-action"|class="connection-action"[^>]*id="power"/u);
   assert.match(controlHtml, /id="power"[^>]*role="switch"|role="switch"[^>]*id="power"/u);

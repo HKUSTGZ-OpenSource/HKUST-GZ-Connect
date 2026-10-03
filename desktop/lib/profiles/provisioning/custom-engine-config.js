@@ -1,13 +1,10 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const fs = require('node:fs');
-const { readPrivateFileBounded } = require('../../platform/storage/private-file');
 const {
   PROTOCOL_FAMILY,
   validateSchoolProfileDocument,
 } = require('../schema/school-profile-schema');
-const { verifyWindowsFileOwnerOnly } = require('../../platform/storage/windows-private-file');
 
 const CUSTOM_ENGINE_CONFIG_VERSION = 1;
 const MAX_CUSTOM_ENGINE_CONFIG_BYTES = 64 * 1024;
@@ -24,6 +21,9 @@ function createCustomEngineConfigDocument(rawProfile) {
   return Object.freeze({
     schema_version: CUSTOM_ENGINE_CONFIG_VERSION,
     base_url: profile.gateway.origin.origin,
+    ...(profile.gateway.tlsLeafSha256 == null ? {} : {
+      gateway_tls: Object.freeze({ origin: profile.gateway.origin.origin, leaf_sha256: profile.gateway.tlsLeafSha256 }),
+    }),
     endpoints: Object.freeze({
       discovery: '/por/login_auth.csp?apiversion=1',
       logout: '/por/logout.csp?apiversion=1',
@@ -51,22 +51,29 @@ function serializeCustomEngineConfig(rawProfile) {
 function verifyCustomEngineConfigFile({
   filePath,
   profile,
-  fileSystem = fs,
-  platform = process.platform,
-  verifyWindowsAcl = verifyWindowsFileOwnerOnly,
+  profileStorageEffects,
+  fileSystem,
+  platform,
+  verifyWindowsAcl,
 } = {}) {
   if (typeof filePath !== 'string' || !filePath ||
-      (platform === 'win32' && typeof verifyWindowsAcl !== 'function')) {
+      typeof profileStorageEffects?.assertCompatible !== 'function' ||
+      typeof profileStorageEffects.readPrivateFileBounded !== 'function') {
     throw new TypeError('custom Engine config verification inputs are invalid');
   }
-  if (platform === 'win32' && !verifyWindowsAcl(filePath)) {
+  profileStorageEffects.assertCompatible({ fileSystem, platform, verifyWindowsAcl });
+  const storagePlatform = profileStorageEffects.platform;
+  const windowsAcl = profileStorageEffects.windowsAcl;
+  if (!['darwin', 'linux', 'win32'].includes(storagePlatform) ||
+      (storagePlatform === 'win32' && typeof windowsAcl?.verify !== 'function')) {
+    throw new TypeError('custom Engine config storage effects are invalid');
+  }
+  if (storagePlatform === 'win32' && !windowsAcl.verify(filePath)) {
     throw new Error('custom Engine config ACL is invalid');
   }
-  const { data } = readPrivateFileBounded(filePath, {
+  const { data } = profileStorageEffects.readPrivateFileBounded(filePath, {
     maxBytes: MAX_CUSTOM_ENGINE_CONFIG_BYTES,
     minBytes: 2,
-    platform,
-    fileSystem,
   });
   try {
     let parsed;

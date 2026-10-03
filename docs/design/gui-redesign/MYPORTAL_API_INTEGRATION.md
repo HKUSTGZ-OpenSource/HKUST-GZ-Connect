@@ -1,5 +1,10 @@
 # myPortal API 接入准备
 
+- 状态：已实现的只读适配器；学校接口合同仍待确认
+- 负责人：Desktop Browser 维护者
+- 最后核对：2026-09-27
+- 适用范围：HKUST(GZ) Profile 的 myPortal 日程、资讯与目录读取
+
 ## 已确认的公开行为
 
 访问 `https://myportal.hkust-gz.edu.cn/` 会进入学校 SSO。当前公开登录流程使用 OIDC Authorization Code + PKCE；可观察到的客户端标识为 `dingportal.prod`，回调回到 myPortal。这里仅把该行为用于判断“校园浏览器会话是否已登录”，不保存授权码，不读取密码，不把 Cookie 或 Token 发送给 Renderer。
@@ -8,7 +13,8 @@
 
 ```text
 校园工作台 Renderer
-    │  get-campus-data / refresh-campus-data / refresh-campus-schedule（均无参数）
+    │  get-campus-data / refresh-campus-data / refresh-campus-schedule（无参数）
+    │  get-campus-schedule-week（仅限日期与布尔 force）
     ▼
 Trusted IPC 白名单
     ▼
@@ -33,7 +39,9 @@ MyPortalDataRuntime（Main）
 
 公开入口只证明登录流程存在，不证明课程、借阅或资讯接口的长期稳定性与第三方使用合同。实现不抓取 DOM，而是在用户明确授权的已登录会话中确认只读请求后，将日程与资讯绑定到隔离适配器；图书借阅仍返回 `source-unavailable`，避免猜测接口。会话探测允许同一 Electron Session 完成学校 SSO 的静默续期；最终 URL 中的短期路由参数只用于确认该 Main 进程见过登录后的门户页，不复制到 API 请求，不写日志、不进入 Renderer。
 
-周课表的默认缓存与自动刷新周期为 24 小时。窗口重新聚焦不会在有效期内重复请求；课表标题区的“刷新”按钮通过独立、无参数的 `refresh-campus-schedule` 通道只重读周课表，不连带刷新应用目录、学生服务台、资讯或借阅模块。缓存仅存在于当前进程内，不把个人课表额外落盘。
+周课表的默认缓存与自动刷新周期为 24 小时。窗口重新聚焦不会在有效期内重复请求；课表标题区的“刷新”按钮优先使用限定日期的 `get-campus-schedule-week` 通道，旧兼容路径使用无参数的 `refresh-campus-schedule`，两者都不连带刷新应用目录、学生服务台、资讯或借阅模块。缓存仅存在于当前进程内，不把个人课表额外落盘。
+
+门户对个人分类的 `calendarList.rst` 读取按校园时区的单日区间发起，另有一条 `categoryIds=-1000` 的跨周请求，不能未经响应合同确认就把两者当作同一数据源。应用的周视图现在聚合固定七天的个人分类只读请求：并行请求以控制等待时间，任一天失败则整周失败关闭，不把不完整结果称为“暂无安排”；相同日程去重后最多下发 64 项，仍沿用上述 24 小时周缓存。请求和测试不记录个人日程原文或会话参数。
 
 应用目录和学生服务条目不在列表中重复显示自动、直连或校园隧道标识；所有访问仍使用同一份已审查规则解析器，例外规则只在控制塔的“网站网络规则”中维护。条目收藏复用本机 `create-favorite-resource`、分类与移动事务，Renderer 只提交名称、无凭据 HTTPS URL、自动路由偏好和分类标识。
 
@@ -44,7 +52,7 @@ MyPortalDataRuntime（Main）
 | 模块 | 已确认路径 | 参数键（仅名称） | 结果 |
 |---|---|---|---|
 | 日程分类 | `/calendar/mgr/api/category/list.rst` | `_p callback categoryIds queryType` | 已登录会话使用 |
-| 周日程 | `/calendar/mgr/api/hkust/calendarList.rst` | `_p callback categoryIds fromDate endDate queryType type t` | 已绑定；事件为 `events[].schedule.title/location` 与 `beginTime/endTime` |
+| 个人日程（逐日聚合周视图） | `/calendar/mgr/api/hkust/calendarList.rst` | `_p callback categoryIds fromDate endDate queryType type t` | 已绑定；事件为 `events[].schedule.title/location` 与 `beginTime/endTime`；学校页面的跨周 `-1000` 请求尚未当作个人日程源 |
 | 我的应用 | `/sopplus/_web/customized/getMyFavoriteAppsByCategory.jsp` | `_p callback clientType name parentCategoryId` | 已绑定；5 分类、当前账号 34 项，顺序以门户为准 |
 | 服务分类 | `/sopplus/_web/customized/getPortalCenterTermByStrategy.jsp` | `_p parentCategoryId showCategoryType` | 已绑定；3 分类 |
 | 学生服务台 | `/sopplus/_web/customized/loadAllServiceApps.jsp` | `_p categoryId clientType parentCategoryId` | 已绑定；当前 23 项，顺序以门户为准 |

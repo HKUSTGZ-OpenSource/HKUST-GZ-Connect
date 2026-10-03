@@ -3,9 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { atomicWritePrivateFile } = require('../platform/storage/atomic-private-file');
 const { normalizedIntegrationTargetFile } = require('./integration-schema');
-const { protectWindowsFileOwnerOnly, verifyWindowsFileOwnerOnly } = require('../platform/storage/windows-private-file');
 
 const MAX_EXPORT_BYTES = 1024 * 1024;
 
@@ -74,17 +72,17 @@ function readTarget(file, { fileSystem = fs, platform = process.platform } = {})
 
 class AtomicExportFileTransaction {
   constructor({
-    fileSystem = fs,
-    platform = process.platform,
-    windowsAcl = { protect: protectWindowsFileOwnerOnly, verify: verifyWindowsFileOwnerOnly },
+    privateStorageEffects,
   } = {}) {
+    const { fileSystem, platform, windowsAcl } = privateStorageEffects || {};
     if (!fileSystem || typeof fileSystem.openSync !== 'function' ||
+        typeof privateStorageEffects.atomicWritePrivateFile !== 'function' ||
         !['darwin', 'linux', 'win32'].includes(platform) ||
         (platform === 'win32' && (typeof windowsAcl?.protect !== 'function' ||
           typeof windowsAcl?.verify !== 'function'))) {
       throw new TypeError('atomic export transaction dependencies are invalid');
     }
-    Object.assign(this, { fileSystem, platform, windowsAcl });
+    Object.assign(this, { fileSystem, platform, windowsAcl, privateStorageEffects });
   }
 
   inspect(targetFileValue, payload) {
@@ -149,7 +147,7 @@ class AtomicExportFileTransaction {
       verifyCommitted: (target) => this.windowsAcl.verify(target) === true,
       removeCommittedOnFailure: true,
     } : {};
-    return atomicWritePrivateFile(file, data, this.fileSystem, options);
+    return this.privateStorageEffects.atomicWritePrivateFile(file, data, options);
   }
 
   #restore(file, before, expected) {

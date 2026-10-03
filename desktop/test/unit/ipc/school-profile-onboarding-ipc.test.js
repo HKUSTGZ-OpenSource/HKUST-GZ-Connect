@@ -27,6 +27,16 @@ function fixture() {
   return { calls, handlers };
 }
 
+test('first-use trust consent is an exact boolean and cannot carry a replacement fingerprint', () => {
+  assert.deepEqual(confirmationRequest({ confirmationHandle: 'confirmation-123', trustCertificate: true }),
+    { confirmationHandle: 'confirmation-123', trustCertificate: true });
+  for (const trustCertificate of ['true', 1, {}, []]) {
+    assert.throws(() => confirmationRequest({ confirmationHandle: 'confirmation-123', trustCertificate }));
+  }
+  assert.throws(() => confirmationRequest({ confirmationHandle: 'confirmation-123',
+    trustCertificate: true, leafSha256: 'ab'.repeat(32) }));
+});
+
 test('onboarding IPC exposes five exact channels with bounded schemas', async () => {
   const f = fixture();
   assert.deepEqual([...f.handlers.keys()], [

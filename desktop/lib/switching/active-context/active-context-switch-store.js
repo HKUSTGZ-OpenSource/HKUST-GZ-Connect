@@ -1,15 +1,9 @@
 'use strict';
 
-const fs = require('node:fs');
 const path = require('node:path');
-const { readPrivateFileBounded } = require('../../platform/storage/private-file');
 const {
   validateActiveContextSwitchJournal,
 } = require('./active-context-switch-journal');
-const {
-  protectWindowsFileOwnerOnly,
-  verifyWindowsFileOwnerOnly,
-} = require('../../platform/storage/windows-private-file');
 
 const MAX_ACTIVE_CONTEXT_SWITCH_BYTES = 256 * 1024;
 let temporarySequence = 0;
@@ -73,20 +67,32 @@ function exactDocument(left, right) {
 class ActiveContextSwitchJournalStore {
   constructor({
     filePath,
-    fileSystem = fs,
-    platform = process.platform,
-    windowsAcl = {
-      protect: protectWindowsFileOwnerOnly,
-      verify: verifyWindowsFileOwnerOnly,
-    },
+    profileStorageEffects,
+    fileSystem: fileSystemOverride,
+    platform: platformOverride,
+    windowsAcl: windowsAclOverride,
   } = {}) {
+    if (typeof profileStorageEffects?.assertCompatible !== 'function') {
+      throw new TypeError('active context switch storage effects are required');
+    }
+    profileStorageEffects.assertCompatible({
+      fileSystem: fileSystemOverride,
+      platform: platformOverride,
+      windowsAcl: windowsAclOverride,
+    });
+    const fileSystem = profileStorageEffects?.fileSystem;
+    const platform = profileStorageEffects?.platform;
+    const windowsAcl = profileStorageEffects?.windowsAcl;
     if (!fileSystem || typeof fileSystem.openSync !== 'function' ||
+        !profileStorageEffects ||
+        typeof profileStorageEffects.readPrivateFileBounded !== 'function' ||
         !['darwin', 'linux', 'win32'].includes(platform) ||
         (platform === 'win32' &&
           (typeof windowsAcl?.protect !== 'function' || typeof windowsAcl?.verify !== 'function'))) {
       throw new TypeError('active context switch store dependencies are invalid');
     }
     this.filePath = normalizedPath(filePath);
+    this.profileStorageEffects = profileStorageEffects;
     this.fileSystem = fileSystem;
     this.platform = platform;
     this.windowsAcl = windowsAcl;
@@ -104,11 +110,9 @@ class ActiveContextSwitchJournalStore {
     }
     let data;
     try {
-      ({ data } = readPrivateFileBounded(this.filePath, {
+      ({ data } = this.profileStorageEffects.readPrivateFileBounded(this.filePath, {
         maxBytes: MAX_ACTIVE_CONTEXT_SWITCH_BYTES,
         minBytes: 2,
-        platform: this.platform,
-        fileSystem: this.fileSystem,
       }));
     } catch (error) {
       if (error?.code === 'ENOENT') {

@@ -13,18 +13,39 @@ let st = {
   lastError: null,
 };
 let settings = {};
-let connectedAt = null;
-let durTimer = null;
 let campusActionBusy = false;
 let campusResources = [], resourceGroups = [], serviceDeskData = null, portalServiceDeskData = null;
 let serviceDeskProfileId = null;
-let towerDirty = false;
-let towerSaving = false;
 let loginPending = false;
 let usabilityFeature = null, serviceWorkspace = null, groupDialogFeature = null, favoriteDialogFeature = null, campusDataFeature = null;
-let proxyAuthFeature = null, browserNewTabSettings = null;
-let addWebsiteFeature = null;
+let proxyAuthFeature = null, browserNewTabSettings = null, addWebsiteFeature = null, connectionOverviewFeature = null;
+let controlTowerFeature = null;
 ['auth-challenge', 'integration-center'].forEach(id => rendererFeatures.mount(id, { api: window.api, document, i18n: window.I18N, target: window }));
+const updateNoticesFeature = rendererFeatures.mount('update-notices', {
+  document,
+  translate: (key, vars) => t(key, vars),
+  escapeHtml: esc,
+  checkUpdate: (manual) => window.api.checkUpdate(manual),
+  openExternal: (url) => window.api.openExternal(url),
+  timers: {
+    setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+    clearTimeout: (timer) => window.clearTimeout(timer),
+  },
+});
+const notificationsFeature = rendererFeatures.mount('notifications', {
+  document,
+  translate: (key, vars) => t(key, vars),
+  getLogs: () => window.api.getLogs(),
+  openPage: setPage,
+  reconnect: () => (!st.connected && !st.connecting ? window.api.connect() : null),
+  matchMedia: (query) => window.matchMedia(query),
+  timers: {
+    setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+    clearTimeout: (timer) => window.clearTimeout(timer),
+    requestAnimationFrame: (callback) => window.requestAnimationFrame(callback),
+    cancelAnimationFrame: (frame) => window.cancelAnimationFrame(frame),
+  },
+});
 function activeLoginProfileId() {
   return window.schoolProfileSelectorFeature?.credentialProfileId?.() || null;
 }
@@ -54,22 +75,10 @@ function setPage(page) {
     renderResources();
     void campusDataFeature?.ensureLoaded();
   }
-  if (page === 'settings') runUpdateCheck(false);
-  if (page === 'connect') window.connectionOverview.refreshEnvironment(st.loggedIn === true);
+  if (page === 'settings') updateNoticesFeature.runCheck(false);
+  if (page === 'connect') connectionOverviewFeature?.refreshEnvironment(st.loggedIn === true);
 }
 window.api.onOpenSettings?.(() => { show('dash'); setPage('settings'); refreshState(); });
-function fmtDur(ms) { const s = Math.max(0, Math.floor(ms / 1000)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); }
-function startDur() { stopDur(); durTimer = setInterval(() => { if (connectedAt) $('stDur').textContent = fmtDur(Date.now() - connectedAt); }, 1000); }
-function stopDur() { if (durTimer) clearInterval(durTimer); durTimer = null; }
-
-function dnsModeLabel(mode) {
-  if (mode === 'gateway') return t('stats.dnsGateway');
-  if (mode === 'vpn_profile') return t('stats.dnsVpnProfile');
-  if (mode === 'gateway_profile') return t('stats.dnsGatewayProfile');
-  if (mode === 'system_fallback') return t('stats.dnsFallback');
-  if (mode === 'disabled') return t('stats.dnsDisabled');
-  return t('stats.dnsUnknown');
-}
 
 function updateLoginProgress(s) {
   if (!loginPending) return;
@@ -90,45 +99,15 @@ function renderConnect(s) {
   if (typeof s.locale === 'string') applyLocale(s.locale);
   st = { ...st, ...s };
   usabilityFeature?.updateConnection(s);
-  connectedAt = s.connected ? (s.connectedAt || connectedAt) : null;
-  $('power').classList.toggle('on', s.connected);
-  $('power').classList.toggle('busy', s.connecting);
-  const powerText = t(s.connecting ? 'connect.actionConnecting' : s.connected ? 'connect.actionDisconnect' : 'connect.actionConnect');
-  $('power').disabled = s.connecting; $('powerLabel').textContent = powerText; $('power').setAttribute('aria-label', powerText); $('power').setAttribute('aria-checked', String(s.connected));
-  const wrap = document.querySelector('.conn-status');
-  wrap.classList.toggle('on', s.connected); wrap.classList.toggle('busy', s.connecting);
-  $('connStatus').textContent = s.connecting
-    ? t('connect.connecting')
-    : s.connected ? t('connect.connected') : t('connect.disconnected');
-  $('connIp').textContent = s.connected && s.clientIp ? s.clientIp : '—';
-  $('connTop').classList.toggle('connected', s.connected);
-  $('connErr').textContent = (!s.connected && !s.connecting && s.lastError) ? s.lastError : '';
+  connectionOverviewFeature?.renderStatus(s, t);
   $('settingsNotice').hidden = !s.notice;
-  $('settingsNotice').textContent = s.notice || ''; window.notificationView.render({ card: $('notificationCard'), title: $('notificationTitle'), summary: $('notificationSummary'), action: $('notificationAction'), state: s, translate: t });
-  window.connectionOverview.renderStatus(s, t);
-  $('statGrid').hidden = false;
-  $('appsCard').hidden = !s.connected;
-  $('stIp').textContent = s.clientIp || '—';
-  $('latencyMetric').classList.toggle('is-empty', !s.connected);
-  $('latencyHint').hidden = s.connected || s.connecting;
-  $('stDns').textContent = dnsModeLabel(s.dnsMode);
-  if (s.connected && connectedAt) { startDur(); $('stDur').textContent = fmtDur(Date.now() - connectedAt); }
-  else { stopDur(); $('stDur').textContent = '0:00'; $('stPing').textContent = '—'; $('stConn').textContent = '0'; $('appList').innerHTML = ''; }
+  $('settingsNotice').textContent = s.notice || '';
+  notificationsFeature.renderStatus(s);
   updateLoginProgress(s);
 }
 
 function renderTelemetry(tele) {
-  window.connectionOverview.renderTelemetry(tele, t);
-  if (tele.connectedAt) connectedAt = tele.connectedAt;
-  const latencyAvailable = tele.latencyMs != null;
-  $('stPing').textContent = latencyAvailable ? Math.round(tele.latencyMs) + ' ms' : '—';
-  $('latencyMetric').classList.toggle('is-empty', !latencyAvailable);
-  $('latencyHint').hidden = latencyAvailable;
-  $('stConn').textContent = tele.connCount || 0;
-  const list = $('appList');
-  if (!tele.apps || !tele.apps.length) { list.innerHTML = `<div class="app-empty">${esc(t('stats.appsEmpty'))}</div>`; return; }
-  list.innerHTML = tele.apps.map((a) =>
-    `<div class="app-row"><span class="app-dot"></span><span class="app-name">${esc(a.name)}</span><span class="app-meta">${esc(t('stats.connectionCount', { count: a.count }))}</span></div>`).join('');
+  connectionOverviewFeature?.renderTelemetry(tele, t);
 }
 
 function renderResources() {
@@ -146,23 +125,6 @@ async function openDeepLink(resourceId, fallbackUrl) {
   if (fallbackUrl) await openCampus(fallbackUrl);
 }
 
-function populateTowerForm() {
-  $('towerPort').value = settings.port || 1080;
-  $('strictProxyAuth').checked = settings.strictProxyAuth === true;
-  $('autoReconnect').checked = settings.autoReconnect !== false;
-  $('maxAttempts').value = settings.maxAttempts ?? 3;
-  $('startAtLogin').checked = !!settings.startAtLogin;
-  $('autoConnect').checked = settings.autoConnect !== false;
-  proxyAuthFeature?.render();
-  if (!towerDirty && !$('towerSaved').textContent) $('towerActions').hidden = true;
-}
-
-function setTowerDirty(value) {
-  towerDirty = value === true;
-  if (towerDirty) $('towerActions').hidden = false;
-  else if (!$('towerSaved').textContent) $('towerActions').hidden = true;
-}
-
 async function refreshState({ preserveTower = false } = {}) {
   const s = await window.api.getState();
   applyLocale(s.locale);
@@ -176,60 +138,15 @@ async function refreshState({ preserveTower = false } = {}) {
   serviceDeskData = s.serviceDesk || null;
   renderConnect(s);
   renderResources();
-  $('socksEndpoint').textContent = '127.0.0.1:' + (Number(settings.port) || 1080);
-  if (!preserveTower || !towerDirty) populateTowerForm();
+  controlTowerFeature?.render(settings, { preserve: preserveTower });
   $('acct').textContent = settings.username || '—';
   $('ver').textContent = s.version ? `v${s.version}` : '—';
-  if (s.update) renderUpdateResult(s.update);
+  if (s.update) updateNoticesFeature.renderResult(s.update);
   $('closeAction').value = ['ask', 'minimize', 'quit'].includes(settings.closeAction) ? settings.closeAction : 'ask';
   $('language').value = ['auto', 'zh', 'en'].includes(settings.language) ? settings.language : 'auto';
   browserNewTabSettings?.render(settings);
-  if (document.querySelector('.page.active')?.dataset.page === 'connect') window.connectionOverview.refreshEnvironment(s.loggedIn === true);
+  if (document.querySelector('.page.active')?.dataset.page === 'connect') connectionOverviewFeature?.refreshEnvironment(s.loggedIn === true);
   return s;
-}
-
-// update check (notify only — the app never downloads updates itself)
-let updateHintTimer = null;
-let updateDownloadUrl = '';
-function setUpdateHint(html, { sticky = false } = {}) {
-  const el = $('updateHint');
-  if (updateHintTimer) { clearTimeout(updateHintTimer); updateHintTimer = null; }
-  el.innerHTML = html || '';
-  el.hidden = !html;
-  if (html && !sticky) updateHintTimer = setTimeout(() => { el.hidden = true; }, 3500);
-}
-$('updateHint').addEventListener('click', (event) => {
-  if (!event.target?.closest?.('#updateDownload') || !updateDownloadUrl) return;
-  window.api.openExternal(updateDownloadUrl);
-});
-function renderUpdateResult(result, { manual = false } = {}) {
-  if (result && result.updateAvailable) {
-    updateDownloadUrl = String(result.url || '');
-    setUpdateHint(
-      t('settings.updateAvailable', {
-        version: esc(result.latestVersion),
-        button: t('settings.updateDownload'),
-      }),
-      { sticky: true },
-    );
-  } else if (manual) {
-    updateDownloadUrl = '';
-    setUpdateHint(result ? t('settings.updateLatest') : t('settings.updateFailed'));
-  }
-}
-async function runUpdateCheck(manual) {
-  try {
-    renderUpdateResult(await window.api.checkUpdate(manual === true), { manual });
-  } catch {
-    if (manual) setUpdateHint(t('settings.updateFailed'));
-  }
-}
-
-async function loadLogs() {
-  const text = await window.api.getLogs();
-  const box = $('logs');
-  box.textContent = text && text.trim() ? text : t('notif.empty');
-  box.scrollTop = box.scrollHeight;
 }
 
 async function init() {
@@ -335,83 +252,6 @@ function handleCardBoardResourceAction(event) {
 }
 $('campusResources').addEventListener('click', handleCardBoardResourceAction);
 $('connectCardBoardHost').addEventListener('click', handleCardBoardResourceAction);
-// control tower
-async function saveTower() {
-  if (towerSaving || proxyAuthFeature?.isBusy()) return { ok: false, busy: true };
-  const port = Number($('towerPort').value);
-  const maxAttempts = Number($('maxAttempts').value);
-  if (!Number.isInteger(port) || port < 1025 || port > 65535) {
-    flashSaved(t('tower.portInvalid'), true);
-    $('towerPort').focus();
-    return { ok: false };
-  }
-  if (!Number.isInteger(maxAttempts) || maxAttempts < 0 || maxAttempts > 10) {
-    flashSaved(t('tower.attemptsInvalid'), true);
-    $('maxAttempts').focus();
-    return { ok: false };
-  }
-
-  towerSaving = true;
-  $('towerSave').disabled = true;
-  $('strictProxyAuth').disabled = true;
-  try {
-    const result = await window.api.save({
-      port,
-      strictProxyAuth: $('strictProxyAuth').checked,
-      autoReconnect: $('autoReconnect').checked,
-      maxAttempts,
-      startAtLogin: $('startAtLogin').checked,
-      autoConnect: $('autoConnect').checked,
-    });
-    if (!result?.ok) {
-      flashSaved(result?.error || t('tower.saveFailed'), true);
-      return result || { ok: false };
-    }
-    settings = result.settings || settings;
-    setTowerDirty(false);
-    await refreshState();
-    return result;
-  } catch (error) {
-    flashSaved(error?.message || t('tower.saveFailed'), true);
-    return { ok: false };
-  } finally {
-    towerSaving = false;
-    $('towerSave').disabled = false;
-    $('strictProxyAuth').disabled = false;
-    proxyAuthFeature?.render();
-  }
-}
-let flashTimer = null;
-function flashSaved(msg, isError = false) {
-  clearTimeout(flashTimer);
-  $('towerActions').hidden = false;
-  $('towerSaved').textContent = msg || t('tower.saved');
-  $('towerSaved').classList.toggle('error', isError);
-  flashTimer = setTimeout(() => {
-    $('towerSaved').textContent = '';
-    $('towerSaved').classList.remove('error');
-    if (!towerDirty && !towerSaving) $('towerActions').hidden = true;
-  }, isError ? 3500 : 1800);
-}
-$('towerSave').addEventListener('click', async () => {
-  const result = await saveTower();
-  if (result?.ok) {
-    const reconnectWarning = result.outcome === 'saved_reconnect_failed'
-      ? `${t('tower.saved')} · ${result.warning || ''}`.replace(/\s*·\s*$/u, '')
-      : null;
-    flashSaved(
-      reconnectWarning || result.warning ||
-        (result.reconnected ? t('tower.savedApplied') : t('tower.saved')),
-      !!result.warning,
-    );
-  }
-});
-for (const id of [
-  'towerPort', 'strictProxyAuth', 'autoReconnect', 'maxAttempts', 'startAtLogin', 'autoConnect',
-]) {
-  $(id).addEventListener('input', () => setTowerDirty(true));
-  $(id).addEventListener('change', () => setTowerDirty(true));
-}
 $('closeAction').addEventListener('change', async () => {
   await window.api.save({ closeAction: $('closeAction').value });
   settings.closeAction = $('closeAction').value;
@@ -424,7 +264,7 @@ $('language').addEventListener('change', async () => {
   await refreshState();
 });
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) refreshState({ preserveTower: true }).then(() => window.connectionOverview.refreshEnvironment(st.loggedIn === true));
+  if (!document.hidden) refreshState({ preserveTower: true }).then(() => connectionOverviewFeature?.refreshEnvironment(st.loggedIn === true));
 });
 window.addEventListener('focus', () => {
   if (document.querySelector('.page.active')?.dataset.page === 'browser') {
@@ -432,20 +272,6 @@ window.addEventListener('focus', () => {
   }
 });
 
-// copy + tools
-document.querySelectorAll('[data-copy]').forEach((b) => b.addEventListener('click', async () => {
-  try {
-    if (b.dataset.copy !== 'socks') throw new Error(t('tower.copyFailed'));
-    const text = '127.0.0.1:' + (Number(settings.port) || 1080);
-    await window.api.copy(text);
-    const old = b.textContent;
-    b.textContent = t('tower.copied');
-    b.classList.add('done');
-    setTimeout(() => { b.textContent = old; b.classList.remove('done'); }, 1200);
-  } catch (error) {
-    flashSaved(error?.message || t('tower.copyFailed'), true);
-  }
-}));
 $('openBrowser').addEventListener('click', openCampus);
 $('openLog2').addEventListener('click', () => window.api.openLog());
 $('openAdvancedSettings').addEventListener('click', () => setPage('tower'));
@@ -465,7 +291,7 @@ $('logoutBtn').addEventListener('click', async () => {
       $('lgBtn').textContent = t('login.submit');
       show('login');
     } else {
-      flashSaved(message, true);
+      controlTowerFeature?.flash(message, true);
     }
     return;
   }
@@ -476,15 +302,9 @@ $('logoutBtn').addEventListener('click', async () => {
   show('login');
 });
 $('openLogLink').addEventListener('click', (e) => { e.preventDefault(); window.api.openLog(); });
-$('checkUpdateBtn').addEventListener('click', async () => {
-  $('checkUpdateBtn').disabled = true;
-  try { await runUpdateCheck(true); }
-  finally { $('checkUpdateBtn').disabled = false; }
-});
-
 window.api.onStatus((s) => {
   renderConnect(s);
-  if (s.update) renderUpdateResult(s.update);
+  if (s.update) updateNoticesFeature.renderResult(s.update);
 });
 window.api.onTelemetry(renderTelemetry);
 proxyAuthFeature = window.proxyAuthMigration.createProxyAuthMigration({
@@ -493,10 +313,23 @@ proxyAuthFeature = window.proxyAuthMigration.createProxyAuthMigration({
   translate: (key, vars) => t(key, vars),
   getSettings: () => settings,
   setSettings: (next) => { settings = next; },
-  isTowerBusy: () => towerSaving,
-  flash: flashSaved,
+  isTowerBusy: () => controlTowerFeature?.isSaving() === true,
+  flash: (message, isError) => controlTowerFeature?.flash(message, isError),
 });
 proxyAuthFeature.start();
+controlTowerFeature = rendererFeatures.mount('control-tower', {
+  document,
+  api: window.api,
+  translate: (key, vars) => t(key, vars),
+  getSettings: () => settings,
+  setSettings: (next) => { settings = next; },
+  refreshState: () => refreshState(),
+  getProxyAuth: () => proxyAuthFeature,
+  timers: {
+    setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+    clearTimeout: (handle) => window.clearTimeout(handle),
+  },
+});
 window.routingManager.start({
   openTower: () => { show('dash'); setPage('tower'); },
 });
@@ -554,7 +387,24 @@ window.campusCategoryStacks.start({
   document,
   onAddSite: () => addWebsiteFeature.open(),
   onRenameCard: ({ card }) => { if (card?.id) groupDialogFeature.open({ id: card.id, name: card.name }); },
-}); window.connectionOverview.start({ translate: (key, vars) => t(key, vars), copy: (value) => window.api.copy(value), save: (patch) => window.api.save(patch), refresh: () => refreshState({ preserveTower: true }), getEnvironment: () => window.api.getNetworkEnvironment(), subscribeEnvironment: (callback) => window.api.onNetworkEnvironment?.(callback) }); window.notificationDrawer.start({ document, loadLogs, runAction: (action) => window.notificationView.runAction(action, { openPage: setPage, reconnect: () => (!st.connected && !st.connecting ? window.api.connect() : null) }) });
+});
+connectionOverviewFeature = rendererFeatures.mount('connection-overview', {
+  document,
+  translate: (key, vars) => t(key, vars),
+  escapeHtml: esc,
+  now: () => Date.now(),
+  copy: (value) => window.api.copy(value),
+  save: (patch) => window.api.save(patch),
+  refresh: () => refreshState({ preserveTower: true }),
+  getEnvironment: () => window.api.getNetworkEnvironment(),
+  subscribeEnvironment: (callback) => window.api.onNetworkEnvironment?.(callback),
+  timers: {
+    setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+    clearTimeout: (handle) => window.clearTimeout(handle),
+    setInterval: (callback, delay) => window.setInterval(callback, delay),
+    clearInterval: (handle) => window.clearInterval(handle),
+  },
+});
 usabilityFeature = window.usabilityController.create({ window, document, translate: (key) => t(key), openPage: setPage, clearResourceFilter: () => {
   if (window.campusCategoryStacks.isEditing()) { window.campusCategoryStacks.cancelEdit(); return; }
   serviceWorkspace?.clearSearch();

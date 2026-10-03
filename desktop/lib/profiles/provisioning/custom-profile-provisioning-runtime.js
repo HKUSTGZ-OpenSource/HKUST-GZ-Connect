@@ -25,6 +25,7 @@ const { validateSchoolProfileDocument } = require('../schema/school-profile-sche
 class CustomProfileProvisioningRuntime {
   constructor({
     userData,
+    profileStorageEffects,
     journalStore = null,
     indexStore = null,
     materializer = null,
@@ -35,9 +36,12 @@ class CustomProfileProvisioningRuntime {
       throw new TypeError('custom Profile provisioning runtime dependencies are invalid');
     }
     this.userData = userData;
-    this.journalStore = journalStore || new CustomProfileProvisioningJournalStore({ userData });
-    this.indexStore = indexStore || new CustomProfileIndexStore({ userData });
-    this.materializer = materializer || new CustomProfileMaterializer();
+    this.profileStorageEffects = profileStorageEffects;
+    this.journalStore = journalStore || new CustomProfileProvisioningJournalStore({
+      userData, profileStorageEffects,
+    });
+    this.indexStore = indexStore || new CustomProfileIndexStore({ userData, profileStorageEffects });
+    this.materializer = materializer || new CustomProfileMaterializer({ profileStorageEffects });
     this.randomBytes = randomBytes;
     this.now = now;
     this.running = false;

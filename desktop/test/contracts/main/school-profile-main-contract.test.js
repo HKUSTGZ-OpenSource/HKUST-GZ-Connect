@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
 const { createT } = require('../../../lib/platform/i18n/i18n');
 
 const desktopRoot = path.join(__dirname, '..', '..', '..');
@@ -16,10 +17,10 @@ function section(startText, endText) {
   return main.slice(start, end);
 }
 
-test('composition root resolves one active Profile before credential recovery', () => {
+test('composition root resolves one active Profile before persistence-owned credential recovery', () => {
   const sidecarCleanup = main.indexOf('fs.unlinkSync(legacyRuntimeStoragePaths.proxyHelperCredential)');
   const profile = main.indexOf('const activeSchoolProfile = createPreReadySchoolProfileController(');
-  const recovery = main.indexOf('recoverCredentialSettingsTransaction(');
+  const recovery = main.indexOf('persistenceRuntime.prepareBeforeOwnerOnlyValidation(');
   assert.ok(sidecarCleanup >= 0 && profile > sidecarCleanup && recovery > profile);
   assert.match(
     main,
@@ -29,11 +30,21 @@ test('composition root resolves one active Profile before credential recovery', 
 });
 
 test('profile drives resources, routes and a Main-resolved official portal home', () => {
-  assert.match(main, /resourceLibraryRuntime\.resolveRoutes\(activeSchoolProfile\.mergeResourceLibrary\(\s*settings\.customResources, settings\.hiddenBuiltinResourceIds,/u);
+  const resourceRuntime = fs.readFileSync(require.resolve('../../../lib/resources/runtime/resource-library-runtime'), 'utf8');
+  assert.match(main, /loadResources: ResourceLibraryRuntime\.createSource\(/u);
+  assert.match(main, /mergeResources: \(custom, hidden\) => activeSchoolProfile\.mergeResourceLibrary\(custom, hidden\)/u);
+  assert.match(main, /resolveRoute: \(url\) => domainRoutePolicy\.resolve\(url\)/u);
+  assert.match(main, /onOpenResource: \(resourceId\) => resourceLibraryRuntime\.openByIdSerialized\(\{ resourceId \}\)/u);
+  assert.match(main, /openResource: \(request\) => resourceLibraryRuntime\.openByIdSerialized\(request\)/u);
+  assert.doesNotMatch(main, /function openCampusResourceById\(/u);
+  assert.match(resourceRuntime, /current\.customResources, current\.hiddenBuiltinResourceIds/u);
+  assert.match(resourceRuntime, /projectEffectiveRoutes\(mergeResources\(/u);
   assert.match(main,
     /serverCampusResources = activeSchoolProfile\.mergeResourceLibrary\(\[\], \[\]\)/u,
     'reviewed per-site routes must feed the shared browser and external PAC policy');
-  assert.match(main, /defaultRouteDomains: activeSchoolProfile\.defaultRouteDomains/u);
+  assert.match(main, /getDefaultRouteDomains: \(\) => activeSchoolProfile\.defaultRouteDomains/u);
+  const persistence = fs.readFileSync(require.resolve('../../../lib/persistence/runtime/desktop-persistence-runtime'), 'utf8');
+  assert.match(persistence, /defaultRouteDomains: getDefaultRouteDomains\(\)/u);
   assert.match(main, /directPartnerDomains: \(\) => activeSchoolProfile\.directPartnerDomains/u);
   assert.match(main, /homeUrl: officialPortalHomeUrl\(activeSchoolProfile\.createPresentation/u);
   assert.doesNotMatch(main, /homeUrl: activeSchoolProfile\.browserHomeUrl/u);
@@ -43,14 +54,16 @@ test('profile drives resources, routes and a Main-resolved official portal home'
 });
 
 test('reviewed profile and config binding is validated before credential decryption', () => {
-  const connect = section('async function connectOnce(', '\nfunction ensureEngineStopped(');
-  const profileConfig = connect.indexOf('engineConfigBinding = activeSchoolProfile.verifyEngineLaunchBinding();');
-  const credential = connect.indexOf('const credentialOwner = openVpnCredential(');
-  const spawn = connect.indexOf('const started = engineSupervisor.start(');
+  const connect = attempt;
+  assert.match(main, /engineAttempts\.run\(isRetry, intent\)/u);
+  const profileConfig = connect.indexOf('engineConfigBinding = this.profile.verifyEngineLaunchBinding();');
+  const credential = connect.indexOf('const credentialOwner = this.openCredential(');
+  const spawn = connect.indexOf('const started = this.engineSupervisor.start(');
   assert.ok(profileConfig >= 0 && credential > profileConfig && spawn > credential);
-  assert.match(main, /engineConfigBinding = activeSchoolProfile\.verifyEngineLaunchBinding\(\)/u);
+  assert.match(main, /verifyEngineLaunchBinding: \(\) => activeSchoolProfile\.verifyEngineLaunchBinding\(\)/u);
+  assert.match(main, /openCredential: profileId => openVpnCredential\(/u);
   assert.match(connect,
-    /profileId: activeSchoolProfile\.activeContextBinding\(\)\.profileId,[\s\S]*memoryBroker: oneShotVpnCredential/u);
+    /this\.openCredential\(this\.profile\.activeContextBinding\(\)\.profileId\)/u);
   assert.match(connect, /--profile-binding-v1-stdin/u);
   const bindingWrite = connect.indexOf('${engineConfigBinding.stdinFrame}\\n${username}\\n${pw}');
   assert.ok(bindingWrite > profileConfig && bindingWrite > credential && bindingWrite > spawn);

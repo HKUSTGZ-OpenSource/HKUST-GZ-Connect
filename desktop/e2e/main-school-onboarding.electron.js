@@ -9,9 +9,11 @@ const electron = require('electron');
 const { ProfileCandidateDirectory } = require('../lib/profiles/registry/profile-candidate-directory');
 const { ProfileWorkspaceStartupRuntime } = require('../lib/persistence/runtime/profile-workspace-startup-runtime');
 const { saveSettings } = require('../lib/persistence/settings/settings-store');
+const { createPrivateStorageEffects } = require('../lib/platform/storage/private-file');
 
 const DESKTOP = path.join(__dirname, '..');
 const MARKER = 'profile-switch-e2e-ready.json';
+const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
 
 function delay(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 function profile() {
@@ -22,6 +24,7 @@ function directory(userData) {
   return new ProfileCandidateDirectory({
     userData, packageRoot: DESKTOP, desktopDir: DESKTOP,
     resourcesPath: '/unused', isPackaged: false,
+    profileStorageEffects,
   });
 }
 function launch(userData, stage) {

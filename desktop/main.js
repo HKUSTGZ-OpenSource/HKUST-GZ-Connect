@@ -5,46 +5,27 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
-const { loadSettings: readSettings, saveSettings: writeSettings } = require('./lib/persistence/settings/settings-store');
 const { parseCredentialField } = require('./lib/persistence/settings/settings-update');
 const {
   credentialLoadErrorKey,
-  hasStoredPassword,
-  loadPasswordResult: readPasswordResult,
   protectedStorageAvailable,
-  restorePasswordSnapshot,
-  savePassword: writePassword,
 } = require('./lib/persistence/credentials/credential-store');
 const {
   OneShotVpnCredentialBroker, openVpnCredential,
 } = require('./lib/persistence/credentials/one-shot-vpn-credential');
-const {
-  recoverCredentialSettingsTransaction,
-  runCredentialSettingsMutation,
-} = require('./lib/persistence/credentials/credential-settings-transaction');
 const { desktopRuntimeComposition } = require('./lib/app/desktop-runtime-composition');
-const { ActiveContextLease, assertActiveContextSwitchStartupClear, createLegacyRuntimeStoragePaths, createMainProfileSwitchComposition, createMultiSchoolStartupInitializer, createPageFavoriteController, customGatewayProductAvailability, DesktopPersistenceRuntime, LegacyMigrationCredentialOwner, ProfileWorkspaceStartupRuntime, relaunchAfterPersistenceMigration, ResourceLibraryRuntime, resolveUserDataOverride, selectProfileWorkspacePreReadyStorage, writePersistenceE2EMarker, writeProfileSwitchE2EMarker } = desktopRuntimeComposition;
-const {
-  classifyEngineCode,
-
-  classifyEngineStopReason,
-  resolveEngineFailureKind,
-} = require('./lib/connection/engine/engine-output');
+const { ActiveContextLease, assertActiveContextSwitchStartupClear, createLegacyRuntimeStoragePaths, createMainProfileSwitchComposition, createMultiSchoolStartupInitializer, createPageFavoriteController, customGatewayProductAvailability, DesktopPersistenceRuntime, ProfileWorkspaceStartupRuntime, relaunchAfterPersistenceMigration, ResourceLibraryRuntime, resolveUserDataOverride, selectProfileWorkspacePreReadyStorage, writePersistenceE2EMarker, writeProfileSwitchE2EMarker } = desktopRuntimeComposition;
 const { AuthChallengeCoordinator, EngineControlRegistry } = require('./lib/connection/engine/engine-control-suite');
-const { EngineConnectionRuntime, EngineServingCoordinator } = require('./lib/connection/engine/engine-connection-runtime');
+const { EngineTerminationCoordinator } = require('./lib/connection/engine/engine-connection-runtime');
 const { DesktopShell } = require('./lib/platform/shell/desktop-shell');
-const { SYNTHETIC_ENGINE_E2E_ENV, resolveEngineLaunch, resolveGatewayProbeLaunch, resolveNativeResourcePath } = require('./lib/connection/engine/engine-process');
+const { SYNTHETIC_ENGINE_E2E_ENV, EngineAttemptCoordinator, resolveGatewayProbeLaunch, resolveNativeResourcePath } = require('./lib/connection/engine/engine-process');
 const {
   EngineSupervisor,
   cleanupOrphanedEngine,
-  removeEngineOwnerRecord,
-  writeEngineOwnerRecord,
 } = require('./lib/connection/engine/engine-supervisor');
 const { ConnectionTelemetryCoordinator } = require('./lib/connection/telemetry/connection-telemetry-coordinator');
 const { DomainRoutePolicyStore } = require('./lib/routing/policy/domain-route-policy');
-const { savePacFile } = require('./lib/routing/pac/pac-file');
 const { MyPortalDataRuntime, hkustMyPortalSources, pacDataUrl } = require('./lib/browser/session/browser-session-manager');
 const { CampusBrowserManager, officialPortalHomeUrl } = require('./lib/browser/session/campus-browser-manager');
 const { createPreReadySchoolProfileController } = require('./lib/profiles/runtime/school-profile-controller');
@@ -57,13 +38,13 @@ const {
   registerCoreControlIpc,
   registerSettingsCredentialIpc,
 } = require('./lib/ipc/control-ipc-suite');
-const { ensureOwnerOnly } = require('./lib/platform/storage/private-file');
+const { ensureOwnerOnly, createPrivateStorageEffects } = require('./lib/platform/storage/private-file');
+const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
 const { BufferedLogWriter, readLogTail } = require('./lib/diagnostics/logging/log-writer');
-const { STOP_GRACE_MS, STOP_FORCE_WAIT_MS } = require('./lib/connection/state/stop-policy');
 const { UpdateNotificationRuntime, checkForUpdate } = require('./lib/platform/update/update-check');
 const { ConnectivityRecovery } = require('./lib/connection/recovery/connectivity-recovery');
 const { createNetworkStartupSystem } = require('./lib/connection/telemetry/network-status-monitor');
-const { EphemeralProxyCredential, cleanupProxyAccessForEngineClose } = require('./lib/persistence/credentials/proxy-credential');
+const { ProxyAccessCoordinator, cleanupProxyAccessForEngineClose } = require('./lib/persistence/credentials/proxy-credential');
 const {
   ExternalProxyCredentialStore,
 } = require('./lib/persistence/credentials/external-proxy-credential-store');
@@ -72,14 +53,13 @@ const {
   externalProxyHelperPath,
 } = require('./lib/integrations/external-proxy-config');
 const {
-  CampusCertificateTrustStore,
-} = require('./lib/browser/certificates/campus-certificate-trust');
-const { routeCertificateError } = require('./lib/browser/certificates/certificate-error-boundary');
+  CampusCertificateTrustStore, routeCertificateError,
+} = require('./lib/browser/certificates/certificate-controller');
 const { createT, effectiveLocale } = require('./lib/platform/i18n/i18n');
 const { registerTrustedIpcHandlers } = require('./lib/ipc/ipc-handlers');
-const { RoutingPolicyTransactionQueue } = require('./lib/routing/rules/routing-policy-transaction');
+const { RoutingPolicyCoordinator, RoutingPolicyTransactionQueue } = require('./lib/routing/rules/routing-policy-transaction');
 const { stopEngineAfterBrowserSuspend } = require('./lib/switching/effects/browser-engine-barrier');
-const { ConnectionStateMachine, ConnectionWaitRegistry, projectConnectionStatus } = require('./lib/connection/state/connection-state-machine');
+const { ConnectionStateMachine, ConnectionWaitRegistry, ConnectionOperationCoordinator, projectConnectionStatus } = require('./lib/connection/state/connection-state-machine');
 // The campus browser is intentionally constrained to the application's
 // proxy/PAC boundary. WebRTC data channels do not require camera or microphone
 // permission and Chromium may otherwise send ICE/STUN UDP directly, bypassing
@@ -115,6 +95,7 @@ const activeSchoolProfile = createPreReadySchoolProfileController({
   userData: DATA,
   packageRoot: __dirname, isPackaged: app.isPackaged,
   resourcesPath: process.resourcesPath, desktopDir: __dirname,
+  profileStorageEffects,
 });
 const oneShotVpnCredential = new OneShotVpnCredentialBroker();
 const activeContextLease = new ActiveContextLease(activeSchoolProfile.activeContextBinding());
@@ -133,7 +114,6 @@ const CAMPUS_CERTIFICATE_TRUST = runtimeStoragePaths.certificateTrust;
 const RESOURCE_FAVORITES = runtimeStoragePaths.resourceFavorites;
 const RESOURCE_RECENTS = runtimeStoragePaths.resourceRecents;
 const ENGINE_OWNER = runtimeStoragePaths.engineOwner;
-const CREDENTIAL_TRANSACTION = runtimeStoragePaths.credentialTransaction;
 const ACTIVE_CONTEXT_SWITCH = runtimeStoragePaths.activeContextSwitch;
 const PROXY_CREDENTIAL = runtimeStoragePaths.proxyCredential;
 const PROXY_HELPER_CREDENTIAL = runtimeStoragePaths.proxyHelperCredential;
@@ -149,36 +129,42 @@ try { fs.unlinkSync(PROXY_HELPER_CREDENTIAL); } catch (error) {
 }
 const GATEWAY_HOST = syntheticEngineE2e ? '127.0.0.1' : activeSchoolProfile.gatewayHost;
 const GATEWAY_PORT = activeSchoolProfile.gatewayPort;
-const credentialTransactionPaths = Object.freeze({
-  settings: SETTINGS,
-  settingsBackup: `${SETTINGS}.bak`,
-  credential: CRED,
+const persistenceRuntime = new DesktopPersistenceRuntime({
+  preReadySelection: preReadyStorage,
+  initializeAfterReady: () => activeSchoolProfile.withProfileDocument((profile) => (
+    new ProfileWorkspaceStartupRuntime({
+      userData: DATA, profile, safeStorage, platform: process.platform,
+    }).initialize()
+  )),
+  legacy: DesktopPersistenceRuntime.createLegacyAdapter({
+    settingsFile: SETTINGS, credentialFile: CRED, safeStorage, platform: process.platform,
+    getDefaultRouteDomains: () => activeSchoolProfile.defaultRouteDomains,
+    onRecovery: (notice) => { settingsRecoveryNotice = notice; },
+  }),
+  settingsPresentation: {
+    getState: () => state,
+    translate: (key) => t(key),
+    emit,
+    getAdditionalNotice: () => settingsRecoveryNoticeText,
+  },
 });
-// This must run before any loadSettings(), credential read, or blanket chmod.
-// In particular, chmodding an attacker-replaced broad-permission journal
-// first would erase the evidence that makes recovery fail closed.
-let credentialTransactionRecovery = preReadyStorage.mode === 'legacy-flat'
-  ? recoverCredentialSettingsTransaction(CREDENTIAL_TRANSACTION, credentialTransactionPaths)
-  : { ok: true, status: 'none' };
-let credentialTransactionBlocked = credentialTransactionRecovery.status === 'blocked';
-for (const privateFile of [
-  SETTINGS, CRED, LOG, PAC_FILE, CAMPUS_BROWSER_PAC_FILE, ROUTING_RULES,
-  CAMPUS_CREDENTIALS, CAMPUS_CERTIFICATE_TRUST, ENGINE_OWNER,
-  RESOURCE_FAVORITES, RESOURCE_RECENTS,
-  PROXY_CREDENTIAL, PROXY_HELPER_CREDENTIAL,
-]) {
-  ensureOwnerOnly(privateFile);
-}
+persistenceRuntime.prepareBeforeOwnerOnlyValidation(() => {
+  for (const privateFile of [
+    SETTINGS, CRED, LOG, PAC_FILE, CAMPUS_BROWSER_PAC_FILE, ROUTING_RULES,
+    CAMPUS_CREDENTIALS, CAMPUS_CERTIFICATE_TRUST, ENGINE_OWNER,
+    RESOURCE_FAVORITES, RESOURCE_RECENTS,
+    PROXY_CREDENTIAL, PROXY_HELPER_CREDENTIAL,
+  ]) {
+    ensureOwnerOnly(privateFile);
+  }
+});
 
 let desktopShell = null;
 let campusBrowserManager = null;
-let connectInFlight = null;
-let disconnectInFlight = null;
-let reconnectInFlight = null;
 const connectionState = new ConnectionStateMachine();
 const connectionWaitRegistry = new ConnectionWaitRegistry();
 connectionWaitRegistry.observe(connectionState.snapshot());
-const MAX_ATTEMPTS = 3;
+
 // The reviewed Engine can spend up to roughly 52 seconds in bounded Modern
 // data-plane setup retries after authentication. Browser readiness must not
 // report a timeout while that same, still-current attempt can legitimately
@@ -186,8 +172,6 @@ const MAX_ATTEMPTS = 3;
 const BROWSER_CONNECTION_READY_TIMEOUT_MS = 75_000;
 let connectedAt = null;
 let telemetryCoordinator = null;
-let activeProxyCredential = null;
-let stableProxyCredential = null;
 let state = {
   clientIp: null,
   dnsMode: 'unknown',
@@ -222,14 +206,32 @@ const externalProxyCredentialStore = new ExternalProxyCredentialStore({
   safeStorage,
   platform: process.platform,
 });
+const proxyAccess = new ProxyAccessCoordinator({
+  store: externalProxyCredentialStore,
+  sidecarFile: PROXY_HELPER_CREDENTIAL,
+  fileSystem: fs,
+  currentProfileId: () => activeSchoolProfile.activeContextBinding().profileId,
+  writeSidecar: (options) => ensureProxyCredentialSidecar({
+    ...options, privateStorageEffects: profileStorageEffects,
+  }),
+});
 const resourceLibraryRuntime = new ResourceLibraryRuntime({
   favoritesFile: RESOURCE_FAVORITES,
   recentFile: RESOURCE_RECENTS,
   platform: process.platform,
-  loadResources: (settings) => safeCampusResources(settings), loadAliases: (settings) => activeSchoolProfile.resourceActivityAliases((settings || loadSettingsOrReport()).customResources),
+  loadResources: ResourceLibraryRuntime.createSource({
+    loadSettings: loadSettingsOrReport,
+    mergeResources: (custom, hidden) => activeSchoolProfile.mergeResourceLibrary(custom, hidden),
+    resolveRoute: (url) => domainRoutePolicy.resolve(url),
+    onReadFailure: reportSettingsReadFailure,
+  }),
+  loadAliases: (settings) => activeSchoolProfile.resourceActivityAliases((settings || loadSettingsOrReport()).customResources),
   captureContext: () => activeContextLease.captureContext(),
   isContextCurrent: (context) => activeContextLease.isContextCurrent(context),
   openRequest: (request) => campusBrowserManager.open(request),
+  runTransaction: runActiveContextTransaction,
+  getLocale: () => locale,
+  translate: (key) => t(key),
 });
 // Last known "newer release exists" result. Failures never land here, so the
 // renderer can render it without distinguishing network errors from silence.
@@ -240,117 +242,32 @@ let locale = 'zh';
 let t = createT(locale);
 let settingsRecoveryNotice = null;
 let settingsRecoveryNoticeText = null;
-let settingsReadErrorText = null;
-let credentialRecoveryNoticeText = null;
-let credentialRecoveryErrorText = null;
 
 // ---------- settings & credentials ----------
-function loadLegacySettings() {
-  return readSettings(SETTINGS, {
-    onRecovery: (notice) => { settingsRecoveryNotice = notice; },
-    defaultRouteDomains: activeSchoolProfile.defaultRouteDomains,
-  });
-}
-function saveLegacySettings(settings) {
-  return writeSettings(SETTINGS, settings, {
-    defaultRouteDomains: activeSchoolProfile.defaultRouteDomains,
-  });
-}
-function openLegacyCredential() {
-  const settings = loadLegacySettings();
-  const result = readPasswordResult(CRED, safeStorage, process.platform);
-  if (result.status === 'missing') return null;
-  if (result.status !== 'decrypted') {
-    const error = new Error('legacy credential is unavailable');
-    error.credentialStatus = result.status;
-    throw error;
-  }
-  return new LegacyMigrationCredentialOwner(settings.username, result.password);
-}
-const persistenceRuntime = new DesktopPersistenceRuntime({
-  preReadySelection: preReadyStorage,
-  initializeAfterReady: () => activeSchoolProfile.withProfileDocument((profile) => (
-    new ProfileWorkspaceStartupRuntime({
-      userData: DATA, profile, safeStorage, platform: process.platform,
-    }).initialize()
-  )),
-  legacy: {
-    loadSettings: loadLegacySettings,
-    saveSettings: saveLegacySettings,
-    saveCredential: (password) => writePassword(CRED, password, safeStorage, process.platform),
-    clearCredential: () => restorePasswordSnapshot(CRED, { existed: false, data: null }),
-    openCredential: openLegacyCredential,
-    hasCredential: () => hasStoredPassword(CRED, process.platform),
-  },
-});
-const initializeMultiSchoolStartup = createMultiSchoolStartupInitializer({ userData: DATA, packageRoot: __dirname, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, desktopDir: __dirname }); const customProfileDeletion = createCustomProfileDeletionRuntime({ userData: DATA, withCandidateDirectory: (callback) => initializeMultiSchoolStartup.withDirectory(callback), electronSession: session });
+const initializeMultiSchoolStartup = createMultiSchoolStartupInitializer({ userData: DATA, packageRoot: __dirname, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, desktopDir: __dirname, profileStorageEffects }); const customProfileDeletion = createCustomProfileDeletionRuntime({ userData: DATA, withCandidateDirectory: (callback) => initializeMultiSchoolStartup.withDirectory(callback), electronSession: session, profileStorageEffects });
 const schoolProfileOnboarding = createSchoolProfileOnboardingRuntime({ userData: DATA, probeLaunch: resolveGatewayProbeLaunch({ appIsPackaged: app.isPackaged, baseDirectory: __dirname, nativeProbe: gatewayProbePath(), execPath: process.execPath }), spawnProcess: spawn,
   getActiveContext: () => activeSchoolProfile.activeContextBinding(), listProfiles: (options) => initializeMultiSchoolStartup.listViews(options),
-  onDiagnostic: (code) => logWriter?.append(`[profile-onboarding] ${code}\n`),
+  onDiagnostic: (code) => logWriter?.append(`[profile-onboarding] ${code}\n`), profileStorageEffects,
 });
 const customGatewayOnboardingEnabled = customGatewayProductAvailability();
 function loadSettings() { return persistenceRuntime.loadSettings(); }
-function reportSettingsReadFailure(cause, { emitState = true } = {}) {
-  if (cause?.code === 'SETTINGS_READ_FAILED') return cause;
-  const message = t('error.settingsReadFailed');
-  const error = new Error(message, { cause });
-  error.code = 'SETTINGS_READ_FAILED';
-  error.userMessage = message;
-  settingsReadErrorText = message;
-  if (state.settingsError !== message) {
-    state.settingsError = message;
-    if (emitState) emit();
-  }
-  return error;
+function reportSettingsReadFailure(cause, options) {
+  return persistenceRuntime.reportSettingsReadFailure(cause, options);
 }
-function loadSettingsOrReport(options) {
-  try {
-    const settings = loadSettings();
-    if (settingsReadErrorText) {
-      const shouldEmit = options?.emitState !== false && state.settingsError === settingsReadErrorText;
-      if (state.settingsError === settingsReadErrorText) state.settingsError = null;
-      settingsReadErrorText = null;
-      if (shouldEmit) emit();
-    }
-    return settings;
-  }
-  catch (error) { throw reportSettingsReadFailure(error, options); }
-}
+function loadSettingsOrReport(options) { return persistenceRuntime.loadSettingsOrReport(options); }
 // The saved language override ('zh'/'en') wins over the OS locale; 'auto'
 // follows the system, and Chinese remains the fallback when both are silent.
 function currentLocale() {
   return effectiveLocale(loadSettings().language, app.getLocale());
 }
 function assertSettingsPersistenceAvailable() {
-  // Never overwrite a settings snapshot that the credential transaction must
-  // still restore. All settings/resource/routing writers pass this boundary,
-  // so a blocked startup recovery is fail-closed for persistence as well as
-  // for connection attempts.
-  if (credentialTransactionBlocked) {
-    const recovery = retryCredentialTransactionRecovery();
-    if (recovery.status === 'blocked') {
-      const message = t('error.credentialRecoveryBlocked');
-      const error = new Error(message);
-      error.code = 'CREDENTIAL_RECOVERY_BLOCKED';
-      error.userMessage = message;
-      throw error;
-    }
-  }
+  persistenceRuntime.assertCredentialTransactionAvailable();
 }
-let routingSettingsSnapshot = null;
-function routingSettings() {
-  if (!routingSettingsSnapshot) routingSettingsSnapshot = loadSettingsOrReport();
-  return routingSettingsSnapshot;
-}
-function saveSettings(settings) {
-  assertSettingsPersistenceAvailable();
-  const saved = persistenceRuntime.saveSettings(settings);
-  routingSettingsSnapshot = saved;
-  return saved;
-}
+function routingSettings() { return persistenceRuntime.routingSettings(); }
+function saveSettings(settings) { return persistenceRuntime.saveSettingsWithGuard(settings); }
 function savePassword(pw, username) { return persistenceRuntime.saveCredential(pw, username); }
 function hasPersistentCredential() {
-  return !credentialTransactionBlocked && persistenceRuntime.hasCredential();
+  return persistenceRuntime.hasCredential();
 }
 function hasOneShotCredential() {
   try {
@@ -367,98 +284,15 @@ function hasStoredCredential() {
 function hasCredentialForCurrentSession() {
   return hasStoredCredential() || engineSupervisor.hasActive;
 }
-function syncRecoveryNotice(emitState = true) {
-  state.notice = [settingsRecoveryNoticeText, credentialRecoveryNoticeText]
-    .filter(Boolean)
-    .join('\n') || null;
-  if (emitState) emit();
-}
-function applyCredentialRecoveryOutcome(recovery, {
-  emitState = true,
-  clearedNoticeKey = 'error.credentialRecoveryCleared',
-  clearNotice = false,
-} = {}) {
-  credentialTransactionRecovery = recovery;
-  const recoverySafe = recovery?.status === 'credential-cleared' || (
-    recovery?.ok === true && ['none', 'recovered', 'committed'].includes(recovery.status)
-  );
-  credentialTransactionBlocked = !recoverySafe;
-
-  if (credentialRecoveryErrorText && state.recoveryError === credentialRecoveryErrorText) {
-    state.recoveryError = null;
-  }
-  credentialRecoveryErrorText = null;
-  if (credentialTransactionBlocked) {
-    credentialRecoveryNoticeText = null;
-    credentialRecoveryErrorText = t('error.credentialRecoveryBlocked');
-    state.recoveryError = credentialRecoveryErrorText;
-  } else if (recovery?.status === 'recovered') {
-    credentialRecoveryNoticeText = t('error.credentialRecoveryRecovered');
-  } else if (recovery?.status === 'credential-cleared') {
-    credentialRecoveryNoticeText = t(clearedNoticeKey);
-  } else if (clearNotice) {
-    credentialRecoveryNoticeText = null;
-  }
-  syncRecoveryNotice(emitState);
-  return recovery;
-}
-function retryCredentialTransactionRecovery() {
-  if (preReadyStorage.mode === 'profile-workspace') {
-    return applyCredentialRecoveryOutcome({ ok: true, status: 'none' });
-  }
-  return applyCredentialRecoveryOutcome(recoverCredentialSettingsTransaction(
-    CREDENTIAL_TRANSACTION,
-    credentialTransactionPaths,
-  ));
-}
-function runPersistenceCredentialMutation(options) {
-  if (preReadyStorage.mode === 'legacy-flat') return runCredentialSettingsMutation(options);
-  try { return { ok: true, value: options.mutate() }; }
-  catch (error) { return { ok: false, phase: 'mutation', error, recovery: { ok: true, status: 'none' } }; }
-}
 function socksPort() { return Number(loadSettingsOrReport().port) || 1080; }
-function clearActiveProxyCredential(expectedGeneration = null) {
-  if (!activeProxyCredential) return false;
-  if (!activeProxyCredential.destroy(expectedGeneration)) return false;
-  activeProxyCredential = null;
-  return true;
-}
+function clearActiveProxyCredential(expectedGeneration = null) { return proxyAccess.clearActive(expectedGeneration); }
 const clearActiveEngineControl = (expectedGeneration = null) => engineControlRegistry.clear(expectedGeneration);
 const requestActiveEngineControlShutdown = () => engineControlRegistry.shutdown();
-function loadStableProxyCredential() {
-  if (stableProxyCredential) return stableProxyCredential;
-  stableProxyCredential = externalProxyCredentialStore.loadOrCreate();
-  return stableProxyCredential;
-}
-function removeExternalProxySidecar() {
-  try {
-    fs.unlinkSync(PROXY_HELPER_CREDENTIAL);
-    return true;
-  } catch (error) {
-    return error?.code === 'ENOENT';
-  }
-}
-function revokeExternalProxyAccess() { clearActiveProxyCredential(); const removed = removeExternalProxySidecar(); stableProxyCredential?.destroy(); stableProxyCredential = null; return removed && activeProxyCredential === null; }
-function ensureExternalProxyAccess(port) {
-  const credential = loadStableProxyCredential();
-  ensureProxyCredentialSidecar({
-    filePath: PROXY_HELPER_CREDENTIAL,
-    port,
-    credential, profileId: activeSchoolProfile.activeContextBinding().profileId,
-    platform: process.platform,
-  });
-  return credential;
-}
-function generationProxyCredential(port) {
-  const stable = ensureExternalProxyAccess(port);
-  const injected = stable.copyForEngine();
-  try {
-    return new EphemeralProxyCredential({ credential: injected });
-  } finally {
-    injected.username.fill(0);
-    injected.password.fill(0);
-  }
-}
+function loadStableProxyCredential() { return proxyAccess.loadStable(); }
+function removeExternalProxySidecar() { return proxyAccess.removeSidecar(); }
+function revokeExternalProxyAccess() { return proxyAccess.revoke(); }
+function ensureExternalProxyAccess(port) { return proxyAccess.ensureSidecar(port); }
+function generationProxyCredential(port) { return proxyAccess.generationCredential(port); }
 function proxyHelperPath() {
   return externalProxyHelperPath({
     isPackaged: app.isPackaged,
@@ -467,18 +301,6 @@ function proxyHelperPath() {
     platform: process.platform,
     arch: process.arch,
   });
-}
-function campusResources(settings = loadSettingsOrReport()) {
-  return resourceLibraryRuntime.resolveRoutes(activeSchoolProfile.mergeResourceLibrary(
-    settings.customResources, settings.hiddenBuiltinResourceIds,
-  ), (url) => domainRoutePolicy.resolve(url));
-}
-function safeCampusResources(settings = null) {
-  try { return campusResources(settings || loadSettingsOrReport()); }
-  catch (error) {
-    reportSettingsReadFailure(error);
-    return activeSchoolProfile.mergeResourceLibrary();
-  }
 }
 function safeCampusResourceLibrary(settings = null) {
   return resourceLibraryRuntime.listLocalized(settings, locale);
@@ -523,91 +345,20 @@ function killStrayEngines(resolvedEnginePath) {
     executablePath: resolvedEnginePath, ownerFile: ENGINE_OWNER });
 }
 
-function beginLifecycleIntent() {
-  // A manual connect/disconnect/reconnect always supersedes any recovery that
-  // was queued for a previous sleep or network outage.
-  networkStartupCoordinator?.cancel();
-  connectivityRecovery.cancel();
-  return connectionState.beginConnectIntent();
-}
 function clearConnectionPresentation() {
   connectedAt = null;
   state.clientIp = null;
   state.dnsMode = 'unknown'; activeSchoolProfile.clearCapabilitySnapshot();
   telemetryCoordinator?.stop();
 }
-function invalidateForConnectivity(reason, intent) {
-  if (!connectionState.pauseForConnectivity(intent, {
-    isQuitting: desktopShell?.isQuitting === true,
-  })) return;
-  // Keep the lifecycle intent stable: resume/online is allowed to recover
-  // this exact user-requested connection, while generation invalidation makes
-  // every old engine event, retry, and health probe inert immediately.
-  engineSupervisor.invalidate();
-  clearConnectionPresentation();
-  state.lastError = t(reason === 'suspend'
-    ? 'error.connectionSuspended'
-    : 'error.networkUnavailable');
-  emit();
-  ensureEngineStopped().then((result) => {
-    if (!connectionState.canContinue(intent) || result.ok) return;
-    state.lastError = t('error.engineStuck');
-    emit();
-  }).catch(() => {});
-}
-async function recoverConnectivity(intent, reason) {
-  let autoReconnect;
-  try {
-    autoReconnect = reason === 'initial-network-online' || loadSettingsOrReport().autoReconnect !== false;
-  } catch {
-    connectionState.failIntent(intent);
-    emit();
-    return false;
-  }
-  if (!connectionState.canRecover(intent, {
-    isQuitting: desktopShell?.isQuitting === true,
-    autoReconnect,
-  })) return false;
-  const stopped = await ensureEngineStopped();
-  if (!stopped.ok || stopped.cleanExit === false || !connectionState.canContinue(intent, {
-    isQuitting: desktopShell?.isQuitting === true,
-  })) {
-    if ((!stopped.ok || stopped.cleanExit === false) &&
-        connectionState.isCurrentIntent(intent)) {
-      connectionState.failIntent(intent);
-      state.lastError = t(stopped.cleanExit === false
-        ? 'error.engineCleanupUnconfirmed'
-        : 'error.engineStuck');
-      emit();
-    }
-    return false;
-  }
-  if (!connectionState.resumeConnectivity(intent, {
-    isQuitting: desktopShell?.isQuitting === true,
-    autoReconnect,
-  })) return false;
-  const result = await connect(false, intent);
-  return result.ok === true;
-}
-
+// ConnectivityRecovery stores these callbacks; app-ready starts the monitor
+// only after the operation owner below has been constructed.
 const connectivityRecovery = new ConnectivityRecovery({
-  invalidate: invalidateForConnectivity,
-  getLifecycleIntent: () => connectionState.currentRecoveryIntent({
-    isQuitting: desktopShell?.isQuitting === true,
-  }),
-  shouldReconnect: async (intent, reason) => {
-    try {
-      return connectionState.canRecover(intent, {
-        isQuitting: desktopShell?.isQuitting === true,
-        autoReconnect: reason === 'initial-network-online' || loadSettingsOrReport().autoReconnect !== false,
-      });
-    } catch {
-      connectionState.failIntent(intent);
-      emit();
-      return false;
-    }
-  },
-  reconnect: recoverConnectivity, onRecoveryDeclined: (intent, reason) => { if (reason !== 'initial-network-online' && connectionState.failIntent(intent)) emit(); },
+  invalidate: (reason, intent) => connectionOperations.invalidateForConnectivity(reason, intent),
+  getLifecycleIntent: () => connectionOperations.currentRecoveryIntent(),
+  shouldReconnect: (intent, reason) => connectionOperations.shouldReconnectForConnectivity(intent, reason),
+  reconnect: (intent, reason) => connectionOperations.recoverConnectivity(intent, reason),
+  onRecoveryDeclined: (intent, reason) => connectionOperations.onConnectivityRecoveryDeclined(intent, reason),
 });
 const { monitor: networkStatusMonitor, startup: networkStartupCoordinator, environment: networkEnvironmentService } = createNetworkStartupSystem({
   appIsPackaged: app.isPackaged, environment: process.env, dataDirectory: DATA, fileSystem: fs,
@@ -616,437 +367,17 @@ const { monitor: networkStatusMonitor, startup: networkStartupCoordinator, envir
   pauseOffline: () => { connectivityRecovery.cancel(); const intent = connectionState.beginConnectIntent(); return connectivityRecovery.networkOffline(intent) ? intent : null; },
   resumeInitialOffline: (intent) => connectivityRecovery.initialNetworkOnline(intent), connect: () => connect(), isQuitting: () => desktopShell?.isQuitting === true, onPublicEgress: (snapshot) => desktopShell?.send('network-environment', snapshot),
 });
-function rejectConnectionWhileQuitting(intent = connectionState.snapshot().intent) {
-  if (desktopShell?.isQuitting !== true) return null;
-  connectionState.failIntent(intent); emit();
-  return { ok: false, stale: true, quitting: true, intent };
-}
-async function connect(isRetry = false, expectedIntent = null) {
-  let rejected = rejectConnectionWhileQuitting(expectedIntent ?? undefined); if (rejected) return rejected;
-  let intent = expectedIntent;
-  if (intent === null && !isRetry) {
-    if (disconnectInFlight) await disconnectInFlight;
-    rejected = rejectConnectionWhileQuitting(); if (rejected) return rejected;
-    const current = connectionState.snapshot();
-    if (current.desiredConnected) {
-      if (connectInFlight?.intent === current.intent) return connectInFlight.promise;
-      return { ok: true, existing: engineSupervisor.hasActive, pending: !engineSupervisor.hasActive, intent: current.intent };
-    }
-    intent = beginLifecycleIntent();
-  } else if (intent === null) intent = connectionState.snapshot().intent;
-  if (!connectionState.canContinue(intent)) return { ok: false, stale: true, intent };
-  // Wait for an earlier stop to drain; never start a process into its exit/close interval.
-  if (disconnectInFlight) await disconnectInFlight;
-  rejected = rejectConnectionWhileQuitting(intent); if (rejected) return rejected;
-  if (!connectionState.canContinue(intent)) return { ok: false, stale: true, intent };
-  if (engineSupervisor.hasActive) return { ok: true, existing: true, intent };
-  if (connectInFlight) {
-    await connectInFlight.promise; rejected = rejectConnectionWhileQuitting(intent);
-    if (rejected) return rejected;
-    if (!connectionState.canContinue(intent)) return { ok: false, stale: true, intent }; if (engineSupervisor.hasActive) return { ok: true, existing: true, intent };
-  }
-  const operation = (async () => ({ ...await connectOnce(isRetry, intent), intent }))();
-  const record = { intent, promise: operation }; connectInFlight = record;
-  try { return await operation; }
-  finally { if (connectInFlight === record) connectInFlight = null; }
-}
-function handleEngineClose({ code, generation }, diagnosticTail,
-  structuredFatalCode = null, structuredStopReason = null, stoppedSocksPort = 1080,
-  isCurrentContext = () => true) {
-  // A delayed close from an already invalidated generation must not suspend a
-  // newer listener that is now serving the browser.
-  const supervisorGenerationCurrent = engineSupervisor.isCurrent(generation) && isCurrentContext(generation);
-  clearActiveEngineControl(generation);
-  if (!cleanupProxyAccessForEngineClose({ generation, supervisorGenerationCurrent,
-    connectionGenerationCurrent: connectionState.isCurrentGeneration(generation),
-    clearCredential: clearActiveProxyCredential, removeSidecar: removeExternalProxySidecar,
-  })) return;
-  // Unexpected process death releases the configured loopback port before the
-  // close event reaches JavaScript. Repoint the persistent browser Session at
-  // its fail-closed PAC immediately; a later generation may restore it only
-  // after reporting listener_ready.
-  suspendOpenBrowserPolicy().catch((error) => {
-    state.browserNotice = t('error.browserRoutingAfterSave', { message: error.message });
-    emit();
-  });
-  const closeSnapshot = connectionState.snapshot(); const wasConnected = closeSnapshot.phase === 'connected' || closeSnapshot.wasConnectedBeforeStop;
-  const uptime = Math.max(connectedAt ? Date.now() - connectedAt : 0, closeSnapshot.connectedUptimeBeforeStop);
-  clearConnectionPresentation();
-  const failureKind = resolveEngineFailureKind({
-    code: structuredFatalCode,
-    stopReason: structuredStopReason,
-    diagnosticText: diagnosticTail,
-  });
-  const terminalFailure = failureKind === 'terminal'; state.failureKind = failureKind; state.failureCode = structuredFatalCode || structuredStopReason || null;
-  if (!structuredFatalCode && !state.lastError) {
-    state.lastError = classifyEngineStopReason(structuredStopReason, stoppedSocksPort, t);
-  }
-  let cfg;
-  try {
-    cfg = loadSettings();
-  } catch (error) {
-    connectionState.engineClosed({
-      generation,
-      supervisorGenerationCurrent,
-      terminalFailure: true,
-    });
-    reportSettingsReadFailure(error, { emitState: false });
-    emit();
-    return;
-  }
-  const autoOn = cfg.autoReconnect !== false;
-  const maxA = Number.isInteger(cfg.maxAttempts) ? cfg.maxAttempts : MAX_ATTEMPTS;
-  const decision = connectionState.engineClosed({
-    generation,
-    supervisorGenerationCurrent,
-    terminalFailure,
-    autoReconnect: autoOn,
-    maxAttempts: maxA,
-    uptimeMs: uptime,
-    failureKind,
-  });
-  if (decision.action === 'settled' || decision.action === 'terminal') {
-    emit();
-    return;
-  }
-  // Only a genuinely stable session earns a fresh retry budget. Merely
-  // opening SOCKS and then losing the data plane must keep counting, or a
-  // rejecting gateway can drive the app into an infinite login loop.
-  if (decision.action === 'retry') {
-    state.lastError = wasConnected
-      ? t('error.reconnecting')
-      : (failureKind === 'gateway-transient'
-        ? t('error.gatewayRetrying')
-        : null);
-    emit();
-    const intent = connectionState.snapshot().intent;
-    engineSupervisor.schedule(generation, decision.delayMs, () => connect(true, intent));
-    return;
-  }
-
-  if (failureKind === 'gateway-transient') {
-    state.lastError = t('error.gatewayRejected');
-  } else if (!state.lastError) {
-    state.lastError = wasConnected
-      ? t('error.reconnectFailed')
-      : (code ? t('error.connectFailed') : null);
-  }
-  emit();
-}
-function revokeEngineServing(generation, isCurrentContext = () => true) {
-  const uptimeMs = connectedAt ? Date.now() - connectedAt : 0;
-  if (!isCurrentContext(generation) || !engineSupervisor.isCurrent(generation) ||
-      !connectionState.markEngineStopping(generation, { uptimeMs })) return false;
-  // Its epoch and request gate synchronously defeat an awaiting activation.
-  suspendOpenBrowserPolicy().catch((error) => {
-    state.browserNotice = t('error.browserRoutingAfterSave', { message: error.message });
-    emit();
-  });
-  clearConnectionPresentation(); return true;
-}
-function handleEngineExitBoundary({ generation }, isCurrentContext = () => true) {
-  // `exit` can precede stdio close; revoke serving synchronously but retain the
-  // generation so the terminal-only drain can classify fatal/stopped output.
-  if (!revokeEngineServing(generation, isCurrentContext)) return;
-  clearActiveEngineControl(generation);
-  clearActiveProxyCredential(generation);
-  removeExternalProxySidecar();
-  emit();
-}
-function failConnectionStart(intent, errorKey, result = { ok: false }) {
-  connectionState.failIntent(intent); state.lastError = t(errorKey); emit(); return result;
-}
-async function connectOnce(isRetry, intent) {
-  if (engineSupervisor.hasActive || !connectionState.canContinue(intent)) {
-    return { ok: false, stale: true };
-  }
-  if (!connectionState.beginConnectAttempt(intent, { isRetry })) {
-    return { ok: false, stale: true };
-  }
-  // Platform inspection launches route/proxy/process helpers. Run it
-  // asynchronously before the final no-yield settings/credential snapshot so
-  // Electron's Main loop stays responsive and the Engine receives a current
-  // underlay binding without weakening the final spawn boundary below.
-  let underlaySelection = '';
-  try { underlaySelection = loadSettingsOrReport().underlaySourceAddress; } catch {}
-  await networkEnvironmentService.refresh(underlaySelection, { probePublicEgress: false });
-  if (!connectionState.canContinue(intent)) return { ok: false, stale: true };
-  if (credentialTransactionBlocked) {
-    const recovery = retryCredentialTransactionRecovery();
-    if (recovery.status === 'blocked') {
-      connectionState.failIntent(intent);
-      state.lastError = t('error.credentialRecoveryBlocked');
-      emit();
-      return { ok: false, blocked: true };
-    }
-  }
-  let s;
-  let username = '';
-  let pw;
-  let engineConfigBinding;
-  state.lastError = null; state.failureCode = null; state.failureKind = 'none';
-  state.clientIp = null;
-  state.dnsMode = 'unknown'; activeSchoolProfile.clearCapabilitySnapshot();
-  emit();
-  if (!connectionState.canAttempt(intent)) {
-    emit();
-    return { ok: false, stale: true };
-  }
-  try {
-    // Keep every attempt in one diagnostic session. Clearing the file on an
-    // automatic retry used to erase the failure that triggered that retry.
-    if (!isRetry) await logWriter.reset();
-    logWriter.append(`\n--- connection attempt ${connectionState.snapshot().attemptNumber} ---\n`);
-  } catch { reportLogFailure(); }
-  if (!connectionState.canAttempt(intent)) {
-    emit();
-    return { ok: false, stale: true };
-  }
-  if (credentialTransactionBlocked) {
-    const recovery = retryCredentialTransactionRecovery();
-    if (recovery.status === 'blocked') {
-      connectionState.failIntent(intent);
-      state.lastError = t('error.credentialRecoveryBlocked');
-      emit();
-      return { ok: false, blocked: true };
-    }
-  }
-  // FINAL_CONNECTION_SNAPSHOT: log reset above is connectOnce's last async yield
-  // before spawn. Re-read the matching settings/credential pair now, then keep
-  // the path through EngineSupervisor.start() and stdin synchronous. A settings
-  // save during log I/O therefore either lands in this snapshot, or runs after
-  // the child is active and follows the normal reconnect path.
-  try {
-    // Validate the immutable reviewed profile/config binding before touching
-    // the credential store. A missing or replaced package profile must never
-    // cause a password to be decrypted for an unverified target.
-    engineConfigBinding = activeSchoolProfile.verifyEngineLaunchBinding();
-  } catch {
-    return failConnectionStart(intent, 'error.engineConfigMissing', { ok: false, profileConfigInvalid: true });
-  }
-  const engineConfig = engineConfigBinding.path;
-  try {
-    s = loadSettings();
-    const credentialOwner = openVpnCredential({
-      profileId: activeSchoolProfile.activeContextBinding().profileId, memoryBroker: oneShotVpnCredential,
-      openPersistent: () => persistenceRuntime.openCredential() });
-    if (credentialOwner) {
-      try {
-        credentialOwner.withStrings((account, password) => {
-          username = account;
-          pw = password;
-        });
-      } finally { credentialOwner.destroy(); }
-    }
-  } catch (error) {
-    connectionState.failIntent(intent);
-    if (error?.credentialStatus) {
-      state.lastError = t(credentialLoadErrorKey(error.credentialStatus));
-      emit();
-      return { ok: false, credentialStatus: error.credentialStatus };
-    }
-    reportSettingsReadFailure(error, { emitState: false });
-    emit();
-    return { ok: false, settingsUnavailable: true };
-  }
-  if (!username || !pw) {
-    pw = '';
-    return failConnectionStart(intent, 'error.needCredentials');
-  }
-  try {
-    if (username.length > 256 || pw.length > 4096) throw new Error('credential too long');
-    parseCredentialField(username, '账号');
-    parseCredentialField(pw, '密码');
-  } catch {
-    pw = '';
-    return failConnectionStart(intent, 'error.invalidStoredCredentials', { ok: false, invalidCredentials: true });
-  }
-  const launch = resolveEngineLaunch({ appIsPackaged: app.isPackaged, baseDirectory: __dirname,
-    nativeEngine: enginePath(), execPath: process.execPath });
-  const bin = launch.command;
-  const underlayArgs = networkEnvironmentService.engineArguments(s.underlaySourceAddress);
-  if (!underlayArgs) {
-    pw = ''; return failConnectionStart(intent, 'error.underlayUnavailable', { ok: false, underlayUnavailable: true });
-  }
-  if (!fs.existsSync(bin)) return failConnectionStart(intent, 'error.engineMissing');
-  clearActiveProxyCredential();
-  let proxyCredential = null;
-  let proxyCredentialMode = 'none';
-  if (s.strictProxyAuth === true) {
-    try {
-      proxyCredential = generationProxyCredential(Number(s.port));
-      proxyCredentialMode = 'required';
-    } catch {
-      return failConnectionStart(intent, 'error.proxyCredentialUnavailable');
-    }
-  } else if (stableProxyCredential || fs.existsSync(PROXY_CREDENTIAL)) {
-    // The packaged SSH helper reads its endpoint from the sidecar and offers
-    // both NO_AUTH and RFC1929, so one copied ProxyCommand keeps working when
-    // the user later changes port or toggles strict mode. Do not create this
-    // optional credential for ordinary compatibility-mode users who have
-    // never requested an external configuration; that avoids unnecessary OS
-    // secure-storage access. Failure never blocks the core tunnel itself.
-    try {
-      proxyCredential = generationProxyCredential(Number(s.port));
-      proxyCredentialMode = 'optional';
-    } catch {}
-  }
-  let resolvedBin;
-  try { resolvedBin = fs.realpathSync(bin); } catch { resolvedBin = path.resolve(bin); }
-  if (!launch.synthetic && killStrayEngines(resolvedBin) !== true) {
-    proxyCredential?.destroy();
-    removeExternalProxySidecar();
-    pw = '';
-    return failConnectionStart(intent, 'error.engineCleanupUnconfirmed', {
-      ok: false,
-      cleanupUnconfirmed: true,
-    });
-  }
-  let engineGeneration = null;
-  let ownedEngine = null;
-  let engineRuntime = null;
-  let engineContextToken = null;
-  const isCurrentEngineContext = (generation) => activeEngineContextCurrent(generation, engineContextToken);
-  const serving = new EngineServingCoordinator({
-    getGeneration: () => engineGeneration, port: s.port, connectionState,
-    getBrowser: () => campusBrowserManager, getPresentation: () => state, getTranslator: () => t,
-    isCurrent: isCurrentEngineContext, emit, appendDiagnostic: chunk => logWriter.append(chunk),
-    revokeServing: () => revokeEngineServing(engineGeneration, isCurrentEngineContext),
-    stopEngine: () => engineSupervisor.stop({ graceMs: 1000, forceWaitMs: STOP_FORCE_WAIT_MS }),
-    observeCapabilities: report => activeSchoolProfile.observeCapabilityReport(report),
-    onFirstConnected: () => {
-      connectedAt = Date.now();
-      telemetryCoordinator.start(engineGeneration, engineContextToken);
-    },
-  });
-  connectionState.invalidateEngineGeneration();
-  const expectedEngineGeneration = engineSupervisor.currentGeneration + 1;
-  const engineArgs = [
-    '--config', engineConfig,
-    '--profile-binding-v1-stdin',
-    '--credentials-stdin',
-    '--socks-bind', `127.0.0.1:${Number(s.port)}`,
-    '--generation', String(expectedEngineGeneration),
-    '--control-api-v2-stdin',
-  ];
-  if (proxyCredentialMode === 'required') engineArgs.push('--socks-auth-stdin');
-  if (proxyCredentialMode === 'optional') engineArgs.push('--socks-auth-optional-stdin');
-  engineArgs.push(...underlayArgs);
-  const started = engineSupervisor.start({
-    command: bin,
-    args: [...launch.argsPrefix, ...engineArgs],
-    options: { stdio: ['pipe', 'pipe', 'pipe'], ...launch.options },
-    onError: ({ error, generation }) => {
-      if (!isCurrentEngineContext(generation)) return;
-      serving.fatalCode = 'EVENT_OUTPUT_FAILED';
-      state.lastError = t('error.engineStart', { message: error.message });
-      emit();
-    },
-    onExit: (result) => { engineRuntime?.beginExitDrain(); handleEngineExitBoundary(result, isCurrentEngineContext); },
-    onClose: (result) => {
-      const structuredStopReason = engineRuntime?.stoppedReason || null;
-      engineRuntime?.dispose();
-      if (ownedEngine) removeEngineOwnerRecord(ENGINE_OWNER, ownedEngine);
-      handleEngineClose(
-        result,
-        serving.diagnosticTail,
-        serving.fatalCode,
-        structuredStopReason,
-        Number(s.port), isCurrentEngineContext,
-      );
-    },
-  });
-  if (!started.ok) {
-    proxyCredential?.destroy();
-    removeExternalProxySidecar();
-    if (started.reason === 'spawn') {
-      connectionState.failIntent(intent);
-      state.lastError = t('error.engineStart', { message: started.error.message });
-      emit();
-    }
-    return { ok: false, error: started.error };
-  }
-  const child = started.child;
-  engineGeneration = started.generation;
-  connectionState.bindEngineGeneration(engineGeneration);
-  engineContextToken = activeContextLease.capture({ connectionIntent: intent, engineGeneration });
-  if (engineGeneration !== expectedEngineGeneration) {
-    proxyCredential?.destroy();
-    removeExternalProxySidecar();
-    serving.fatalCode = 'EVENT_OUTPUT_FAILED';
-    state.lastError = classifyEngineCode(serving.fatalCode, s.port, t);
-    emit();
-    await engineSupervisor.stop({ graceMs: 0, forceWaitMs: STOP_FORCE_WAIT_MS });
-    return { ok: false };
-  }
-  if (proxyCredential) {
-    if (!proxyCredential.bindGeneration(engineGeneration, Number(s.port))) {
-      proxyCredential.destroy();
-      removeExternalProxySidecar();
-      serving.fatalCode = 'EVENT_OUTPUT_FAILED';
-      state.lastError = t('error.proxyCredentialUnavailable');
-      emit();
-      await engineSupervisor.stop({ graceMs: 0, forceWaitMs: STOP_FORCE_WAIT_MS });
-      return { ok: false };
-    }
-    activeProxyCredential = proxyCredential;
-  }
-  if (!launch.synthetic && process.platform === 'win32' &&
-      Number.isInteger(child.pid) && child.pid > 0) {
-    ownedEngine = { pid: child.pid, executablePath: resolvedBin };
-    try {
-      writeEngineOwnerRecord(ENGINE_OWNER, ownedEngine);
-    } catch {
-      clearActiveProxyCredential(engineGeneration);
-      removeExternalProxySidecar();
-      state.lastError = t('error.engineCleanupUnconfirmed');
-      emit();
-      await engineSupervisor.stop({ graceMs: 0, forceWaitMs: STOP_FORCE_WAIT_MS });
-      return { ok: false, cleanupUnconfirmed: true };
-    }
-  }
-
-  engineRuntime = new EngineConnectionRuntime({
-    generation: engineGeneration,
-    contextToken: engineContextToken,
-    expectedPort: Number(s.port),
-    stdin: child.stdin,
-    controlRegistry: engineControlRegistry,
-    isCurrent: isCurrentEngineContext,
-    handlers: serving.handlers,
-  });
-  // An engine that dies before reading stdin (missing library, wrong
-  // architecture) makes this write emit EPIPE. Without a listener that would
-  // become an uncaught exception and take the whole application down, so the
-  // failure is left to the supervisor's final close handler instead.
-  child.stdin.on('error', () => {});
-  let proxyCredentialLines = proxyCredential
-    ? proxyCredential.stdinSuffix(engineGeneration)
-    : '';
-  // Keep the credential/control pipe open: EOF cancels active authentication;
-  // after connection it closes only the Control v2/v3 stream.
-  child.stdin.write(
-    `${engineConfigBinding.stdinFrame}\n${username}\n${pw}\n${proxyCredentialLines}`,
-  );
-  username = '';
-  pw = '';
-  proxyCredentialLines = '';
-  engineRuntime.start(child.stdout);
-  child.stderr.on('data', (data) => {
-    const chunk = data.toString();
-    logWriter.append(chunk);
-    serving.applyHumanDiagnostic(chunk);
-  });
-  return { ok: true, generation: engineGeneration };
-}
-
-function ensureEngineStopped() {
-  if (disconnectInFlight) return disconnectInFlight;
-  // Establish the browser barrier before the engine releases its listener;
-  // otherwise another local account/process can bind the now-free port and
-  // impersonate the expected proxy. The synchronous request gate is the hard
-  // boundary: PAC/drain failures are surfaced but do not strand the engine.
-  const operation = stopEngineAfterBrowserSuspend({
+const connectionOperations = new ConnectionOperationCoordinator({
+  connectionState, engineSupervisor, isQuitting: () => desktopShell?.isQuitting === true,
+  loadSettingsOrReport,
+  cancelRecovery: () => { networkStartupCoordinator?.cancel(); connectivityRecovery.cancel(); },
+  clearProxyCredential: clearActiveProxyCredential, clearPresentation: clearConnectionPresentation,
+  removeSidecar: removeExternalProxySidecar, getPresentation: () => state, getTranslator: () => t, emit,
+  waitForConnected: intent => connectionWaitRegistry.wait(intent, {
+    timeoutMs: BROWSER_CONNECTION_READY_TIMEOUT_MS,
+  }),
+  runAttempt: (retry, intent) => connectOnce(retry, intent),
+  stopEngine: () => stopEngineAfterBrowserSuspend({
     suspendBrowser: suspendOpenBrowserPolicy,
     browserBoundaryClosed: () => campusBrowserManager.routingRequestsBlocked !== false,
     closeBrowser: () => campusBrowserManager.close(),
@@ -1054,169 +385,83 @@ function ensureEngineStopped() {
       state.browserNotice = t('error.browserRoutingAfterSave', { message: error.message });
       emit();
     },
-    stopEngine: () => engineSupervisor.stop({
-      requestGracefulStop: requestActiveEngineControlShutdown,
-      graceMs: STOP_GRACE_MS,
-      forceWaitMs: STOP_FORCE_WAIT_MS,
-    }),
-  });
-  disconnectInFlight = operation;
-  operation.finally(() => {
-    // The encrypted master remains stable, but the plaintext helper projection
-    // must not outlive the listener. Reconnect/resume recreates it before the
-    // next engine starts, including after a port change.
-    removeExternalProxySidecar();
-    if (disconnectInFlight === operation) disconnectInFlight = null;
-  });
-  return operation;
+    // Supervisor owns the unchanged reviewed grace/force timeout defaults.
+    stopEngine: () => engineSupervisor.stop({ requestGracefulStop: requestActiveEngineControlShutdown }),
+  }),
+});
+async function connect(isRetry = false, expectedIntent = null) {
+  return connectionOperations.connect(isRetry, expectedIntent);
 }
+const engineTermination = new EngineTerminationCoordinator({
+  isGenerationCurrent: generation => engineSupervisor.isCurrent(generation), connectionState,
+  scheduleRetry: (generation, delay, callback) => engineSupervisor.schedule(generation, delay, callback),
+  getPresentation: () => state, getConnectedAt: () => connectedAt, getTranslator: () => t,
+  now: () => Date.now(), clearControl: clearActiveEngineControl,
+  cleanupProxyAccess: cleanupProxyAccessForEngineClose,
+  clearCredential: clearActiveProxyCredential, removeSidecar: removeExternalProxySidecar,
+  suspendBrowser: suspendOpenBrowserPolicy, clearPresentation: clearConnectionPresentation,
+  loadSettings, reportSettingsReadFailure, emit, connect: (retry, intent) => connect(retry, intent),
+});
+function handleEngineClose(...args) { return engineTermination.close(...args); }
+function revokeEngineServing(...args) { return engineTermination.revokeServing(...args); }
+function handleEngineExitBoundary(...args) { return engineTermination.exit(...args); }
+const engineAttempts = new EngineAttemptCoordinator({
+  engineSupervisor, connectionState, appIsPackaged: app.isPackaged, baseDirectory: __dirname,
+  getState: () => state, getTranslator: () => t, getLogWriter: () => logWriter,
+  isCredentialTransactionBlocked: () => persistenceRuntime.isCredentialTransactionBlocked(),
+  retryCredentialTransactionRecovery: () => persistenceRuntime.retryCredentialTransactionRecovery(),
+  loadSettingsOrReport, loadSettings, reportSettingsReadFailure, reportLogFailure, emit,
+  networkEnvironment: {
+    refresh: (...args) => networkEnvironmentService.refresh(...args),
+    engineArguments: value => networkEnvironmentService.engineArguments(value),
+  },
+  profile: {
+    verifyEngineLaunchBinding: () => activeSchoolProfile.verifyEngineLaunchBinding(),
+    activeContextBinding: () => activeSchoolProfile.activeContextBinding(),
+    clearCapabilitySnapshot: () => activeSchoolProfile.clearCapabilitySnapshot(),
+    observeCapabilityReport: report => activeSchoolProfile.observeCapabilityReport(report),
+  },
+  openCredential: profileId => openVpnCredential({ profileId, memoryBroker: oneShotVpnCredential,
+    openPersistent: () => persistenceRuntime.openCredential() }),
+  credentialLoadErrorKey, parseCredentialField, enginePath,
+  clearActiveProxyCredential, generationProxyCredential, removeExternalProxySidecar, killStrayEngines,
+  hasStableProxyCredential: () => proxyAccess.hasStable(), proxyCredentialFile: PROXY_CREDENTIAL,
+  setActiveProxyCredential: value => proxyAccess.setActive(value), engineOwnerFile: ENGINE_OWNER,
+  activeEngineContextCurrent, getBrowser: () => campusBrowserManager, revokeEngineServing,
+  handleEngineExitBoundary, handleEngineClose, controlRegistry: engineControlRegistry,
+  contextLease: { capture: options => activeContextLease.capture(options) },
+  onFirstConnected: (generation, token) => { connectedAt = Date.now(); telemetryCoordinator.start(generation, token); },
+});
+async function connectOnce(isRetry, intent) { return engineAttempts.run(isRetry, intent); }
 
-function initiateStop(wantsConnectedAfterStop) {
-  networkStartupCoordinator?.cancel();
-  connectivityRecovery.cancel();
-  const intent = connectionState.beginStop(wantsConnectedAfterStop);
-  // Generation invalidation happens before waiting for close. Old probes,
-  // delayed retries, and output callbacks are stale from this exact point.
-  engineSupervisor.invalidate();
-  clearActiveProxyCredential();
-  clearConnectionPresentation();
-  emit();
-  return { intent, stopped: ensureEngineStopped() };
-}
-
-async function disconnect() {
-  const { intent, stopped } = initiateStop(false);
-  const result = await stopped;
-  removeExternalProxySidecar();
-  connectionState.stopCompleted(intent, result);
-  if (connectionState.isCurrentIntent(intent) && !result.ok) {
-    state.lastError = t('error.engineStuck');
-    emit();
-  } else if (connectionState.isCurrentIntent(intent) && result.cleanExit === false) {
-    state.lastError = t('error.engineCleanupUnconfirmed');
-    emit();
-  }
-  return { ok: result.ok };
-}
-
-function waitForConnected(intent, timeoutMs = BROWSER_CONNECTION_READY_TIMEOUT_MS) {
-  return connectionWaitRegistry.wait(intent, { timeoutMs });
-}
-
+function ensureEngineStopped() { return connectionOperations.ensureEngineStopped(); }
+async function disconnect() { return connectionOperations.disconnect(); }
 async function reconnect(expectedGeneration = null) {
-  let rejected = rejectConnectionWhileQuitting(); if (rejected) return rejected;
-  if (expectedGeneration !== null && !engineSupervisor.isCurrent(expectedGeneration)) return { ok: false, stale: true };
-  if (reconnectInFlight && connectionState.isCurrentIntent(reconnectInFlight.intent) &&
-      connectionState.snapshot().desiredConnected) {
-    return reconnectInFlight.promise;
-  }
-  if (reconnectInFlight) await reconnectInFlight.promise;
-  rejected = rejectConnectionWhileQuitting(); if (rejected) return rejected;
-  if (expectedGeneration !== null && !engineSupervisor.isCurrent(expectedGeneration)) return { ok: false, stale: true };
-
-  const { intent, stopped } = initiateStop(true);
-  const operation = (async () => {
-    const stopResult = await stopped;
-    const quitResult = rejectConnectionWhileQuitting(intent); if (quitResult) return quitResult;
-    connectionState.stopCompleted(intent, stopResult);
-    if (!stopResult.ok || stopResult.cleanExit === false) {
-      connectionState.failIntent(intent);
-      state.lastError = t(stopResult.cleanExit === false
-        ? 'error.engineCleanupUnconfirmed'
-        : 'error.engineStuck');
-      emit();
-      return { ok: false };
-    }
-    if (!connectionState.resumeAfterStop(intent)) return { ok: false, stale: true };
-    return connect(false, intent);
-  })();
-  const record = { intent, promise: operation };
-  reconnectInFlight = record;
-  try { return await operation; }
-  finally { if (reconnectInFlight === record) reconnectInFlight = null; }
+  return connectionOperations.reconnect(expectedGeneration);
 }
 
 // ---------- PAC file (advanced app integration; no DNS probing) ----------
-let currentPacUrl = pathToFileURL(PAC_FILE).href;
+const routingPolicyCoordinator = new RoutingPolicyCoordinator({
+  policy: domainRoutePolicy, externalPacFile: PAC_FILE, browserPacFile: CAMPUS_BROWSER_PAC_FILE,
+  getSettings: loadSettingsOrReport, getSocksPort: socksPort,
+  getBrowser: () => campusBrowserManager,
+  canResumeBrowser: () => connectionState.isConnected() && engineSupervisor.hasActive,
+  assertPersistence: assertSettingsPersistenceAvailable,
+  runTransaction: runActiveContextTransaction, encodePac: pacDataUrl,
+});
 function refreshPacFile(settings = loadSettingsOrReport()) {
-  const saved = savePacFile(PAC_FILE, domainRoutePolicy.buildPac(Number(settings.port), {
-    defaultRoute: 'direct', campusPrivateIpv4: true,
-  }));
-  currentPacUrl = saved.url;
-  return saved;
+  return routingPolicyCoordinator.refreshExternal(settings);
 }
-function pacUrl() { return currentPacUrl; }
-
-function browserPolicyProxyConfig(port) {
-  const proxyKind = loadSettingsOrReport().strictProxyAuth === true ? 'http' : 'socks5';
-  const source = domainRoutePolicy.buildPac(
-    Number(port),
-    { proxyKind, campusPrivateIpv4: true },
-  );
-  // Keep a durable diagnostic copy, while Chromium consumes an in-memory PAC.
-  // If the derived file disappears or cannot be re-read, Chromium must never
-  // silently fall back to DIRECT for a campus page.
-  savePacFile(
-    CAMPUS_BROWSER_PAC_FILE,
-    source,
-  );
-  return {
-    mode: 'pac_script',
-    pacScript: pacDataUrl(source),
-    proxyBypassRules: '<-loopback>',
-  };
-}
+function pacUrl() { return routingPolicyCoordinator.pacUrl(); }
 async function suspendOpenBrowserPolicy() {
-  return campusBrowserManager.suspendRoutingPolicy();
-}
-async function resumeOpenBrowserPolicyIfLive() {
-  if (!connectionState.isConnected() || !engineSupervisor.hasActive) return null;
-  return campusBrowserManager.resumeRoutingPolicy(socksPort());
+  return routingPolicyCoordinator.suspendBrowser();
 }
 function runDomainPolicyTransaction(buildOperations) {
-  return runActiveContextTransaction(() => {
-    assertSettingsPersistenceAvailable();
-    const { commit, rollback, resumeBrowser = true } = buildOperations();
-    return {
-      suspend: suspendOpenBrowserPolicy,
-      commit,
-      applyExternal: () => refreshPacFile(loadSettingsOrReport()),
-      applyBrowser: resumeBrowser ? resumeOpenBrowserPolicyIfLive : null,
-      rollback,
-      restoreExternal: () => refreshPacFile(loadSettingsOrReport()),
-      restoreBrowser: resumeOpenBrowserPolicyIfLive,
-    };
-  });
+  return routingPolicyCoordinator.run(buildOperations);
 }
-
-const browserRoutingPolicy = {
-  appliesLiveSession: true,
-  list: () => domainRoutePolicy.list(),
-  resolve: (url, inheritedRoute) => domainRoutePolicy.resolve(url, inheritedRoute),
-  upsert: (payload) => runDomainPolicyTransaction(() => {
-    const previousRules = domainRoutePolicy.list();
-    return {
-      commit: () => domainRoutePolicy.upsert(payload),
-      rollback: () => domainRoutePolicy.replace(previousRules),
-    };
-  }),
-  remove: (payload) => runDomainPolicyTransaction(() => {
-    const previousRules = domainRoutePolicy.list();
-    return {
-      commit: () => domainRoutePolicy.remove(payload),
-      rollback: () => domainRoutePolicy.replace(previousRules),
-    };
-  }),
-  proxyConfig: (port) => browserPolicyProxyConfig(port),
-};
+const browserRoutingPolicy = routingPolicyCoordinator.browserPolicy;
 const resourcesChanged = () => { emit(); campusBrowserManager?.browser?.updateToolbar(); };
 const pageFavoriteController = createPageFavoriteController({ activeSchoolProfile, loadSettings: loadSettingsOrReport, saveSettings, activityStore: resourceLibraryRuntime, runTransaction: runDomainPolicyTransaction, onChanged: resourcesChanged });
-async function ensureCampusReady() {
-  if (connectionState.isConnected()) return true;
-  const result = await connect();
-  if (!result?.ok && !connectionState.isConnecting()) return false;
-  return waitForConnected(result.intent);
-}
 campusBrowserManager = new CampusBrowserManager({
   BrowserWindow, WebContentsView, Menu,
   session,
@@ -1235,22 +480,14 @@ campusBrowserManager = new CampusBrowserManager({
   homeUrl: officialPortalHomeUrl(activeSchoolProfile.createPresentation({ locale }).schoolProfile, safeCampusResourceLibrary()),
   browserPartition: preReadyStorage.authority?.layout?.browserPartition || activeSchoolProfile.browserPartition,
   routingPolicy: browserRoutingPolicy,
-  ensureCampusReady,
+  ensureCampusReady: () => connectionOperations.ensureBrowserReady(),
   resolveRoute: (url) => domainRoutePolicy.resolve(url),
-  ensureConnected: async () => {
-    if (!connectionState.isConnected()) {
-      const result = await connect();
-      if (!await waitForConnected(result.intent)) {
-        return { ok: false, error: state.lastError || t('error.connectTimeout') };
-      }
-    }
-    return { ok: true };
-  },
+  ensureConnected: () => connectionOperations.ensureBrowserConnected(),
   getSocksPort: socksPort, getNewTabUrl: () => loadSettingsOrReport().browserNewTabUrl,
   getLocale: () => locale,
   getTranslator: () => t,
   getProfilePresentation: () => activeSchoolProfile.createPresentation({ locale }).schoolProfile, getWorkspaceResources: () => safeCampusResourceLibrary(), getWorkspaceGroups: () => resourceLibraryRuntime.listGroups(), getSharedPortalCredential: (origin) => origin === 'https://sso.hkust-gz.edu.cn' && activeSchoolProfile.activeContextBinding().profileId === 'hkustgz' ? persistenceRuntime.openCredential() : null,
-  onTogglePageFavorite: (candidate) => pageFavoriteController.toggle(candidate).catch((error) => ({ ok: false, error: error.message })), onRecordPageOpen: (url) => (resourceLibraryRuntime.recordOpenByUrl(url) && (emit(), true)), onOpenResource: (resourceId) => openCampusResourceById({ resourceId }), onWorkspaceMutation: (command) => pageFavoriteController.handleWorkspaceCommand(command),
+  onTogglePageFavorite: (candidate) => pageFavoriteController.toggle(candidate).catch((error) => ({ ok: false, error: error.message })), onRecordPageOpen: (url) => (resourceLibraryRuntime.recordOpenByUrl(url) && (emit(), true)), onOpenResource: (resourceId) => resourceLibraryRuntime.openByIdSerialized({ resourceId }), onWorkspaceMutation: (command) => pageFavoriteController.handleWorkspaceCommand(command),
   showItemInFolder: (file) => shell.showItemInFolder(file), showSettings: () => { desktopShell?.showWindow(); desktopShell?.send('open-settings'); },
   showRoutingRules: () => {
     desktopShell?.showWindow();
@@ -1269,9 +506,11 @@ const externalIntegrationRuntime = createExternalIntegrationRuntime({
   getProxyCredential: loadStableProxyCredential, getPacSource: () => domainRoutePolicy.buildPac(Number(loadSettingsOrReport().port), { defaultRoute: 'direct', campusPrivateIpv4: true }),
   ensureSidecar: () => ensureExternalProxyAccess(socksPort()), writeClipboard: (text) => (clipboard.writeText(text), true),
   helperPath: proxyHelperPath(), credentialFile: PROXY_HELPER_CREDENTIAL, selectTarget: integrationTargetSelector,
+  privateStorageEffects: profileStorageEffects,
 });
 const profileSwitching = createMainProfileSwitchComposition({
   enabled: preReadyStorage.mode === 'profile-workspace',
+  profileStorageEffects,
   directoryOptions: { userData: DATA, packageRoot: __dirname, isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath, desktopDir: __dirname },
   userData: DATA, journalFile: ACTIVE_CONTEXT_SWITCH, activeAuthority: preReadyStorage.authority,
@@ -1300,15 +539,6 @@ async function connectAndOpenCampusBrowser(rawRequest) {
   }
   return result;
 }
-async function openCampusResourceById({ resourceId } = {}) {
-  try {
-    return await runActiveContextTransaction(() => ({
-      commit: () => resourceLibraryRuntime.openById(resourceId, locale),
-    }));
-  }
-  catch { return { ok: false, error: t('error.resourceUnavailable') }; }
-}
-
 // ---------- update notifications (no automatic download or installation) ----------
 updateNotifications = new UpdateNotificationRuntime({
   getVersion: () => app.getVersion(), check: checkForUpdate,
@@ -1375,12 +605,7 @@ registerSettingsCredentialIpc({
   saveSettings,
   savePassword,
   removePassword: () => persistenceRuntime.clearCredential(),
-  runCredentialMutation: runPersistenceCredentialMutation,
-  credentialJournalPath: CREDENTIAL_TRANSACTION,
-  credentialPaths: credentialTransactionPaths,
-  applyCredentialRecovery: applyCredentialRecoveryOutcome,
-  isCredentialBlocked: () => credentialTransactionBlocked,
-  retryCredentialRecovery: retryCredentialTransactionRecovery,
+  credentialTransactions: persistenceRuntime,
   runPolicyTransaction: runDomainPolicyTransaction,
   runSerialTransaction: runActiveContextTransaction,
   assertPersistence: assertSettingsPersistenceAvailable,
@@ -1427,23 +652,13 @@ registerCoreControlIpc({
     return { ok: true };
   },
   openCampusBrowser: (request) => connectAndOpenCampusBrowser(request), openBookmarkManager: () => campusBrowserManager.openBookmarkManager(),
-  openResource: (request) => openCampusResourceById(request),
+  openResource: (request) => resourceLibraryRuntime.openByIdSerialized(request),
   checkUpdate: force => updateNotifications.run(force),
   openExternal: url => updateNotifications.open(url),
   resize: (height) => desktopShell.resize(height),
 });
 // ---------- window / tray composition ----------
-function rememberCloseAction(action) {
-  return runActiveContextTransaction(() => {
-    assertSettingsPersistenceAvailable();
-    const previous = loadSettingsOrReport();
-    const next = { ...previous, closeAction: action };
-    return {
-      commit: () => saveSettings(next),
-      rollback: () => saveSettings(previous),
-    };
-  });
-}
+function rememberCloseAction(action) { return persistenceRuntime.rememberCloseAction(action, runActiveContextTransaction); }
 desktopShell = new DesktopShell({
   app,
   BrowserWindow,
@@ -1471,9 +686,7 @@ desktopShell = new DesktopShell({
   },
   cleanupQuit: async () => {
     await logWriter?.close().catch(reportLogFailure);
-    removeExternalProxySidecar();
-    stableProxyCredential?.destroy();
-    stableProxyCredential = null;
+    proxyAccess.disposeForQuit();
   },
   onControlRendererUnavailable: () => (schoolProfileOnboarding.cancel(), externalIntegrationRuntime.cancel(), authChallengeCoordinator.cancelForLifecycle()),
   onWindowError: (error) => {
@@ -1488,9 +701,7 @@ telemetryCoordinator = new ConnectionTelemetryCoordinator({
   healthTargets: activeSchoolProfile.healthTargets,
   getSocksPort: socksPort,
   getEnginePid: () => engineSupervisor.currentChild?.pid ?? -1,
-  getProxyCredentials: (generation) => (
-    activeProxyCredential?.socksAuthentication(generation) || null
-  ),
+  getProxyCredentials: (generation) => proxyAccess.socksAuthentication(generation),
   isConnected: () => connectionState.isConnected(),
   isEngineCurrent: activeEngineContextCurrent,
   isVisible: () => desktopShell.isVisible(),
@@ -1532,13 +743,15 @@ app.on('login', (event, webContents, _details, authInfo, callback) => {
   // in-memory credential. Control UI and arbitrary WebContents are excluded.
   const generation = engineSupervisor.currentGeneration;
   if (!campusBrowserManager.ownsWebContents(webContents) ||
-      !activeProxyCredential?.matchesProxyChallenge(authInfo, generation)) return;
+      !proxyAccess.matchesProxyChallenge(authInfo, generation)) return;
   event.preventDefault();
-  activeProxyCredential.answerProxyChallenge(authInfo, generation, callback);
+  proxyAccess.answerProxyChallenge(authInfo, generation, callback);
 });
 app.whenReady().then(() => {
   if (!profileSwitching.runtime) {
-    assertActiveContextSwitchStartupClear({ mode: preReadyStorage.mode, filePath: ACTIVE_CONTEXT_SWITCH });
+    assertActiveContextSwitchStartupClear({
+      mode: preReadyStorage.mode, filePath: ACTIVE_CONTEXT_SWITCH, profileStorageEffects,
+    });
   }
   return profileSwitching.recoverBeforeServices();
 }).then((switchRecovery) => {
@@ -1569,8 +782,10 @@ app.whenReady().then(() => {
       ? 'error.settingsRestored'
       : 'error.settingsDefaults');
   }
-  applyCredentialRecoveryOutcome(credentialTransactionRecovery, { emitState: false });
-  syncRecoveryNotice(false);
+  persistenceRuntime.applyCredentialRecoveryOutcome(
+    persistenceRuntime.getCredentialTransactionRecovery(),
+    { emitState: false },
+  );
   desktopShell.installApplicationMenu();
   // A PAC write can fail on a read-only or full user-data directory. That must
   // not leave the user with no window and no tray, so it is reported through the

@@ -16,6 +16,7 @@ class MultiSchoolStartupRuntime {
     isPackaged,
     resourcesPath,
     desktopDir,
+    profileStorageEffects,
     ProvisioningRuntimeClass = CustomProfileProvisioningRuntime,
     CandidateDirectoryClass = ProfileCandidateDirectory,
     PackagedRegistryClass = SchoolProfileRegistry,
@@ -25,7 +26,9 @@ class MultiSchoolStartupRuntime {
         typeof PackagedRegistryClass !== 'function') {
       throw new TypeError('multi-school startup runtime dependencies are invalid');
     }
-    this.options = { userData, packageRoot, isPackaged, resourcesPath, desktopDir };
+    this.options = {
+      userData, packageRoot, isPackaged, resourcesPath, desktopDir, profileStorageEffects,
+    };
     this.ProvisioningRuntimeClass = ProvisioningRuntimeClass;
     this.CandidateDirectoryClass = CandidateDirectoryClass;
     this.PackagedRegistryClass = PackagedRegistryClass;
@@ -58,6 +61,7 @@ class MultiSchoolStartupRuntime {
     }
     const provisioning = new this.ProvisioningRuntimeClass({
       userData: this.options.userData,
+      profileStorageEffects: this.options.profileStorageEffects,
     }).recover();
     let sourceDocument = null;
     const access = withProfileDocument((value) => { sourceDocument = value; });

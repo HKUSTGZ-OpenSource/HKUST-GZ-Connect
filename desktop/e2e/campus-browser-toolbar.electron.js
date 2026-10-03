@@ -5,6 +5,7 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { app, BrowserWindow, WebContentsView, ipcMain, session } = require('electron');
 const {
@@ -13,10 +14,24 @@ const {
   FIND_BAR_HEIGHT,
   TOOLBAR_HEIGHT,
 } = require('../lib/browser/session/campus-browser');
+const { createCampusBrowserWindowOwner } = require('../lib/browser/session/campus-browser-manager');
 const { CampusWorkspaceController } = require('../lib/browser/workspace/campus-workspace-controller');
 const { createDefaultCardBoardLayout } = require('../lib/card-board/runtime/card-board-migration');
 const { applyCardBoardOperations } = require('../lib/card-board/runtime/card-board-runtime');
 const { CAMPUS_PARTITION, ROUTE_CAMPUS, ROUTE_DIRECT } = require('../lib/routing/policy/campus-route');
+const { scheduleTemporaryProfileCleanup } = require('../scripts/temp-profile-cleanup');
+
+const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-browser-toolbar-'));
+fs.chmodSync(profile, 0o700);
+app.setPath('userData', profile);
+let profileCleanupScheduled = false;
+function scheduleProfileCleanup() {
+  if (profileCleanupScheduled) return;
+  profileCleanupScheduled = true;
+  scheduleTemporaryProfileCleanup(profile, 'hkustgz-browser-toolbar');
+}
+app.once('quit', scheduleProfileCleanup);
+process.once('exit', scheduleProfileCleanup);
 
 // Chromium blocks port 1 outright (ERR_UNSAFE_PORT), so tabs settle on the
 // local error page immediately instead of hanging the test.
@@ -25,10 +40,25 @@ const CONFIGURED_HOME = 'https://configured-home.test/start';
 const CONFIGURED_NEXT = 'https://configured-home.test/after-resume';
 let activeStage = 'boot';
 
+function evaluateWithinDeadline(contents, expression, deadline, description) {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) return Promise.reject(new Error(`Timed out evaluating ${description}`));
+  let timer;
+  const evaluation = Promise.resolve().then(() => contents.executeJavaScript(expression));
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Timed out evaluating ${description}`)), remaining);
+  });
+  return Promise.race([evaluation, timeout]).finally(() => clearTimeout(timer));
+}
+
+function evaluate(contents, expression, timeoutMs = 5_000, description = 'UI expression') {
+  return evaluateWithinDeadline(contents, expression, Date.now() + timeoutMs, description);
+}
+
 async function waitFor(window, expression, description) {
   const deadline = Date.now() + 5000;
   while (Date.now() < deadline) {
-    if (await window.webContents.executeJavaScript(expression)) return;
+    if (await evaluateWithinDeadline(window.webContents, expression, deadline, description)) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error(`Timed out waiting for ${description}`);
@@ -53,31 +83,32 @@ async function waitForPage(contents, expression, description) {
   // bounded startup allowance instead of turning runner load into a flake.
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
-    if (await contents.executeJavaScript(expression)) return;
+    if (await evaluateWithinDeadline(contents, expression, deadline, description)) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  const diagnostic = await contents.executeJavaScript(`(() => ({
-    url: location.href,
-    readyState: document.readyState,
-    bridge: typeof window.campusWorkspace,
-    resources: document.querySelectorAll('#workspacePersonalBoardHost .cb-site').length,
-    body: document.body?.innerText?.slice(0, 500) || '',
-  }))()`);
-  throw new Error(`Timed out waiting for ${description}: ${JSON.stringify(diagnostic)}`);
+  throw new Error(`Timed out waiting for ${description}`);
 }
 
 async function runStage(name, operation) {
   activeStage = name;
-  try { return await operation(); }
+  process.stderr.write(`[campus-browser-toolbar] ${name}: start\n`);
+  try {
+    const result = await operation();
+    process.stderr.write(`[campus-browser-toolbar] ${name}: pass\n`);
+    return result;
+  }
   catch (error) {
     error.message = `${name}: ${error.message}`;
+    process.stderr.write(`[campus-browser-toolbar] ${name}: fail\n`);
     throw error;
   }
 }
 
 function toolbarCommand(browser, command, value = '') {
-  return browser.window.webContents.executeJavaScript(
+  return evaluate(browser.window.webContents,
     `window.campusToolbar.command(${JSON.stringify(command)}, ${JSON.stringify(value)})`,
+    5_000,
+    `toolbar command ${command}`,
   );
 }
 
@@ -90,7 +121,7 @@ function assertOnlyActiveTabAttached(browser) {
 }
 
 async function assertDragRegions(browser) {
-  const regions = await browser.window.webContents.executeJavaScript(`(() => {
+  const regions = await evaluate(browser.window.webContents, `(() => {
     const pick = (selector) => getComputedStyle(document.querySelector(selector))
       .getPropertyValue('-webkit-app-region');
     return {
@@ -116,7 +147,7 @@ async function assertBookmarkBar(browser, openedResources, bookmarkMenus) {
   await waitFor(browser.window,
     "document.querySelectorAll('#bookmarkItems > .bookmark-entry').length === 2 && document.querySelectorAll('#bookmarkItems > .bookmark-folder').length === 1",
     'Chrome-style bookmark bar');
-  const state = await browser.window.webContents.executeJavaScript(`(() => ({
+  const state = await evaluate(browser.window.webContents, `(() => ({
     labels: [...document.querySelectorAll('#bookmarkItems > .bookmark-entry')]
       .map((button) => button.textContent.trim()),
     official: [...document.querySelectorAll('#bookmarkItems > .bookmark-entry')]
@@ -128,11 +159,11 @@ async function assertBookmarkBar(browser, openedResources, bookmarkMenus) {
   assert.deepEqual(state.official, [true, false]);
   assert.equal(state.manage, '整理书签');
   assert.equal(state.barHeight, 32);
-  await browser.window.webContents.executeJavaScript(
+  await evaluate(browser.window.webContents,
     `document.querySelector('[data-bookmark-id="favorite"]').click()`,
   );
   await waitForMain(() => openedResources.includes('favorite'), 'bookmark click to reach Main');
-  await browser.window.webContents.executeJavaScript(`(() => {
+  await evaluate(browser.window.webContents, `(() => {
     const folder = document.querySelector('#bookmarkItems > .bookmark-folder');
     folder.querySelector(':scope > .bookmark-control').click();
   })()`);
@@ -141,7 +172,7 @@ async function assertBookmarkBar(browser, openedResources, bookmarkMenus) {
 }
 
 async function assertBookmarkOrganizer(browser) {
-  await browser.window.webContents.executeJavaScript(
+  await evaluate(browser.window.webContents,
     `document.getElementById('manageBookmarks').click()`,
   );
   await waitForMain(() => browser.activeTab()?.kind === 'workspace',
@@ -153,7 +184,7 @@ async function assertBookmarkOrganizer(browser) {
 
 async function assertBlankNewTab(browser) {
   const previous = browser.activeTab();
-  await browser.window.webContents.executeJavaScript(
+  await evaluate(browser.window.webContents,
     `document.getElementById('newTab').click()`,
   );
   await waitForMain(() => browser.activeTab()?.kind === 'blank',
@@ -173,7 +204,7 @@ async function assertBlankNewTab(browser) {
 async function assertConfiguredHomeAndSuspendedRecovery(browser, preference, committedUrls) {
   const previous = browser.activeTab();
   preference.url = CONFIGURED_HOME;
-  await browser.window.webContents.executeJavaScript(
+  await evaluate(browser.window.webContents,
     `document.getElementById('newTab').click()`,
   );
   await waitForMain(() => committedUrls.includes(CONFIGURED_HOME),
@@ -223,7 +254,7 @@ async function assertConfiguredHomeAndSuspendedRecovery(browser, preference, com
 }
 
 async function assertSettingsButton(browser, settingsOpens) {
-  await browser.window.webContents.executeJavaScript(
+  await evaluate(browser.window.webContents,
     `document.getElementById('browserSettings').click()`,
   );
   await waitForMain(() => settingsOpens.count === 1, 'settings toolbar action');
@@ -237,7 +268,7 @@ async function assertRouteSwitch(browser) {
   );
   assert.equal(browser.activeTab().route, 'campus');
 
-  await browser.window.webContents.executeJavaScript(`(() => {
+  await evaluate(browser.window.webContents, `(() => {
     const selector = document.getElementById('routeSelector');
     selector.value = 'direct';
     selector.dispatchEvent(new Event('change'));
@@ -253,7 +284,7 @@ async function assertRouteSwitch(browser) {
     "document.getElementById('routeSelector').value === 'direct'",
     'route selector to follow the tab route',
   );
-  await browser.window.webContents.executeJavaScript(`(() => {
+  await evaluate(browser.window.webContents, `(() => {
     const selector = document.getElementById('routeSelector');
     selector.value = 'auto';
     selector.dispatchEvent(new Event('change'));
@@ -316,7 +347,7 @@ async function assertWorkspaceHome(browser) {
   await waitForPage(contents,
     "document.querySelectorAll('#workspacePersonalBoardHost .cb-site').length === 2",
     'local Workspace Home resources');
-  const state = await contents.executeJavaScript(`(() => ({
+  const state = await evaluate(contents, `(() => ({
     duplicateHeader: document.querySelectorAll('.workspace-header').length,
     duplicateSearch: document.querySelectorAll('#workspaceSearch').length,
     activePrimary: document.querySelector('[data-primary-view].active')?.dataset.primaryView,
@@ -442,6 +473,7 @@ async function main() {
   });
   browser = new CampusBrowser({
     BrowserWindow,
+    createWindowOwner: createCampusBrowserWindowOwner,
     WebContentsView,
     session,
     dialog: {
@@ -486,7 +518,7 @@ async function main() {
     await runStage('settings button', () => assertSettingsButton(browser, settingsOpens));
     await runStage('workspace Command-K', async () => {
       const workspaceContents = browser.activeTab().view.webContents;
-      await workspaceContents.executeJavaScript(`document.dispatchEvent(new KeyboardEvent('keydown', {
+      await evaluate(workspaceContents, `document.dispatchEvent(new KeyboardEvent('keydown', {
         key: 'k', bubbles: true, ${process.platform === 'darwin' ? 'metaKey' : 'ctrlKey'}: true,
       }))`);
       await waitFor(browser.window,

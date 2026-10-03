@@ -4,7 +4,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
-const { buildUnderlayOptions, networkPathSummary, sparkline } = require('../../../renderer/connection-overview');
+const rendererI18n = require('../../../renderer/i18n');
+const { buildUnderlayOptions, networkPathSummary, sparkline } = require('../../../renderer/features/connection-overview/index.mjs');
 
 test('latency sparkline is bounded and stable for empty and noisy samples', () => {
   assert.equal(sparkline([]), 'M2 24 L118 24');
@@ -55,6 +56,35 @@ test('network tree groups selectable source addresses by adapter without losing 
     'the same source address on two interfaces must not hide either interface card');
 });
 
+test('Windows fallback hashes stay internal while native interface IDs remain visible', () => {
+  const fallbackId = `win:${'a'.repeat(60)}`;
+  const environment = (platform, interfaceId, kind = 'unknown') => ({
+    platform,
+    selection: { mode: 'selected', interfaceId, sourceAddress: '192.0.2.44', available: true },
+    interfaces: [{ id: interfaceId, name: 'Ethernet 2', kind, active: true,
+      default: false, addresses: [{ address: '192.0.2.44', family: 4, selectable: true }] }],
+  });
+
+  const translate = rendererI18n.createT('en');
+  const fallback = buildUnderlayOptions(environment('win32', fallbackId), translate)[0];
+  assert.equal(fallback.interfaceId, fallbackId, 'selection retains its opaque internal identity');
+  assert.equal(fallback.title, 'Ethernet 2', 'the fallback digest is not presented as a device name');
+  assert.equal(fallback.badge, 'Type unknown', 'unknown fallback inventory must not claim a physical adapter');
+  assert.equal(buildUnderlayOptions(environment('win32', fallbackId), rendererI18n.createT('zh'))[0].badge,
+    '类型未知');
+  assert.equal(rendererI18n.createT('en')('connect.treeUnknown'), 'Type unknown');
+
+  const native = buildUnderlayOptions(environment('win32', 'if:7', 'physical'), translate)[0];
+  assert.equal(native.title, 'Ethernet 2 · if:7', 'normal PowerShell identities remain visible');
+  assert.equal(native.badge, 'Physical');
+  const virtual = buildUnderlayOptions(environment('win32', 'if:22', 'virtual'), translate)[0];
+  assert.equal(virtual.badge, 'Virtual');
+
+  const otherPlatform = buildUnderlayOptions(environment('linux', fallbackId), translate)[0];
+  assert.equal(otherPlatform.title, `Ethernet 2 · ${fallbackId}`,
+    'the display exception is limited to the explicit Windows fallback prefix');
+});
+
 test('connection overview exposes one compact adapter tree instead of duplicate network diagnostics', () => {
   const renderer = path.join(__dirname, '..', '..', '..', 'renderer');
   const html = fs.readFileSync(path.join(renderer, 'index.html'), 'utf8');
@@ -72,8 +102,14 @@ test('connection overview exposes one compact adapter tree instead of duplicate 
   assert.match(html, /network-tree-compact/u);
   assert.doesNotMatch(html, /network-tree-branches/u);
   assert.match(html, /data-topology-node="tunnel"/u);
-  assert.match(app, /connectionOverview\.start\(\{[^\n]*save:\s*\(patch\)\s*=>\s*window\.api\.save/u);
+  assert.match(app, /rendererFeatures\.mount\('connection-overview',\s*\{/u);
+  assert.match(app, /save:\s*\(patch\)\s*=>\s*window\.api\.save/u);
   assert.match(app, /refresh:\s*\(\)\s*=>\s*refreshState/u);
+  assert.doesNotMatch(app, /window\.connectionOverview/u);
+  assert.doesNotMatch(app,
+    /\$\('(?:power|powerLabel|connStatus|connIp|connTop|connErr)'\)\.(?:classList|textContent|disabled|setAttribute)/u,
+    'the app bootstrap should not project connection card status');
+  assert.doesNotMatch(html, /src="connection-overview\.js"/u);
 });
 
 test('connection summary speaks in adapter and public-exit terms', () => {

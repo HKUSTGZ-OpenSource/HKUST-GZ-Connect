@@ -74,12 +74,7 @@ function registerSettingsCredentialIpc(dependencies = {}) {
     saveSettings,
     savePassword,
     removePassword,
-    runCredentialMutation,
-    credentialJournalPath,
-    credentialPaths,
-    applyCredentialRecovery,
-    isCredentialBlocked,
-    retryCredentialRecovery,
+    credentialTransactions,
     runPolicyTransaction,
     runSerialTransaction,
     assertPersistence,
@@ -96,8 +91,7 @@ function registerSettingsCredentialIpc(dependencies = {}) {
   } = dependencies;
   for (const dependency of [
     register, loadSettings, saveSettings, savePassword, removePassword,
-    runCredentialMutation, applyCredentialRecovery, isCredentialBlocked,
-    retryCredentialRecovery, runPolicyTransaction, runSerialTransaction,
+    runPolicyTransaction, runSerialTransaction,
     assertPersistence, translate, onLanguageChanged, setStartAtLogin,
     hasActiveEngine, reconnect, disconnect, getActiveProfileId,
   ]) {
@@ -105,8 +99,11 @@ function registerSettingsCredentialIpc(dependencies = {}) {
       throw new TypeError('settings credential IPC dependencies are incomplete');
     }
   }
-  if (typeof credentialJournalPath !== 'string' || !credentialPaths) {
-    throw new TypeError('settings credential transaction paths are required');
+  if (!credentialTransactions || [
+    'runCredentialMutation', 'applyCredentialRecoveryOutcome',
+    'isCredentialTransactionBlocked', 'retryCredentialTransactionRecovery',
+  ].some((name) => typeof credentialTransactions[name] !== 'function')) {
+    throw new TypeError('settings credential transaction owner is required');
   }
   const oneShotDependencies = [
     credentialStorageAvailable, stageOneShotCredential, clearOneShotCredential,
@@ -179,9 +176,7 @@ function registerSettingsCredentialIpc(dependencies = {}) {
 
         let transaction;
         try {
-          transaction = runCredentialMutation({
-            journalPath: credentialJournalPath,
-            paths: credentialPaths,
+          transaction = credentialTransactions.runCredentialMutation({
             mutate: () => {
               if (useOneShotCredential) {
                 const request = {
@@ -233,10 +228,10 @@ function registerSettingsCredentialIpc(dependencies = {}) {
             credentialStorage = null;
           }
           const passwordWasCleared = transaction.recovery?.status === 'credential-cleared';
-          applyCredentialRecovery(transaction.recovery, {
+          credentialTransactions.applyCredentialRecoveryOutcome(transaction.recovery, {
             clearedNoticeKey: 'error.settingsSaveFailedPasswordCleared',
           });
-          const message = isCredentialBlocked()
+          const message = credentialTransactions.isCredentialTransactionBlocked()
             ? translate('error.credentialRecoveryBlocked')
             : (passwordWasCleared
               ? translate('error.settingsSaveFailedPasswordCleared')
@@ -245,10 +240,10 @@ function registerSettingsCredentialIpc(dependencies = {}) {
                 : translate('error.settingsSaveFailed'));
           throw Object.assign(new Error(message), {
             userMessage: message,
-            rollbackIncomplete: isCredentialBlocked(),
+            rollbackIncomplete: credentialTransactions.isCredentialTransactionBlocked(),
           });
         }
-        applyCredentialRecovery(
+        credentialTransactions.applyCredentialRecoveryOutcome(
           { ok: true, status: 'committed' },
           { clearNotice: true },
         );
@@ -349,8 +344,8 @@ function registerSettingsCredentialIpc(dependencies = {}) {
       if (oneShotEnabled) {
         try { clearOneShotCredential(); } catch {}
       }
-      if (isCredentialBlocked()) {
-        const recovery = retryCredentialRecovery();
+      if (credentialTransactions.isCredentialTransactionBlocked()) {
+        const recovery = credentialTransactions.retryCredentialTransactionRecovery();
         if (recovery.status === 'blocked') {
           return { ok: false, error: translate('error.credentialRecoveryBlocked') };
         }
@@ -362,9 +357,7 @@ function registerSettingsCredentialIpc(dependencies = {}) {
       } catch (error) {
         return { ok: false, error: error.message };
       }
-      const transaction = runCredentialMutation({
-        journalPath: credentialJournalPath,
-        paths: credentialPaths,
+      const transaction = credentialTransactions.runCredentialMutation({
         mutate: () => {
           if (!removePassword()) {
             throw new Error('could not durably remove encrypted credential');
@@ -374,10 +367,10 @@ function registerSettingsCredentialIpc(dependencies = {}) {
       });
       if (!transaction.ok) {
         const passwordWasCleared = transaction.recovery?.status === 'credential-cleared';
-        applyCredentialRecovery(transaction.recovery, {
+        credentialTransactions.applyCredentialRecoveryOutcome(transaction.recovery, {
           clearedNoticeKey: 'error.logoutFailedPasswordCleared',
         });
-        const message = isCredentialBlocked()
+        const message = credentialTransactions.isCredentialTransactionBlocked()
           ? translate('error.credentialRecoveryBlocked')
           : (passwordWasCleared
             ? translate('error.logoutFailedPasswordCleared')
@@ -385,10 +378,10 @@ function registerSettingsCredentialIpc(dependencies = {}) {
         return {
           ok: false,
           error: message,
-          rollbackIncomplete: isCredentialBlocked(),
+          rollbackIncomplete: credentialTransactions.isCredentialTransactionBlocked(),
         };
       }
-      applyCredentialRecovery(
+      credentialTransactions.applyCredentialRecoveryOutcome(
         { ok: true, status: 'committed' },
         { clearNotice: true },
       );
