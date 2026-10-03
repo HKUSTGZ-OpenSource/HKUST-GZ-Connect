@@ -263,6 +263,11 @@ the existing process/control owners through one Connection entrypoint and preser
 identity. Main falls to 723 lines/21 direct imports with no new production node, while three
 private-edge exceptions retire. The final 500–700/20 target and full dependency enforcement remain open.
 
+The proposed [trusted Control registrar](desktop-trusted-control-registrar.md) moves the Main-only
+registration closure behind the existing IPC suite while delegating unchanged sender/frame/file
+checks. Main reaches 20 direct imports at 720 lines; one private-edge exception retires. The
+500–700-line final composition outcome and full M5 remain outstanding.
+
 Move remaining settings-surface coordination, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 

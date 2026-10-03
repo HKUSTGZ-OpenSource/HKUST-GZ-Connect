@@ -99,7 +99,6 @@
     "desktop/main.js -> desktop/lib/connection/telemetry/connection-telemetry-coordinator.js [private-entrypoint]",
     "desktop/main.js -> desktop/lib/connection/telemetry/network-status-monitor.js [private-entrypoint]",
     "desktop/main.js -> desktop/lib/integrations/external-proxy-config.js [private-entrypoint]",
-    "desktop/main.js -> desktop/lib/ipc/ipc-handlers.js [private-entrypoint]",
     "desktop/main.js -> desktop/lib/platform/i18n/i18n.js [private-entrypoint]",
     "desktop/main.js -> desktop/lib/platform/update/update-check.js [private-entrypoint]",
     "desktop/main.js -> desktop/lib/profiles/runtime/school-profile-controller.js [private-entrypoint]",
