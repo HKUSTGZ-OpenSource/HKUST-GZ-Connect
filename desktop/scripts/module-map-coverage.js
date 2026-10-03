@@ -13,7 +13,7 @@ const RISK = new Set(['low', 'medium', 'high', 'critical', 'restricted-evidence'
 const ID = /^[a-z][a-z0-9-]{0,63}$/u;
 const MAX_SOURCE_BYTES = 128 * 1024;
 const MAX_FILES = 10000;
-const MAX_LEGACY_EDGE_DEBT = 113;
+const MAX_LEGACY_EDGE_DEBT = 110;
 // Reviewed check vocabulary, not execution evidence or permission to run a check.
 // Includes existing local acceptance aliases as well as required GitHub contexts.
 const REQUIRED_CHECKS = new Set([

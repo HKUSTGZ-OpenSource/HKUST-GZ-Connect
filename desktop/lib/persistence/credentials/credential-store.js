@@ -2,6 +2,8 @@
 
 const fs = require('fs');
 const path = require('path');
+const util = require('node:util');
+const { OneShotVpnCredentialBroker, openVpnCredential } = require('./one-shot-vpn-credential');
 const { atomicWritePrivateFile, fsyncDirectory } = require('../../platform/storage/atomic-private-file');
 const { readPrivateFileBounded } = require('../../platform/storage/private-file');
 
@@ -87,6 +89,56 @@ function credentialLoadErrorKey(status) {
   }[status] || 'error.credentialStoreUnavailable';
 }
 
+class VpnCredentialAccessCoordinator {
+  #memoryBroker = new OneShotVpnCredentialBroker();
+
+  constructor({ persistence, getProfileId, getEngineActive, safeStorage, platform, parseField } = {}) {
+    if (!persistence || ['hasCredential', 'openCredential'].some(name =>
+      typeof persistence[name] !== 'function') ||
+        [getProfileId, getEngineActive, parseField].some(value => typeof value !== 'function')) {
+      throw new TypeError('VPN credential access dependencies are invalid');
+    }
+    this.persistence = persistence;
+    this.getProfileId = getProfileId;
+    this.getEngineActive = getEngineActive;
+    this.safeStorage = safeStorage;
+    this.platform = platform;
+    this.parseFieldEffect = parseField;
+  }
+
+  hasPersistent() { return this.persistence.hasCredential(); }
+
+  hasOneShot() {
+    try { return this.#memoryBroker.has({ profileId: this.getProfileId() }); }
+    catch { return false; }
+  }
+
+  hasStored() { return this.hasPersistent() || this.hasOneShot(); }
+
+  hasCredentialForCurrentSession() { return this.hasStored() || this.getEngineActive(); }
+
+  open(profileId) {
+    return openVpnCredential({
+      profileId, memoryBroker: this.#memoryBroker,
+      openPersistent: () => this.persistence.openCredential(),
+    });
+  }
+
+  stage(request) { return this.#memoryBroker.stage(request); }
+
+  clear(expectedRevision) { return this.#memoryBroker.clear(expectedRevision); }
+
+  storageAvailable() { return protectedStorageAvailable(this.safeStorage, this.platform); }
+
+  errorKey(status) { return credentialLoadErrorKey(status); }
+
+  parseField(value, label) { return this.parseFieldEffect(value, label); }
+
+  toJSON() { return '[redacted VPN credential access]'; }
+  toString() { return '[redacted VPN credential access]'; }
+  [util.inspect.custom]() { return '[redacted VPN credential access]'; }
+}
+
 function snapshotPasswordFile(file, fileSystem = fs) {
   try {
     const { data } = readPrivateFileBounded(file, {
@@ -137,6 +189,7 @@ function hasStoredPassword(filePath, platform = process.platform) {
 }
 
 module.exports = {
+  VpnCredentialAccessCoordinator,
   MAX_ENCRYPTED_PASSWORD_BYTES,
   atomicWritePrivateFile,
   clearPasswordSnapshot,
