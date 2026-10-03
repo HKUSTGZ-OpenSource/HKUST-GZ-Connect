@@ -14,9 +14,6 @@
     "renderer/browser-data-settings.js": [
       "browserDataSettings"
     ],
-    "renderer/browser-new-tab-settings.js": [
-      "browserNewTabSettings"
-    ],
     "renderer/campus-browser.js": [
       "@binding:address",
       "@binding:applyLang",
@@ -185,7 +182,7 @@
       "root": "renderer/features/feature-host",
       "entrypoint": "renderer/features/feature-host/index.mjs",
       "exports": ["FEATURE_DEFINITIONS", "createRendererFeatures"],
-      "allowedDependencies": ["campus-data", "official-favorites", "auth-challenge", "integration-center", "connection-overview", "update-notices", "notifications", "control-tower"]
+      "allowedDependencies": ["campus-data", "official-favorites", "auth-challenge", "integration-center", "connection-overview", "update-notices", "notifications", "control-tower", "browser-new-tab-settings"]
     },
     {
       "id": "connection-overview",
@@ -212,6 +209,13 @@
       "id": "control-tower",
       "root": "renderer/features/control-tower",
       "entrypoint": "renderer/features/control-tower/index.mjs",
+      "exports": ["create"],
+      "allowedDependencies": []
+    },
+    {
+      "id": "browser-new-tab-settings",
+      "root": "renderer/features/browser-new-tab-settings",
+      "entrypoint": "renderer/features/browser-new-tab-settings/index.mjs",
       "exports": ["create"],
       "allowedDependencies": []
     },
