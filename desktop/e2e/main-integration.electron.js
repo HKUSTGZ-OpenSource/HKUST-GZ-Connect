@@ -8,6 +8,7 @@ const { app, BrowserWindow, webContents } = require('electron');
 const { ProfileWorkspaceStartupRuntime } = require('../lib/persistence/runtime/profile-workspace-startup-runtime');
 const { projectRuntimeSettings } = require('../lib/persistence/settings/profile-workspace-settings-bundle');
 const { saveSettings } = require('../lib/persistence/settings/settings-store');
+const { createLegacyRuntimeStoragePaths } = require('../lib/persistence/paths/runtime-storage-paths');
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-main-e2e-'));
 process.env.HKUSTGZ_USER_DATA_DIR = profile;
@@ -35,8 +36,15 @@ const persistence = new ProfileWorkspaceStartupRuntime({
   safeStorage: {},
 }).initialize();
 assert.equal(persistence.mode, 'profile-workspace');
+const startupProjections = [...new Set([
+  createLegacyRuntimeStoragePaths(profile).proxyHelperCredential,
+  persistence.paths.proxyHelperCredential,
+])];
+for (const file of startupProjections) fs.writeFileSync(file, 'synthetic-startup-projection', { mode: 0o600 });
 
 require('../main');
+for (const file of startupProjections) assert.equal(fs.existsSync(file), false,
+  'Main must retire both the legacy and selected disposable projections before services start');
 
 async function waitForControlWindow() {
   const deadline = Date.now() + 10_000;
@@ -80,6 +88,7 @@ async function run() {
   const initial = await invoke(control, 'window.api.getState()');
   assert.equal(initial.settings.port, 1080);
   assert.equal(initial.dnsMode, 'unknown');
+  assert.deepEqual(await invoke(control, 'window.api.getLoginAccount()'), { ok: true, username: '' });
   const initialCardBoard = await invoke(control, 'window.api.getCardBoardLayout()');
   assert.equal(initialCardBoard.document.schemaVersion, 1);
   const cataloguePlacement = initialCardBoard.document.placements.find(({ boardId, card }) => (

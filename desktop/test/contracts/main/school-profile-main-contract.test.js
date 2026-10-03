@@ -18,7 +18,7 @@ function section(startText, endText) {
 }
 
 test('composition root resolves one active Profile before persistence-owned credential recovery', () => {
-  const sidecarCleanup = main.indexOf('fs.unlinkSync(legacyRuntimeStoragePaths.proxyHelperCredential)');
+  const sidecarCleanup = main.indexOf('DesktopPersistenceRuntime.discardStartupProxySidecar(legacyRuntimeStoragePaths.proxyHelperCredential, fs)');
   const profile = main.indexOf('const activeSchoolProfile = createPreReadySchoolProfileController(');
   const recovery = main.indexOf('persistenceRuntime.prepareBeforeOwnerOnlyValidation(');
   assert.ok(sidecarCleanup >= 0 && profile > sidecarCleanup && recovery > profile);

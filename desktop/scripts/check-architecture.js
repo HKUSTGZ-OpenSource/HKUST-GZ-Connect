@@ -23,9 +23,9 @@ const BASELINE = Object.freeze({
   // The myPortal catalog is one isolated Browser-domain leaf behind the existing
   // Main binding; no direct dependency, composition member, or Main line was added.
   mainTransitiveDependencies: 170,
-  // Connection display and epoch-bound Browser command feedback have owners.
-  // Main injects effects rather than implementing their async continuations.
-  mainLines: 689,
+  // Credential login presentation and startup projection removal now also
+  // belong to Persistence. Main injects paths and effects, not their policy.
+  mainLines: 674,
   rendererLines: 562,
   campusBrowserLines: 1476,
   browserTabOwnerLines: 600,

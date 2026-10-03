@@ -280,6 +280,12 @@ delegates the user-command flow to the existing Manager epoch without altering
 resource-open, routing or login policy. Main reaches 689 lines with graph metrics
 unchanged; this does not finish the other M2/M3 ownership outcomes.
 
+The proposed [credential presentation/startup boundary](desktop-credential-presentation-startup.md)
+puts the remaining login DTO and startup sidecar effects behind existing Persistence
+owners, without changing data/schema or removal policy. Main reaches 674 lines with
+20 direct imports; locale, recovery-notice and resource-feed ownership still require
+semantic review rather than closing M3 from the numerical milestone.
+
 Move remaining settings-surface coordination, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 

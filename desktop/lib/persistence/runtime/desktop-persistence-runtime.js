@@ -68,6 +68,10 @@ class DesktopPersistenceRuntime {
     return cleanupProxyAccessForEngineClose(options);
   }
 
+  static discardStartupProxySidecar(filePath, fileSystem) {
+    return ProxyAccessCoordinator.discardStartupSidecar(filePath, fileSystem);
+  }
+
   static createLegacyAdapter({ settingsFile, credentialFile, safeStorage, platform,
     getDefaultRouteDomains, onRecovery, stores = {} }) {
     const io = { readSettings, writeSettings, readPasswordResult, writePassword,

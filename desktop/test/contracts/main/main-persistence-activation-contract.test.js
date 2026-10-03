@@ -17,7 +17,7 @@ function section(start, end) {
 }
 
 test('pre-ready selection constructs the persistence owner before ordered recovery and validation', () => {
-  const legacyCleanup = source.indexOf('fs.unlinkSync(legacyRuntimeStoragePaths.proxyHelperCredential)');
+  const legacyCleanup = source.indexOf('DesktopPersistenceRuntime.discardStartupProxySidecar(legacyRuntimeStoragePaths.proxyHelperCredential, fs)');
   const profile = source.indexOf('const activeSchoolProfile = createPreReadySchoolProfileController(');
   const selection = source.indexOf('selectProfileWorkspacePreReadyStorage({ userData: DATA, profile })');
   const paths = source.indexOf('const runtimeStoragePaths = preReadyStorage.paths;');
@@ -27,6 +27,10 @@ test('pre-ready selection constructs the persistence owner before ordered recove
   assert.ok(legacyCleanup >= 0 && profile > legacyCleanup && selection > profile &&
     paths > selection && owner > paths && prepare > owner && validation > prepare);
   assert.doesNotMatch(source, /recoverCredentialSettingsTransaction|runCredentialSettingsMutation/u);
+  const selectedCleanup = source.indexOf('DesktopPersistenceRuntime.discardStartupProxySidecar(PROXY_HELPER_CREDENTIAL, fs)');
+  assert.ok(selectedCleanup > paths && owner > selectedCleanup);
+  assert.doesNotMatch(source, /fs\.unlinkSync\(/u);
+  assert.match(source, /getLoginAccount: \(\) => vpnCredentialAccess\.loginAccount\(loadSettingsOrReport\)/u);
 });
 
 test('after-ready migration uses the bounded relaunch owner before services can start', () => {
