@@ -1,6 +1,7 @@
 import { ADAPTERS, adapterView, previewView, validHandle } from './model.mjs';
 import { createLifetime } from './lifetime.mjs';
 import { createFeedback } from './feedback.mjs';
+import { createRoutingOptions } from './routing-options.mjs';
 
 export function createIntegrationCenter({
   api,
@@ -35,6 +36,7 @@ export function createIntegrationCenter({
   let busy = false;
   let bound = false;
   let retired = false;
+  const routingOptions = createRoutingOptions(document);
   let lastTrigger = null;
   const feedback = createFeedback({
     status: elements.integrationStatus, error: elements.integrationError,
@@ -103,6 +105,7 @@ export function createIntegrationCenter({
       state.textContent = t(`integration.state.${view.compatibilityState === 'supported'
         ? view.bindingState : 'unavailable'}`);
       meta.append(state); main.append(name, description, meta);
+      routingOptions.append(main, view.adapterId, t, busy);
       const actions = document.createElement('div'); actions.className = 'integration-actions';
       if (view.compatibilityState === 'supported' && view.supportedActions.includes('copy')) {
         actions.append(button(t(`integration.action.copy.${view.adapterId}`), 'copy', view.adapterId));
@@ -113,6 +116,7 @@ export function createIntegrationCenter({
       row.append(main, actions); rows.push(row);
     }
     elements.integrationList.replaceChildren(...rows);
+    routingOptions.restoreFocus();
     renderFeedback();
     focusAction(focusedAction);
   }
@@ -157,7 +161,7 @@ export function createIntegrationCenter({
     feedback.resetAction();
     closeDialog(); render();
     let result;
-    try { result = await api.prepareIntegration({ adapterId, action }); }
+    try { result = await api.prepareIntegration(routingOptions.request(adapterId, action)); }
     catch { result = { ok: false, code: 'generic' }; }
     if (!life.current(ticket)) { await discard(result?.preview); return; }
     busy = false; render();

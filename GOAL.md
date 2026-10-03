@@ -5,7 +5,7 @@
 - Baseline: `main@15738338ff2a280300b66e98a1823659f24630a4`
 - Started: 2026-09-04
 - Last verified: 2026-10-03 (before this documentation PR)
-- Development main at verification: `a86f93a7f4ac0f49cae044dad3f18ae7bca68585`
+- Development main at verification: `32fb83a4d21c96a9748b6c2785647ff419067cf1`
 - Scope: repository governance, documentation truth, agent instructions, module boundaries,
   contributor workflow, GitHub protections and organization migration
 
@@ -62,6 +62,8 @@ high-risk rules. No instruction file is treated as a substitute for review or te
    #162's reproduced window cleanup is merged; #178 fixes the reproduced calendar source query,
    but #177 still requires a sanitized reporter retest. #200 closes custom-Profile credential
    retirement failure #199; #198 closes #197's bounded Gateway locator/explicit TLS source scope.
+   #202 closes #201's explicit standalone Gateway export scope, preserves rules-only defaults
+   and has isolated routing evidence, not a real Gateway DNS or internet-access result.
    #205 removes the vulnerable Desktop build/download dependency chain while keeping Electron
    43.7.7 and older supported platforms. Its build tool is pinned to an explicitly reviewed
    prerelease (`electron-builder@27.0.0-alpha.9`), not silently represented as stable tooling.
@@ -210,7 +212,7 @@ release assumptions.
 
 Stable remains immutable `v2.0.3@b57c394c73e0b07a0076e26f58e1666e29f00135`.
 Development source at this checkpoint is
-`main@a86f93a7f4ac0f49cae044dad3f18ae7bca68585`; later source fixes and owner extractions
+`main@32fb83a4d21c96a9748b6c2785647ff419067cf1`; later source fixes and owner extractions
 do not silently alter that release or the installed application. An empty PR queue is not
 goal completion. M4/#82 and dependency backlog #105 are
 closed; Renderer, remaining Browser, Main composition, full dependency enforcement, deferred

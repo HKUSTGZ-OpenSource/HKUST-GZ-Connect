@@ -151,6 +151,8 @@ button, input, select, a, code { -webkit-app-region: no-drag; }
 .integration-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .integration-name { color: var(--navy); font-size: 12px; font-weight: 750; }
 .integration-description { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.integration-row .integration-route-label { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: 12px; margin-top: 5px; }
+.integration-row .integration-route-selector { width: 100%; min-width: 0; font-size: 12px; padding: 7px 9px; }
 .integration-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; color: var(--muted); font-size: 10.5px; }
 .integration-state { display: inline-flex; padding: 2px 6px; border-radius: 999px; background: var(--panel); color: var(--navy); font-weight: 700; }
 .integration-state.current { color: #0a6b44; background: #e8f7f0; }

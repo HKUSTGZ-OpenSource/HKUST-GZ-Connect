@@ -8,6 +8,7 @@ const {
   ACTIVE_INTEGRATION_ADAPTER_IDS,
   createIntegrationAdapterView,
   validateIntegrationBinding,
+  validateIntegrationRoutingMode,
 } = require('./integration-schema');
 const {
   AtomicExportFileTransaction,
@@ -55,7 +56,7 @@ class IntegrationCenterRuntime {
     }));
   }
 
-  async prepare({ adapterId, action } = {}) {
+  async prepare({ adapterId, action, routingMode = 'rules-only' } = {}) {
     if (!ACTIVE_INTEGRATION_ADAPTER_IDS.includes(adapterId)) {
       throw integrationError('INTEGRATION_ADAPTER_UNAVAILABLE');
     }
@@ -63,6 +64,7 @@ class IntegrationCenterRuntime {
         (adapterId === 'vscode_remote_ssh' && action !== 'copy')) {
       throw integrationError('INTEGRATION_ADAPTER_UNAVAILABLE');
     }
+    validateIntegrationRoutingMode(adapterId, routingMode);
     const intent = ++this.#intent;
     const initialBinding = validateIntegrationBinding(this.getContext(adapterId).bindingFor(adapterId, 1));
     let preview;
@@ -81,6 +83,7 @@ class IntegrationCenterRuntime {
         helperPath: this.helperPath,
         credentialFile: this.credentialFile,
         targetFile,
+        routingMode,
       });
       if (intent !== this.#intent) {
         this.genericCoordinator.cancel(preview.confirmationHandle);

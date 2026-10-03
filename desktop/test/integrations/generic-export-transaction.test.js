@@ -57,6 +57,22 @@ function owner(overrides = {}) {
   });
 }
 
+test('gateway-default preview warns about delegation and confirms exactly prepared bytes', async () => {
+  const value = owner();
+  const preview = value.prepare({ adapterId: 'clash_mihomo_yaml', action: 'copy',
+    binding: binding(), networkRules: rules, port: 6180, credential, routingMode: 'gateway-default' });
+  assert.deepEqual(preview.warningCodes, ['INTEGRATION_LOCAL_CREDENTIAL_PRIVATE',
+    'INTEGRATION_GATEWAY_DEFAULT_ROUTING']);
+  assert.equal(JSON.stringify(preview).includes('MATCH,'), false);
+  let borrowed;
+  await value.execute({ confirmationHandle: preview.confirmationHandle, currentBinding: binding(),
+    perform: async ({ payload }) => {
+      borrowed = payload;
+      assert.match(payload.toString(), /"MATCH,Campus Connect - hkustgz"\n$/u);
+    } });
+  assert.ok(borrowed.every(byte => byte === 0));
+});
+
 test('preview is redacted and explicit execute exposes payload only to one Main callback', async () => {
   const value = owner();
   const current = binding();

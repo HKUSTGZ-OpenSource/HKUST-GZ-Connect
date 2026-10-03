@@ -16,6 +16,15 @@ const INTEGRATION_ADAPTER_IDS = ACTIVE_INTEGRATION_ADAPTER_IDS;
 const INTEGRATION_ACTIONS = Object.freeze([
   'copy', 'save',
 ]);
+const CLASH_ROUTING_MODES = Object.freeze(['rules-only', 'gateway-default']);
+
+function validateIntegrationRoutingMode(adapter, value = 'rules-only') {
+  if (!CLASH_ROUTING_MODES.includes(value) ||
+      (adapter !== 'clash_mihomo_yaml' && value !== 'rules-only')) {
+    throw new TypeError('integration routing mode is invalid');
+  }
+  return value;
+}
 const ADAPTERS = Object.freeze({
   clash_mihomo_yaml: Object.freeze({
     displayName: 'Clash / Mihomo configuration', actions: ['preview', 'copy', 'save'],
@@ -189,6 +198,7 @@ function normalizedTargetFile(value) {
 }
 
 module.exports = {
+  CLASH_ROUTING_MODES,
   ACTIVE_INTEGRATION_ADAPTER_IDS,
   BINDING_STATES,
   COMPATIBILITY_STATES,
@@ -200,4 +210,5 @@ module.exports = {
   createIntegrationBinding,
   normalizedIntegrationTargetFile: normalizedTargetFile,
   validateIntegrationBinding,
+  validateIntegrationRoutingMode,
 };
