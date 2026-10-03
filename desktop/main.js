@@ -36,10 +36,6 @@ const { BufferedLogWriter, readLogTail } = require('./lib/diagnostics/logging/lo
 const { UpdateNotificationRuntime, checkForUpdate } = require('./lib/platform/update/update-check');
 const { ConnectivityRecovery } = require('./lib/connection/recovery/connectivity-recovery');
 const { createNetworkStartupSystem } = require('./lib/connection/telemetry/network-status-monitor');
-const { ProxyAccessCoordinator, cleanupProxyAccessForEngineClose } = require('./lib/persistence/credentials/proxy-credential');
-const {
-  ExternalProxyCredentialStore,
-} = require('./lib/persistence/credentials/external-proxy-credential-store');
 const {
   ensureProxyCredentialSidecar,
   externalProxyHelperPath,
@@ -194,13 +190,8 @@ let logWriter = null;
 function initializeLogWriter() {
   logWriter = new BufferedLogWriter(LOG, { onError: reportLogFailure, onRecovered: () => { if (state.diagnosticNotice) { state.diagnosticNotice = null; emit(); } } });
 }
-const externalProxyCredentialStore = new ExternalProxyCredentialStore({
-  filePath: PROXY_CREDENTIAL,
-  safeStorage,
-  platform: process.platform,
-});
-const proxyAccess = new ProxyAccessCoordinator({
-  store: externalProxyCredentialStore,
+const proxyAccess = DesktopPersistenceRuntime.createProxyAccess({
+  credentialStore: { filePath: PROXY_CREDENTIAL, safeStorage, platform: process.platform },
   sidecarFile: PROXY_HELPER_CREDENTIAL,
   fileSystem: fs,
   currentProfileId: () => activeSchoolProfile.activeContextBinding().profileId,
@@ -375,7 +366,7 @@ const engineTermination = new EngineTerminationCoordinator({
   scheduleRetry: (generation, delay, callback) => engineSupervisor.schedule(generation, delay, callback),
   getPresentation: () => state, getConnectedAt: () => connectedAt, getTranslator: () => t,
   now: () => Date.now(), clearControl: clearActiveEngineControl,
-  cleanupProxyAccess: cleanupProxyAccessForEngineClose,
+  cleanupProxyAccess: DesktopPersistenceRuntime.cleanupProxyAccessForEngineClose,
   clearCredential: clearActiveProxyCredential, removeSidecar: removeExternalProxySidecar,
   suspendBrowser: suspendOpenBrowserPolicy, clearPresentation: clearConnectionPresentation,
   loadSettings, reportSettingsReadFailure, emit, connect: (retry, intent) => connect(retry, intent),

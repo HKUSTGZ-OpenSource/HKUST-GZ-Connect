@@ -17,7 +17,9 @@ const operations = fs.readFileSync(require.resolve('../../../lib/connection/stat
 test('strict and compatibility generations share one stable credential with distinct policies', () => {
   assert.match(source, /engineAttempts\.run\(isRetry, intent\)/u);
   assert.match(source, /const PROXY_CREDENTIAL = runtimeStoragePaths\.proxyCredential/);
-  assert.match(source, /new ProxyAccessCoordinator\(\{[\s\S]*store: externalProxyCredentialStore,[\s\S]*sidecarFile: PROXY_HELPER_CREDENTIAL/u);
+  assert.match(source, /DesktopPersistenceRuntime\.createProxyAccess\(\{[\s\S]*credentialStore: \{ filePath: PROXY_CREDENTIAL, safeStorage, platform: process\.platform \},[\s\S]*sidecarFile: PROXY_HELPER_CREDENTIAL/u);
+  const persistence = fs.readFileSync(require.resolve('../../../lib/persistence/runtime/desktop-persistence-runtime'), 'utf8');
+  assert.match(persistence, /new ProxyAccessCoordinator\(\{\s*\.\.\.effects, store: new ExternalProxyCredentialStore\(credentialStore\)/u);
   assert.match(source, /hasStableProxyCredential: \(\) => proxyAccess\.hasStable\(\), proxyCredentialFile: PROXY_CREDENTIAL/u);
   assert.doesNotMatch(source, /let activeProxyCredential|let stableProxyCredential/u);
   assert.match(connectOnce, /proxyCredential = this\.generationProxyCredential\(Number\(s\.port\)\);\s*proxyCredentialMode = 'required'/);

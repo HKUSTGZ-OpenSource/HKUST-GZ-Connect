@@ -48,7 +48,7 @@ test('fatal, stopping, and exit boundaries revoke in-flight serving promotion', 
   assert.match(close, /closeSnapshot\.wasConnectedBeforeStop/);
   assert.match(close, /closeSnapshot\.connectedUptimeBeforeStop/);
   assert.match(close, /this\.isGenerationCurrent\(generation\) && isCurrentContext\(generation\)/);
-  assert.match(source, /cleanupProxyAccess: cleanupProxyAccessForEngineClose/u);
+  assert.match(source, /cleanupProxyAccess: DesktopPersistenceRuntime\.cleanupProxyAccessForEngineClose/u);
   assert.match(close, /this\.cleanupProxyAccess\(\{[\s\S]*generation,[\s\S]*supervisorGenerationCurrent,[\s\S]*connectionGenerationCurrent: this\.connectionState\.isCurrentGeneration\(generation\),[\s\S]*clearCredential: this\.clearCredential,[\s\S]*removeSidecar: this\.removeSidecar/);
   assert.match(close, /\}\)\) return;/);
 });
