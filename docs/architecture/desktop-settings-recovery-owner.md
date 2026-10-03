@@ -34,6 +34,8 @@ a valid backup. It also lives in the existing file selected by Windows CI, so
 macOS results do not stand in for Windows results. The actual Electron Main
 fixture uses a test-process-only observation through the real callback and
 checks both restored/default notices through ordinary startup and bounded IPC.
+The fixture uses the selected locale rather than assuming the host speaks Chinese;
+explicit Chinese/English selections exercise both observation kinds locally.
 It does not claim a real user's corrupt storage or a live Gateway was tested.
 
 Rollback the owner fields/methods, Main bindings, fixtures and downward budget

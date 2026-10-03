@@ -34,7 +34,9 @@ DesktopPersistenceRuntime.prototype.loadSettings = function observeFixtureRecove
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-main-e2e-'));
 process.env.HKUSTGZ_USER_DATA_DIR = profile;
-saveSettings(path.join(profile, 'settings.json'), {});
+const fixtureLanguage = process.env.HKUSTGZ_FIXTURE_LANGUAGE || 'auto';
+assert.ok(['auto', 'zh', 'en'].includes(fixtureLanguage));
+saveSettings(path.join(profile, 'settings.json'), { language: fixtureLanguage });
 
 const fingerprint = 'ab'.repeat(32);
 fs.writeFileSync(path.join(profile, 'campus-certificate-trust.json'), JSON.stringify({
@@ -110,7 +112,7 @@ async function run() {
   const initial = await invoke(control, 'window.api.getState()');
   assert.equal(initial.settings.port, 1080);
   assert.equal(initial.dnsMode, 'unknown');
-  assert.equal(initial.notice, createT('zh')(recoveryKind === 'restored'
+  assert.equal(initial.notice, createT(initial.locale)(recoveryKind === 'restored'
     ? 'error.settingsRestored' : 'error.settingsDefaults'));
   assert.deepEqual(await invoke(control, 'window.api.getLoginAccount()'), { ok: true, username: '' });
   const initialCardBoard = await invoke(control, 'window.api.getCardBoardLayout()');
