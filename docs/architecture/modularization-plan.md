@@ -229,6 +229,12 @@ behind the existing Persistence public runtime. Main falls to 800 lines / 27 dir
 three private-import exceptions retire and the debt ceiling drops to 110. Existing protected
 storage priority, Profile binding and zeroization remain unchanged; M3 is not complete.
 
+The proposed [Browser request-security boundary](browser-request-security-boundary.md) moves
+application certificate/proxy challenge dispatch through the existing Browser Manager entrypoint.
+Main keeps event registration and falls to 776 lines / 26 direct dependencies; actual consent,
+proxy credentials and their teardown remain separate owners. No new policy, public import-debt
+exception or global network behavior is added; M3's 24-dependency/final targets remain open.
+
 Move remaining settings-surface coordination, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 

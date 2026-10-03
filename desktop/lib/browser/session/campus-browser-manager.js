@@ -4,6 +4,8 @@ const { BLANK_CAMPUS_HOME, CampusBrowser, normalizeCampusUrl } = require('./camp
 const { ROUTE_CAMPUS, ROUTE_DIRECT, routeForUrl } = require('../../routing/policy/campus-route');
 const { CampusCredentialVault } = require('../credentials/campus-credential-vault');
 const { CampusWorkspaceController } = require('../workspace/campus-workspace-controller');
+const { BrowserRequestSecurityBoundary, CampusCertificateTrustStore } =
+  require('../certificates/certificate-controller');
 
 function normalizeOpenRequest(input, t, fallback) {
   const source = input && typeof input === 'object' ? input : { url: input };
@@ -429,6 +431,14 @@ function createCampusBrowserWindowOwner(options) {
 }
 
 class CampusBrowserManager {
+  static createRequestSecurityBoundary(options) {
+    return new BrowserRequestSecurityBoundary(options);
+  }
+
+  static createCertificateTrustStore(options) {
+    return new CampusCertificateTrustStore(options);
+  }
+
   constructor({
     BrowserWindow,
     WebContentsView,
