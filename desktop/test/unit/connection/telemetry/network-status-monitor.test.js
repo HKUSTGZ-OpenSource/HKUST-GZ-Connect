@@ -8,7 +8,65 @@ const {
   NetworkStartupCoordinator,
   NetworkStatusMonitor,
   createNetworkStartupSystem,
+  createStartupAutoConnectEligibility,
 } = require('../../../../lib/connection/telemetry/network-status-monitor');
+
+test('startup eligibility construction validates capabilities without reading them', () => {
+  let reads = 0;
+  const effect = () => { reads++; throw new Error('construction must not read'); };
+  assert.equal(typeof createStartupAutoConnectEligibility({ readSettings: effect, hasPersistentCredential: effect }), 'function');
+  assert.equal(reads, 0);
+  for (const options of [undefined, {}, { readSettings: effect }, { hasPersistentCredential: effect }]) {
+    assert.throws(() => createStartupAutoConnectEligibility(options), TypeError);
+  }
+  assert.equal(reads, 0);
+});
+
+test('startup eligibility retains settings then username then persistent presence short-circuit order', () => {
+  const calls = [];
+  let autoConnect = false, username = '', persistent = false;
+  const settings = { get autoConnect() { calls.push('auto'); return autoConnect; },
+    get username() { calls.push('username'); return username; },
+    get password() { throw new Error('eligibility must not read secrets'); } };
+  const eligible = createStartupAutoConnectEligibility({ readSettings: () => { calls.push('settings'); return settings; },
+    hasPersistentCredential: () => { calls.push('presence'); return persistent; } });
+  assert.equal(eligible(), false); assert.deepEqual(calls.splice(0), ['settings', 'auto']);
+  autoConnect = true;
+  assert.equal(eligible(), false); assert.deepEqual(calls.splice(0), ['settings', 'auto', 'username']);
+  username = 'synthetic-account';
+  assert.equal(eligible(), false); assert.deepEqual(calls.splice(0), ['settings', 'auto', 'username', 'presence']);
+  persistent = true;
+  assert.equal(eligible(), true); assert.deepEqual(calls.splice(0), ['settings', 'auto', 'username', 'presence']);
+});
+
+test('startup eligibility reads current values and preserves the original exact-false test and raw presence result', () => {
+  let settings = { username: 'synthetic-account' }, presence = true;
+  const eligible = createStartupAutoConnectEligibility({ readSettings: () => settings, hasPersistentCredential: () => presence });
+  assert.equal(eligible(), true);
+  settings = { autoConnect: false, username: 'synthetic-account' }; assert.equal(eligible(), false);
+  settings = { autoConnect: true, username: '' }; assert.equal(eligible(), false);
+  settings = { autoConnect: true, username: 'synthetic-account' };
+  presence = 'synthetic-nonboolean'; assert.equal(eligible(), presence,
+    'strict true admission remains the coordinator responsibility, not a new coercion here');
+});
+
+test('startup eligibility preserves failures and existing coordinator admission fails closed without connecting', async () => {
+  const failure = new Error('synthetic read failure');
+  let settings = { username: 'synthetic-account' }, presence = true, readsFail = true, connects = 0;
+  const eligible = createStartupAutoConnectEligibility({ readSettings: () => { if (readsFail) throw failure; return settings; },
+    hasPersistentCredential: () => { if (presence instanceof Error) throw presence; return presence; } });
+  assert.throws(eligible, error => error === failure);
+  const owner = new NetworkStartupCoordinator({ monitor: { start: async () => true, snapshot: () => ({ baseline: true }) },
+    shouldAutoConnect: eligible, pauseOffline() {}, resumeOffline() {}, connect: () => { connects++; }, isQuitting: () => false });
+  assert.equal(await owner.start(), false);
+  assert.equal(owner.snapshot().timerScheduled, false); assert.equal(connects, 0);
+  readsFail = false; presence = failure; assert.throws(eligible, error => error === failure);
+  assert.equal(owner.eligible(), false);
+  presence = 'truthy'; assert.equal(owner.eligible(), false);
+  presence = true; assert.equal(owner.eligible(), true);
+  settings = null; assert.throws(eligible, TypeError); assert.equal(owner.eligible(), false);
+  owner.dispose();
+});
 
 function deferred() {
   let resolve;

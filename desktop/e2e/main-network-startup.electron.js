@@ -100,11 +100,28 @@ async function prepareProfile() {
 
 async function run() {
   await prepareProfile();
+  // Fixture-only capture of Main's actual public eligibility factory. Keep
+  // construction effect-free and ordinary coordinator evaluation authoritative.
+  const network = require('../lib/connection/telemetry/network-status-monitor');
+  const originalEligibility = network.createStartupAutoConnectEligibility;
+  let factoryUsed = false, constructing = false, eligibilityReads = 0;
+  network.createStartupAutoConnectEligibility = (effects) => {
+    factoryUsed = true; constructing = true;
+    const predicate = originalEligibility({
+      readSettings: () => { assert.equal(constructing, false); eligibilityReads++; return effects.readSettings(); },
+      hasPersistentCredential: () => { assert.equal(constructing, false); return effects.hasPersistentCredential(); },
+    });
+    constructing = false;
+    return predicate;
+  };
   require('../main');
+  network.createStartupAutoConnectEligibility = originalEligibility;
   const control = await controlWindow();
   await waitFor(async () => (await invoke(control, 'window.api.getState()')).phase ===
     'connectivity-paused', 'initial offline pause');
   assert.equal(attemptCount(), 0, 'initial offline startup must not spawn an Engine');
+  assert.equal(factoryUsed, true);
+  assert.ok(eligibilityReads > 0, 'ordinary startup must evaluate the current settings');
 
   fs.writeFileSync(networkStateFile, 'online\n', { mode: 0o600 });
   await waitFor(async () => {

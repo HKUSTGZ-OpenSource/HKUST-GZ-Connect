@@ -14,6 +14,16 @@ const MAX_INITIAL_BASELINE_WAIT_MS = 60_000;
 const SYNTHETIC_NETWORK_E2E_ENV = 'HKUSTGZ_SYNTHETIC_NETWORK_E2E';
 const SYNTHETIC_NETWORK_STATE_FILE = 'synthetic-network-state.txt';
 
+function createStartupAutoConnectEligibility({ readSettings, hasPersistentCredential } = {}) {
+  if (typeof readSettings !== 'function' || typeof hasPersistentCredential !== 'function') {
+    throw new TypeError('startup auto-connect eligibility dependencies are invalid');
+  }
+  return () => {
+    const settings = readSettings();
+    return settings.autoConnect !== false && Boolean(settings.username) && hasPersistentCredential();
+  };
+}
+
 // Owns the one-time hand-off from the first network sample to startup
 // auto-connect. Runtime outage recovery remains in ConnectivityRecovery; this
 // coordinator only prevents an initially-offline launch from spending its
@@ -395,4 +405,5 @@ module.exports = {
   SYNTHETIC_NETWORK_E2E_ENV,
   SYNTHETIC_NETWORK_STATE_FILE,
   createNetworkStartupSystem,
+  createStartupAutoConnectEligibility,
 };
