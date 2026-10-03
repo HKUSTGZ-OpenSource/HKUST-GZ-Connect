@@ -25,7 +25,7 @@ const BASELINE = Object.freeze({
   mainTransitiveDependencies: 170,
   // Locale state and canonical language selection now belong to Platform.
   // Main only binds the existing menu/Browser/status presentation effects.
-  mainLines: 669,
+  mainLines: 668,
   rendererLines: 562,
   campusBrowserLines: 1476,
   browserTabOwnerLines: 600,

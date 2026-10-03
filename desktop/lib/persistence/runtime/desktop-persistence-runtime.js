@@ -49,6 +49,8 @@ class ObservedCredentialOwner {
 }
 
 class DesktopPersistenceRuntime {
+  #settingsRecoveryNotice = null;
+  #settingsRecoveryNoticeText = null;
   #credentialTransactionRecovery = Object.freeze({ ok: true, status: 'none' });
   #credentialRecoveryNoticeText = null;
   #credentialRecoveryErrorText = null;
@@ -128,6 +130,11 @@ class DesktopPersistenceRuntime {
 
   get mode() { return this.preReadySelection.mode; }
   get paths() { return this.preReadySelection.paths; }
+
+  observeSettingsRecovery(notice) { this.#settingsRecoveryNotice = notice; }
+  get settingsRecoveryNotice() { return this.#settingsRecoveryNotice; }
+  setSettingsRecoveryNoticeText(text) { this.#settingsRecoveryNoticeText = text; }
+  get settingsRecoveryNoticeText() { return this.#settingsRecoveryNoticeText; }
 
   prepareBeforeOwnerOnlyValidation(validatePrivateFiles) {
     if (typeof validatePrivateFiles !== 'function') {

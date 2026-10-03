@@ -107,13 +107,13 @@ const persistenceRuntime = new DesktopPersistenceRuntime({
   legacy: DesktopPersistenceRuntime.createLegacyAdapter({
     settingsFile: SETTINGS, credentialFile: CRED, safeStorage, platform: process.platform,
     getDefaultRouteDomains: () => activeSchoolProfile.defaultRouteDomains,
-    onRecovery: (notice) => { settingsRecoveryNotice = notice; },
+    onRecovery: notice => persistenceRuntime.observeSettingsRecovery(notice),
   }),
   settingsPresentation: {
     getState: () => state,
     translate: (key) => t(key),
     emit,
-    getAdditionalNotice: () => settingsRecoveryNoticeText,
+    getAdditionalNotice: () => persistenceRuntime.settingsRecoveryNoticeText,
   },
 });
 persistenceRuntime.prepareBeforeOwnerOnlyValidation(() => {
@@ -205,8 +205,6 @@ const desktopLocale = new DesktopLocaleRuntime({
   readSettings: loadSettings, getSystemLocale: () => app.getLocale(),
 });
 function t(key, vars) { return desktopLocale.translator(key, vars); }
-let settingsRecoveryNotice = null;
-let settingsRecoveryNoticeText = null;
 
 // ---------- settings & credentials ----------
 const initializeMultiSchoolStartup = createMultiSchoolStartupInitializer({ userData: DATA, packageRoot: __dirname, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, desktopDir: __dirname, profileStorageEffects }); const customProfileDeletion = createCustomProfileDeletionRuntime({ userData: DATA, withCandidateDirectory: (callback) => initializeMultiSchoolStartup.withDirectory(callback), electronSession: session, profileStorageEffects });
@@ -649,8 +647,9 @@ const desktopStartup = new DesktopStartupRuntime({
   },
   currentLocale, fallbackLocale: () => desktopLocale.fallback(),
   setLocale: value => desktopLocale.set(value),
-  loadSettings, reportSettingsReadFailure, getSettingsRecoveryNotice: () => settingsRecoveryNotice,
-  setSettingsRecoveryNoticeText: value => { settingsRecoveryNoticeText = value; },
+  loadSettings, reportSettingsReadFailure,
+  getSettingsRecoveryNotice: () => persistenceRuntime.settingsRecoveryNotice,
+  setSettingsRecoveryNoticeText: value => persistenceRuntime.setSettingsRecoveryNoticeText(value),
   getPresentation: () => state, translate: (key, vars) => t(key, vars),
   desktopShell, refreshPacFile, powerMonitor, connectivityRecovery,
   networkStartupCoordinator, updateNotifications, isPackaged: app.isPackaged,

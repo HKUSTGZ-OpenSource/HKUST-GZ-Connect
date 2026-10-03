@@ -93,17 +93,62 @@ test('default legacy adapter uses real private-file stores with synthetic encryp
   assert.equal(adapter.openCredential(), null);
 });
 
-function readFixture() {
+function readFixture({ recovery = null, includeOwnedNotice = false } = {}) {
   const f = { state: { settingsError: null, recoveryError: 'recovery', browserNotice: 'browser', diagnosticNotice: 'log' },
     emitted: 0, language: 'zh', error: null, settings: { port: 6180 } };
-  const legacy = { loadSettings: () => { if (f.error) throw f.error; return f.settings; },
+  const legacy = { loadSettings: () => { if (f.error) throw f.error;
+    if (recovery) f.runtime.observeSettingsRecovery(recovery); return f.settings; },
     saveSettings: value => value, saveCredential() {}, clearCredential() {}, openCredential() {}, hasCredential() {} };
   f.runtime = new DesktopPersistenceRuntime({ preReadySelection: { mode: 'legacy-flat', paths: {} },
     initializeAfterReady: () => ({ mode: 'legacy-flat' }), legacy,
-    settingsPresentation: { getState: () => f.state, translate: key => `${f.language}:${key}`, emit: () => { f.emitted += 1; } },
+    settingsPresentation: { getState: () => f.state, translate: key => `${f.language}:${key}`, emit: () => { f.emitted += 1; },
+      ...(includeOwnedNotice ? { getAdditionalNotice: () => f.runtime.settingsRecoveryNoticeText } : {}) },
   });
   f.runtime.initialize(); return f;
 }
+
+test('settings recovery observation and text belong to the runtime without constructor or observation effects', () => {
+  const notice = { kind: 'restored', quarantined: true };
+  const f = readFixture({ recovery: notice });
+  assert.equal(f.runtime.settingsRecoveryNotice, null);
+  assert.equal(f.runtime.settingsRecoveryNoticeText, null);
+  assert.equal(f.runtime.loadSettings(), f.settings);
+  assert.equal(f.runtime.settingsRecoveryNotice, notice, 'preserve the original observation reference');
+  f.runtime.setSettingsRecoveryNoticeText('synthetic localized recovery');
+  assert.equal(f.runtime.settingsRecoveryNoticeText, 'synthetic localized recovery');
+  assert.equal(f.emitted, 0);
+  assert.equal(f.state.notice, undefined, 'publication remains owned by the startup sequence');
+});
+
+test('owned settings recovery text preserves credential notice ordering and silent startup publication', () => {
+  const f = readFixture({ includeOwnedNotice: true });
+  f.runtime.observeSettingsRecovery({ kind: 'defaults', quarantined: false });
+  f.runtime.setSettingsRecoveryNoticeText('synthetic settings defaults');
+  f.runtime.applyCredentialRecoveryOutcome({ ok: true, status: 'recovered' }, { emitState: false });
+  assert.equal(f.state.notice, 'synthetic settings defaults\nzh:error.credentialRecoveryRecovered');
+  assert.equal(f.emitted, 0);
+  f.runtime.applyCredentialRecoveryOutcome({ ok: true, status: 'none' }, { clearNotice: true });
+  assert.equal(f.state.notice, 'synthetic settings defaults');
+  assert.equal(f.emitted, 1);
+  f.runtime.setSettingsRecoveryNoticeText(null);
+  f.runtime.applyCredentialRecoveryOutcome({ ok: true, status: 'none' }, { emitState: false });
+  assert.equal(f.state.notice, null);
+  assert.equal(f.state.recoveryError, 'recovery');
+  assert.equal(f.state.browserNotice, 'browser');
+  assert.equal(f.state.diagnosticNotice, 'log');
+});
+
+test('settings observation remains separate from translation and does not overwrite localized text', () => {
+  const f = readFixture();
+  const first = { kind: 'restored' }, next = { kind: 'defaults' };
+  f.runtime.observeSettingsRecovery(first);
+  f.runtime.setSettingsRecoveryNoticeText('zh:synthetic restored');
+  f.language = 'en';
+  f.runtime.observeSettingsRecovery(next);
+  assert.equal(f.runtime.settingsRecoveryNotice, next);
+  assert.equal(f.runtime.settingsRecoveryNoticeText, 'zh:synthetic restored');
+  assert.equal(f.emitted, 0, 'observation must not introduce translation or publication');
+});
 
 test('settings-read failure stays typed, uses the current translator and emits once per changed notice', () => {
   const f = readFixture(); f.error = new Error('synthetic filesystem failure');
