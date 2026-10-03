@@ -7,6 +7,7 @@
 
 use crate::gateway_connector::GatewayConnectorGeneration;
 use crate::gateway_http::endpoint_url;
+use crate::gateway_tls::{GatewayTlsTrust, client_config};
 use crate::xml::{first_descendant_text, parse_xml};
 use crate::{Error, ErrorKind, Result};
 use reqwest::blocking::Client;
@@ -16,6 +17,15 @@ use serde::Serialize;
 use std::io::Read;
 use std::time::Duration;
 use zeroize::Zeroizing;
+
+mod certificate;
+
+pub fn observe_self_signed_gateway_certificate(
+    connector: &GatewayConnectorGeneration,
+    timeout: Duration,
+) -> Result<String> {
+    certificate::observe(connector, timeout)
+}
 
 pub const PUBLIC_GATEWAY_PROBE_PATH: &str = "/por/login_auth.csp?apiversion=1";
 pub const PUBLIC_GATEWAY_PROBE_FAMILY: &str = "easyconnect-password-modern-l3-v1";
@@ -128,6 +138,14 @@ pub fn probe_public_gateway_with_connector(
     connector: &GatewayConnectorGeneration,
     timeout: Duration,
 ) -> Result<PublicGatewayProbeResult> {
+    probe_public_gateway_with_trust(connector, timeout, None)
+}
+
+pub fn probe_public_gateway_with_trust(
+    connector: &GatewayConnectorGeneration,
+    timeout: Duration,
+    trust: Option<&GatewayTlsTrust>,
+) -> Result<PublicGatewayProbeResult> {
     if !(MIN_PUBLIC_PROBE_TIMEOUT..=MAX_PUBLIC_PROBE_TIMEOUT).contains(&timeout) {
         return Err(probe_error(
             "public Gateway probe timeout is outside its bound",
@@ -138,14 +156,19 @@ pub fn probe_public_gateway_with_connector(
             "public Gateway probe cannot use a private-address exception",
         ));
     }
-    let client = connector
-        .apply_to_reqwest_builder(
-            Client::builder()
-                .redirect(Policy::none())
-                .https_only(true)
-                .cookie_store(false)
-                .timeout(timeout),
-        )
+    let builder = connector.apply_to_reqwest_builder(
+        Client::builder()
+            .redirect(Policy::none())
+            .https_only(true)
+            .cookie_store(false)
+            .timeout(timeout),
+    );
+    let builder = if trust.is_some() {
+        builder.use_preconfigured_tls(client_config(connector.origin(), trust)?)
+    } else {
+        builder
+    };
+    let client = builder
         .build()
         .map_err(|_| probe_error("public Gateway probe client could not be created"))?;
     let url = endpoint_url(connector.origin(), PUBLIC_GATEWAY_PROBE_PATH)?;

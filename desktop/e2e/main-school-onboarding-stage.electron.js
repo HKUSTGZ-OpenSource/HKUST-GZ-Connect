@@ -63,6 +63,8 @@ async function runOnboarding(control) {
     select.dispatchEvent(new Event('change', { bubbles: true }));
     document.getElementById('customSchoolName').value = 'Example University';
     document.getElementById('customGatewayOrigin').value = 'https://vpn.example.edu';
+    const fingerprint = document.getElementById('customGatewayLeafSha256');
+    if (fingerprint.value !== '') throw new Error('First-use onboarding must not require a manually entered fingerprint');
     document.getElementById('probeCustomGateway').click();
   })()`);
   await waitFor(async () => control.webContents.executeJavaScript(`
@@ -71,6 +73,9 @@ async function runOnboarding(control) {
   const probed = await control.webContents.executeJavaScript(`(async () => ({
     profiles: await window.api.listSchoolProfiles(),
     summary: document.getElementById('customGatewaySummary').textContent,
+    fingerprint: document.getElementById('gatewayObservedFingerprint').textContent,
+    action: document.getElementById('confirmCustomGateway').textContent,
+    firstTrustWarning: document.getElementById('gatewayTrustNotice').textContent,
     warning: document.querySelector('.gateway-warning').textContent,
     error: document.getElementById('schoolProfileError').textContent,
   }))()`);
@@ -78,6 +83,9 @@ async function runOnboarding(control) {
     'probe must not create a Profile before explicit confirmation');
   assert.match(probed.summary, /https:\/\/vpn\.example\.edu/u);
   assert.match(probed.summary, /M7\.6\.8R2/u);
+  assert.match(probed.fingerprint, /(?:ab){32}/u);
+  assert.match(probed.action, /首次信任|Trust on first use/u);
+  assert.match(probed.firstTrustWarning, /首次连接|first connection/u);
   assert.ok(probed.warning.length > 20);
   assert.equal(probed.error, '');
   const confirmationVisible = await control.webContents.executeJavaScript(`(() => {
@@ -88,6 +96,20 @@ async function runOnboarding(control) {
       bounds.left >= 0 && bounds.right <= window.innerWidth;
   })()`);
   assert.equal(confirmationVisible, true, 'confirmation must remain reachable at minimum size');
+  for (const [width, height] of [[420, 560], [840, 900], [1180, 900]]) {
+    control.setContentSize(width, height);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const layout = await control.webContents.executeJavaScript(`(() => {
+      const summary = document.getElementById('customGatewaySummary');
+      const button = document.getElementById('confirmCustomGateway');
+      button.scrollIntoView({ block: 'center' });
+      button.focus();
+      return { overflow: document.documentElement.scrollWidth - window.innerWidth,
+        summaryOverflow: summary.scrollWidth - summary.clientWidth, focused: document.activeElement === button };
+    })()`);
+    assert.ok(layout.overflow <= 1 && layout.summaryOverflow <= 1 && layout.focused,
+      `Gateway trust confirmation is inaccessible at ${width}x${height}`);
+  }
   process.stdout.write('school onboarding explicit confirmation: PASS\n');
   await control.webContents.executeJavaScript(`
     document.getElementById('confirmCustomGateway').click()

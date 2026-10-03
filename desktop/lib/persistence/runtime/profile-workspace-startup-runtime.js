@@ -171,7 +171,7 @@ class ProfileWorkspaceStartupRuntime {
       loadWorkspaceAuthority: () => this.#workspaceAuthority(),
       retireRollback: ({ authority, reason }) => ownsLegacyHkustRollback
         ? this.#rollbackStore(authority).retire({ reason })
-        : true,
+        : Object.freeze({ status: 'not-applicable', changed: false }),
       safeStorage: this.safeStorage,
       fileSystem: this.fileSystem,
       platform: this.platform,

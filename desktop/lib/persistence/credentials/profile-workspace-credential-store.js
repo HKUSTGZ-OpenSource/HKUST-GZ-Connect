@@ -138,7 +138,10 @@ class ProfileWorkspaceCredentialStore {
       if (retirement && typeof retirement.then === 'function') {
         throw new TypeError('rollback retirement must be synchronous');
       }
-      if (!retirement || retirement.status !== 'retired') {
+      const ownsLegacyRollback = authority.profile.evidenceClass === 'builtin-reviewed' &&
+        authority.profile.profileId === 'hkustgz';
+      const notApplicable = !ownsLegacyRollback && retirement?.status === 'not-applicable';
+      if (!retirement || (retirement.status !== 'retired' && !notApplicable)) {
         throw new Error('legacy rollback credential retirement was not proven');
       }
       if (operation === 'clear' && !beforeCredential.present &&

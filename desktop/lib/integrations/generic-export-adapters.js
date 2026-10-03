@@ -21,6 +21,10 @@ function port(value) {
   return result;
 }
 
+function clashMixedPort(proxyPort) {
+  return proxyPort === DEFAULT_CLASH_MIXED_PORT ? DEFAULT_CLASH_MIXED_PORT + 1 : DEFAULT_CLASH_MIXED_PORT;
+}
+
 function withCredential(credential, callback) {
   if (!credential || typeof credential.withStrings !== 'function' || typeof callback !== 'function') {
     throw new TypeError('integration proxy credential is unavailable');
@@ -77,13 +81,14 @@ function buildClashCompatibleYaml({ adapterId, port: rawPort, credential, networ
   const name = nodeName(rules.profileId);
   validateIntegrationRoutingMode(adapterId, routingMode);
   return withCredential(credential, (username, password) => {
+    const proxyPort = port(rawPort);
     const lines = [
       '# Campus Connect Clash / Mihomo export',
       `# Profile: ${rules.profileId}; rules: ${rules.rulesDigest}`,
       `# Routing: ${routingMode}`,
       ...(routingMode === 'gateway-default' ? [
         '# Layout: standalone-gateway',
-        `mixed-port: ${DEFAULT_CLASH_MIXED_PORT}`,
+        `mixed-port: ${clashMixedPort(proxyPort)}`,
         'allow-lan: false',
         'bind-address: "127.0.0.1"',
         'mode: "rule"',
@@ -92,7 +97,7 @@ function buildClashCompatibleYaml({ adapterId, port: rawPort, credential, networ
       `  - name: ${JSON.stringify(name)}`,
       '    type: "socks5"',
       '    server: "127.0.0.1"',
-      `    port: ${port(rawPort)}`,
+      `    port: ${proxyPort}`,
       `    username: ${JSON.stringify(username)}`,
       `    password: ${JSON.stringify(password)}`,
       '    udp: false',
@@ -138,7 +143,7 @@ function validateClashCompatibleText(text) {
   try { validateIntegrationRoutingMode('clash_mihomo_yaml', routingMode); } catch { return false; }
   const standalone = routingMode === 'gateway-default';
   if (standalone && (lines[2] !== '# Layout: standalone-gateway' ||
-      lines[3] !== `mixed-port: ${DEFAULT_CLASH_MIXED_PORT}` ||
+      !/^mixed-port: 789[01]$/u.test(lines[3]) ||
       lines[4] !== 'allow-lan: false' || lines[5] !== 'bind-address: "127.0.0.1"' ||
       lines[6] !== 'mode: "rule"')) return false;
   const proxyIndex = standalone ? 7 : 2;
@@ -162,6 +167,7 @@ function validateClashCompatibleText(text) {
       !/^    port: (?:[1-9][0-9]{3,4})$/u.test(lines[proxyIndex + 4]) || proxyPort < 1025 ||
       !LOCAL_PROXY_SECRET.test(username) || !LOCAL_PROXY_SECRET.test(password) ||
       username === password || lines[proxyIndex + 7] !== '    udp: false') return false;
+  if (standalone && lines[3] !== `mixed-port: ${clashMixedPort(proxyPort)}`) return false;
   for (const line of lines.slice(rulesIndex + 1)) {
     if (!line.startsWith('  - ')) return false;
     let rule;

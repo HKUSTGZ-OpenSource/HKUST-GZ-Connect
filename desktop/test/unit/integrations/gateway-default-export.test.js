@@ -42,6 +42,23 @@ test('legacy YAML remains accepted without a routing-mode header', () => {
   finally { exported.payload.fill(0); legacy.fill(0); }
 });
 
+test('standalone inbound never collides with its upstream SOCKS port', () => {
+  for (const proxyPort of [6180, 7890, 7891, 65535]) {
+    const exported = buildGenericExport({ ...input, port: proxyPort, routingMode: 'gateway-default' });
+    let collision;
+    try {
+      const parsed = yaml.load(exported.payload.toString());
+      assert.equal(parsed.proxies[0].port, proxyPort);
+      assert.equal(parsed['mixed-port'], proxyPort === 7890 ? 7891 : 7890);
+      assert.notEqual(parsed['mixed-port'], parsed.proxies[0].port);
+      assert.equal(validateGenericExportPayload(input.adapterId, exported.payload), true);
+      collision = Buffer.from(exported.payload.toString().replace(
+        `mixed-port: ${parsed['mixed-port']}`, `mixed-port: ${proxyPort}`));
+      assert.equal(validateGenericExportPayload(input.adapterId, collision), false);
+    } finally { exported.payload.fill(0); collision?.fill(0); }
+  }
+});
+
 test('old requests retain rules-only output and cannot silently delegate internet traffic', () => {
   const exported = buildGenericExport(input);
   try {

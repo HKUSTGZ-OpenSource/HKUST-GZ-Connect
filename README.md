@@ -101,6 +101,18 @@ AppImage 是独立文件，下载新版后请用它替换旧 AppImage；应用�
 如果校园 DNS 的 UDP 响应被截断，应用会在同一校园 DNS 上自动改用隧道内 TCP，
 不会回退到公共或系统 DNS。
 
+## 开发版本：其他 EasyConnect 网关
+
+以下改动尚未进入已发布的 2.0.3 安装包。在登录页选择“其他学校”后，可填写
+`主机:端口`、HTTPS 网关地址，或只用于跳转的 HTTP/HTTPS 入口。应用先检查入口，
+显示最终 HTTPS 网关；只有确认并切换到独立配置后，才向该网关提交登录凭据。
+
+自签名网关通常不需要手填指纹：应用自动获取证书，并显示“首次信任并添加”。
+确认目标网关后，证书会在本机保存并自动比对；证书变化后会拒绝连接，不会关闭全局
+证书校验。首次信任本身不能证明服务器身份；管理员提供的指纹仍可在高级选项指定。
+当前生产协议仍是 EasyConnect 密码认证与 Modern L3；验证码、OTP、SSO 和其他 VPN
+协议不能仅凭网关识别成功就视为支持。跳转目标变化时需重新检查并确认。
+
 ## 选择“校园隧道”还是“直连”
 
 校园浏览器会按域名自动选择网络路径：
@@ -160,7 +172,7 @@ Clash、Mihomo 和 VS Code 可使用控制塔“外部工具集成”生成的�
 2. 先连接 HKUST(GZ) Connect。
 3. 在“控制塔”→“外部工具集成”的 Clash / Mihomo 导出中选择分流方式：
    - “仅转发匹配的网站规则”：合并到现有配置，保留原互联网节点、代理组、DNS 和兜底规则；不是完整订阅。
-   - “独立网关配置”：导出可直接替换使用的最小配置，在 `127.0.0.1:7890` 监听；未匹配的 TCP 请求交给当前 EasyConnect 网关，由网关执行自身策略，无需逐站添加规则。
+   - “独立网关配置”：导出可直接替换使用的最小配置，在 `127.0.0.1:7890` 监听（若应用 SOCKS 端口为 7890，则监听 7891）；未匹配的 TCP 请求交给当前 EasyConnect 网关，由网关执行自身策略，无需逐站添加规则。
 4. 点击“复制”或“保存文件”，确认预览后自行在客户端合并或启用。本应用不会切换 Clash。
 
 独立网关配置适用于支持 `NETWORK` 规则的 Mihomo / Clash Meta，保留明确的直连例外，
@@ -324,6 +336,23 @@ through the campus tunnel without changing operating-system DNS.
 If a campus DNS UDP response is truncated, the app retries that same campus
 resolver over tunnel TCP and never falls back to a public or system resolver.
 
+## Development builds: other EasyConnect gateways
+
+These changes are not in the published 2.0.3 installers. Select Other School on
+the login page and enter host:port, an HTTPS gateway, or an HTTP/HTTPS redirect
+entry. The app checks and displays the final HTTPS origin before creating and
+switching to an isolated Profile. Credentials are never sent to the entry or
+over HTTP.
+
+For an eligible self-signed gateway, the app observes the certificate and asks
+you to trust it on first use; manual fingerprint entry is normally unnecessary.
+Trust applies only to the confirmed origin and certificate; a changed certificate
+blocks connection without disabling global verification. First-use trust alone
+does not prove server identity. An administrator-provided fingerprint remains
+an optional advanced setting. Production support remains EasyConnect password authentication
+and Modern L3, not arbitrary VPN protocols, CAPTCHA, OTP or SSO. A changed
+redirect target requires another check and confirmation.
+
 ## Campus tunnel or Direct
 
 Campus Browser chooses a route per domain:
@@ -393,7 +422,7 @@ application needs rule-based access to the campus tunnel.
 2. Connect HKUST(GZ) Connect.
 3. In **Control Tower** → **External Tool Integrations**, choose the routing mode:
    - **Matching rules only**: merge with existing proxies, groups, DNS and fallback rules; this is not a complete subscription.
-   - **Standalone gateway config**: a minimal replaceable profile listening on `127.0.0.1:7890`; send unmatched TCP requests to the connected EasyConnect gateway, which applies its own policy. No per-site rules are needed.
+   - **Standalone gateway config**: a minimal replaceable profile listening on `127.0.0.1:7890` (7891 if the app's SOCKS port is 7890); send unmatched TCP requests to the connected EasyConnect gateway, which applies its own policy. No per-site rules are needed.
 4. Click **Copy** or **Save File**, confirm the preview, then activate or merge it yourself. Campus Connect never switches Clash.
 
 The standalone gateway config requires a Mihomo / Clash Meta core supporting `NETWORK` rules. Explicit direct
