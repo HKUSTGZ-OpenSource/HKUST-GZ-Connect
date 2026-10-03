@@ -7,6 +7,22 @@ const {
   customProfileDocument,
 } = require('../../../../lib/profiles/onboarding/custom-gateway-onboarding');
 const { PROTOCOL_FAMILY } = require('../../../../lib/profiles/schema/school-profile-schema');
+const { createCustomEngineConfigDocument } = require('../../../../lib/profiles/provisioning/custom-engine-config');
+
+test('explicit leaf trust persists only for the confirmed Gateway including IP roots', () => {
+  const f = fixture();
+  const leafSha256 = 'ab'.repeat(32);
+  const view = f.owner.issue({ probeResult: probe({ normalized_origin: 'https://8.8.8.8:4455' }),
+    leafSha256, activeContext: context() });
+  assert.equal(view.leafSha256, leafSha256);
+  const consumed = f.owner.consume({ confirmationHandle: view.confirmationHandle, activeContext: context() });
+  assert.equal(consumed.profileDocument.gateway.tlsLeafSha256, leafSha256);
+  assert.deepEqual(createCustomEngineConfigDocument(consumed.profileDocument).gateway_tls,
+    { origin: 'https://8.8.8.8:4455', leaf_sha256: leafSha256 });
+  const ordinary = customProfileDocument({ profileId: 'custom-plain', origin: 'https://vpn.example.edu' });
+  assert.equal('tlsLeafSha256' in ordinary.gateway, false);
+  assert.equal('gateway_tls' in createCustomEngineConfigDocument(ordinary), false);
+});
 
 function context(overrides = {}) {
   return {
@@ -30,6 +46,28 @@ function probe(overrides = {}) {
     ...overrides,
   };
 }
+
+test('observed certificate stays pending until an explicit one-use first-trust action', () => {
+  const fingerprint = 'ab'.repeat(32);
+  const result = probe({ schema_version: 2, https_identity_valid: false,
+    certificate_requires_confirmation: true, leaf_sha256: fingerprint });
+  const f = fixture();
+  const view = f.owner.issue({ probeResult: result, activeContext: context() });
+  assert.equal(view.requiresTrust, true);
+  assert.equal(view.leafSha256, fingerprint);
+  assert.throws(() => f.owner.consume({ confirmationHandle: view.confirmationHandle,
+    activeContext: context() }), /explicit certificate trust/u);
+  const accepted = f.owner.issue({ probeResult: result, activeContext: context() });
+  const consumed = f.owner.consume({ confirmationHandle: accepted.confirmationHandle,
+    activeContext: context(), trustCertificate: true });
+  assert.equal(consumed.profile.gateway.tlsLeafSha256, fingerprint);
+  assert.throws(() => f.owner.consume({ confirmationHandle: accepted.confirmationHandle,
+    activeContext: context(), trustCertificate: true }), /unavailable or stale/u);
+  for (const bad of [{ ...result, leaf_sha256: 'bad' },
+    { ...result, certificate_requires_confirmation: false }, { ...result, https_identity_valid: true }]) {
+    assert.throws(() => f.owner.issue({ probeResult: bad, activeContext: context() }));
+  }
+});
 
 function fixture() {
   let clock = 1_800_000_000_000;

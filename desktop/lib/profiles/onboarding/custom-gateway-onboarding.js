@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const {
   PROTOCOL_FAMILY,
   normalizeGatewayOrigin,
+  normalizeGatewayLeafSha256,
   validateAccountHandle,
   validateProfileId,
   validateSchoolProfileDocument,
@@ -98,8 +99,9 @@ function entropyId(prefix, randomBytes) {
   finally { entropy.fill(0); entropy = null; }
 }
 
-function customProfileDocument({ profileId, origin, schoolLabel }) {
+function customProfileDocument({ profileId, origin, schoolLabel, leafSha256 = null }) {
   const gateway = normalizeGatewayOrigin(origin);
+  const pin = normalizeGatewayLeafSha256(leafSha256);
   if (!String(profileId).startsWith('custom-')) {
     throw new TypeError('custom Profile identity is invalid');
   }
@@ -121,6 +123,7 @@ function customProfileDocument({ profileId, origin, schoolLabel }) {
       origin: gateway.origin,
       protocolFamily: PROTOCOL_FAMILY,
       engineConfigRef: null,
+      ...(pin == null ? {} : { tlsLeafSha256: pin }),
     },
     browser: {
       homeUrl: null,
@@ -140,11 +143,15 @@ function customProfileDocument({ profileId, origin, schoolLabel }) {
 }
 
 function validatedProbe(value) {
+  const pendingTrust = value?.schema_version === 2;
   const source = exactKeys(value, [
     'schema_version', 'normalized_origin', 'https_identity_valid', 'compatibility',
     'candidate_family', 'reported_version', 'http_status',
+    ...(pendingTrust ? ['certificate_requires_confirmation', 'leaf_sha256'] : []),
   ], 'public Gateway probe result');
-  if (source.schema_version !== 1 || source.https_identity_valid !== true ||
+  if ((!pendingTrust && (source.schema_version !== 1 || source.https_identity_valid !== true)) ||
+      (pendingTrust && (source.https_identity_valid !== false || source.certificate_requires_confirmation !== true ||
+        normalizeGatewayLeafSha256(source.leaf_sha256) == null)) ||
       source.compatibility !== 'recognized_candidate' ||
       source.candidate_family !== PROTOCOL_FAMILY ||
       !Number.isInteger(source.http_status) || source.http_status < 200 || source.http_status > 299) {
@@ -156,6 +163,7 @@ function validatedProbe(value) {
     candidateFamily: PROTOCOL_FAMILY,
     reportedVersion: boundedVersion(source.reported_version),
     httpStatus: source.http_status,
+    ...(pendingTrust ? { requiresTrust: true, leafSha256: normalizeGatewayLeafSha256(source.leaf_sha256) } : {}),
   });
 }
 
@@ -177,8 +185,9 @@ class CustomGatewayConfirmationOwner {
     this.ttlMs = ttlMs;
   }
 
-  issue({ probeResult, schoolLabel = '', activeContext: contextValue } = {}) {
+  issue({ probeResult, schoolLabel = '', leafSha256 = null, activeContext: contextValue } = {}) {
     const probe = validatedProbe(probeResult);
+    if (probe.requiresTrust && leafSha256 != null) throw new TypeError('unexpected observed certificate override');
     const context = activeContext(contextValue);
     const draftProfileId = entropyId('custom', this.randomBytes);
     const confirmationHandle = entropyId('confirmation', this.randomBytes);
@@ -189,6 +198,7 @@ class CustomGatewayConfirmationOwner {
       profileId: draftProfileId,
       origin: probe.normalizedOrigin,
       schoolLabel,
+      leafSha256: probe.requiresTrust ? probe.leafSha256 : leafSha256,
     });
     const profile = validateSchoolProfileDocument(profileDocument);
     this.#record = Object.freeze({
@@ -218,16 +228,21 @@ class CustomGatewayConfirmationOwner {
       reportedVersion: this.#record.probe.reportedVersion,
       expiresAt: this.#record.expiresAt,
       unverified: true,
+      ...(this.#record.probe.requiresTrust ? { requiresTrust: true } : {}),
+      ...(this.#record.profile.gateway.tlsLeafSha256 == null ? {} : { leafSha256: this.#record.profile.gateway.tlsLeafSha256 }),
     });
   }
 
-  consume({ confirmationHandle, activeContext: contextValue } = {}) {
+  consume({ confirmationHandle, activeContext: contextValue, trustCertificate = false } = {}) {
     const record = this.#record;
     this.#record = null;
     if (!record || typeof confirmationHandle !== 'string' ||
         confirmationHandle !== record.confirmationHandle || this.now() >= record.expiresAt ||
         !sameContext(activeContext(contextValue), record.context)) {
       throw new Error('custom Gateway confirmation is unavailable or stale');
+    }
+    if (record.probe.requiresTrust && trustCertificate !== true) {
+      throw new Error('explicit certificate trust is required');
     }
     return Object.freeze({
       draftProfileId: record.draftProfileId,

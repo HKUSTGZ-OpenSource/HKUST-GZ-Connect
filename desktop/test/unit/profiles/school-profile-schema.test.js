@@ -165,10 +165,12 @@ test('custom-local profile cannot inherit reviewed assets, DNS, routes or proact
     ...source,
     browser: { ...source.browser, homeUrl: 'https://school.example.edu/' },
   }), /minimal/);
-  assert.throws(() => validateSchoolProfileDocument({
+  assert.equal(validateSchoolProfileDocument({
     ...source,
     gateway: { ...source.gateway, origin: 'https://192.0.2.10/' },
-  }), /hostname Gateway/);
+  }).gateway.origin.origin, 'https://192.0.2.10');
+  // Address reachability/scope is enforced by the credential-free native
+  // connector before confirmation, not by this document shape validator.
 });
 
 test('SchoolProfileView redacts config, DNS, health and provider internals', () => {

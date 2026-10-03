@@ -5,6 +5,7 @@
 //! probe workflows, making it suitable for a future pending-auth transaction.
 
 use crate::gateway_connector::GatewayConnectorGeneration;
+use crate::gateway_tls::{GatewayTlsTrust, client_config};
 use crate::xml::MAX_XML_BYTES;
 use crate::{Error, ErrorKind, Result};
 use reqwest::blocking::Client;
@@ -73,7 +74,7 @@ pub struct GatewaySession {
 
 impl GatewaySession {
     pub fn new(base_url: String, user_agent: String, timeout: u64) -> Result<Self> {
-        Self::build(base_url, user_agent, timeout, None)
+        Self::build(base_url, user_agent, timeout, None, None)
     }
 
     pub fn new_with_connector(
@@ -82,7 +83,17 @@ impl GatewaySession {
         timeout: u64,
     ) -> Result<Self> {
         let base_url = connector.origin().to_owned();
-        Self::build(base_url, user_agent, timeout, Some(connector))
+        Self::build(base_url, user_agent, timeout, Some(connector), None)
+    }
+
+    pub fn new_with_trust(
+        base_url: String,
+        user_agent: String,
+        timeout: u64,
+        connector: Option<Arc<GatewayConnectorGeneration>>,
+        trust: Option<&GatewayTlsTrust>,
+    ) -> Result<Self> {
+        Self::build(base_url, user_agent, timeout, connector, trust)
     }
 
     fn build(
@@ -90,6 +101,7 @@ impl GatewaySession {
         user_agent: String,
         timeout: u64,
         connector: Option<Arc<GatewayConnectorGeneration>>,
+        trust: Option<&GatewayTlsTrust>,
     ) -> Result<Self> {
         let parsed = Url::parse(&base_url).map_err(|_| configuration_error("invalid base_url"))?;
         if parsed.scheme() != "https" {
@@ -115,6 +127,11 @@ impl GatewaySession {
             connector.apply_to_reqwest_builder(builder)
         } else {
             builder.no_proxy()
+        };
+        let builder = if trust.is_some() {
+            builder.use_preconfigured_tls(client_config(&base_url, trust)?)
+        } else {
+            builder
         };
         let client = builder
             // Gateway control traffic must not inherit HTTP(S)_PROXY from the

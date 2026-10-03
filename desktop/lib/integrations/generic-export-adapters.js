@@ -1,13 +1,16 @@
 'use strict';
 
 const path = require('node:path');
+const net = require('node:net');
 const { buildSshProxyCommand } = require('./external-proxy-config');
 const { validateProfileNetworkRules } = require('./profile-network-rules');
+const { validateIntegrationRoutingMode } = require('./integration-schema');
 
 const GENERIC_EXPORT_ADAPTERS = Object.freeze([
   'clash_mihomo_yaml', 'vscode_remote_ssh',
 ]);
 const MAX_GENERIC_EXPORT_BYTES = 512 * 1024;
+const DEFAULT_CLASH_MIXED_PORT = 7890;
 const LOCAL_PROXY_SECRET = /^[A-Za-z0-9_-]{16,128}$/u;
 
 function port(value) {
@@ -16,6 +19,10 @@ function port(value) {
     throw new TypeError('integration proxy port is invalid');
   }
   return result;
+}
+
+function clashMixedPort(proxyPort) {
+  return proxyPort === DEFAULT_CLASH_MIXED_PORT ? DEFAULT_CLASH_MIXED_PORT + 1 : DEFAULT_CLASH_MIXED_PORT;
 }
 
 function withCredential(credential, callback) {
@@ -43,7 +50,13 @@ function clashRuleLines(rulesValue, proxyName) {
     const line = `${kind},${value},${target}${suffix}`;
     if (!seen.has(line)) { seen.add(line); result.push(line); }
   };
-  for (const host of rules.gatewayBypass) add('DOMAIN', host, 'DIRECT');
+  for (const host of rules.gatewayBypass) {
+    const address = host.replace(/^\[|\]$/gu, '');
+    const family = net.isIP(address);
+    if (family) add(family === 4 ? 'IP-CIDR' : 'IP-CIDR6',
+      `${address}/${family === 4 ? 32 : 128}`, 'DIRECT', ',no-resolve');
+    else add('DOMAIN', host, 'DIRECT');
+  }
   for (const [source, kind] of [
     ['userExact', 'DOMAIN'],
     ['userSubdomains', 'DOMAIN-SUFFIX'],
@@ -59,26 +72,40 @@ function clashRuleLines(rulesValue, proxyName) {
   return Object.freeze(result);
 }
 
-function buildClashCompatibleYaml({ adapterId, port: rawPort, credential, networkRules } = {}) {
+function buildClashCompatibleYaml({ adapterId, port: rawPort, credential, networkRules,
+  routingMode = 'rules-only' } = {}) {
   if (adapterId !== 'clash_mihomo_yaml') {
     throw new TypeError('Clash-compatible adapter is invalid');
   }
   const rules = validateProfileNetworkRules(networkRules);
   const name = nodeName(rules.profileId);
+  validateIntegrationRoutingMode(adapterId, routingMode);
   return withCredential(credential, (username, password) => {
+    const proxyPort = port(rawPort);
     const lines = [
       '# Campus Connect Clash / Mihomo export',
       `# Profile: ${rules.profileId}; rules: ${rules.rulesDigest}`,
+      `# Routing: ${routingMode}`,
+      ...(routingMode === 'gateway-default' ? [
+        '# Layout: standalone-gateway',
+        `mixed-port: ${clashMixedPort(proxyPort)}`,
+        'allow-lan: false',
+        'bind-address: "127.0.0.1"',
+        'mode: "rule"',
+      ] : []),
       'proxies:',
       `  - name: ${JSON.stringify(name)}`,
       '    type: "socks5"',
       '    server: "127.0.0.1"',
-      `    port: ${port(rawPort)}`,
+      `    port: ${proxyPort}`,
       `    username: ${JSON.stringify(username)}`,
       `    password: ${JSON.stringify(password)}`,
       '    udp: false',
       'rules:',
       ...clashRuleLines(rules, name).map((rule) => `  - ${JSON.stringify(rule)}`),
+      ...(routingMode === 'gateway-default' ? [
+        '  - "NETWORK,udp,REJECT"', `  - ${JSON.stringify(`MATCH,${name}`)}`,
+      ] : []),
     ];
     return `${lines.join('\n')}\n`;
   });
@@ -112,35 +139,58 @@ function buildVscodeRemoteSshSnippet({ helperPath, credentialFile, networkRules 
 
 function validateClashCompatibleText(text) {
   const lines = text.trimEnd().split('\n');
+  const routingMode = lines[2]?.startsWith('# Routing: ') ? lines.splice(2, 1)[0].slice(11) : 'rules-only';
+  try { validateIntegrationRoutingMode('clash_mihomo_yaml', routingMode); } catch { return false; }
+  const standalone = routingMode === 'gateway-default';
+  if (standalone && (lines[2] !== '# Layout: standalone-gateway' ||
+      !/^mixed-port: 789[01]$/u.test(lines[3]) ||
+      lines[4] !== 'allow-lan: false' || lines[5] !== 'bind-address: "127.0.0.1"' ||
+      lines[6] !== 'mode: "rule"')) return false;
+  const proxyIndex = standalone ? 7 : 2;
+  const rulesIndex = proxyIndex + 8;
   if (lines.length < 12 || lines[0] !== '# Campus Connect Clash / Mihomo export' ||
       !/^# Profile: [a-z0-9-]{1,64}; rules: [a-f0-9]{64}$/u.test(lines[1]) ||
-      lines[2] !== 'proxies:' || lines[4] !== '    type: "socks5"' ||
-      lines[5] !== '    server: "127.0.0.1"' || lines[10] !== 'rules:') return false;
+      lines[proxyIndex] !== 'proxies:' || lines[proxyIndex + 2] !== '    type: "socks5"' ||
+      lines[proxyIndex + 3] !== '    server: "127.0.0.1"' || lines[rulesIndex] !== 'rules:') return false;
   let name;
   let username;
   let password;
   let proxyPort;
   try {
-    name = JSON.parse(lines[3].replace(/^  - name: /u, ''));
-    username = JSON.parse(lines[7].replace(/^    username: /u, ''));
-    password = JSON.parse(lines[8].replace(/^    password: /u, ''));
-    proxyPort = port(Number(lines[6].slice('    port: '.length)));
+    name = JSON.parse(lines[proxyIndex + 1].replace(/^  - name: /u, ''));
+    username = JSON.parse(lines[proxyIndex + 5].replace(/^    username: /u, ''));
+    password = JSON.parse(lines[proxyIndex + 6].replace(/^    password: /u, ''));
+    proxyPort = port(Number(lines[proxyIndex + 4].slice('    port: '.length)));
   } catch { return false; }
   const profileId = lines[1].match(/^# Profile: ([a-z0-9-]{1,64});/u)?.[1];
   if (name !== `Campus Connect - ${profileId}` ||
-      !/^    port: (?:[1-9][0-9]{3,4})$/u.test(lines[6]) || proxyPort < 1025 ||
+      !/^    port: (?:[1-9][0-9]{3,4})$/u.test(lines[proxyIndex + 4]) || proxyPort < 1025 ||
       !LOCAL_PROXY_SECRET.test(username) || !LOCAL_PROXY_SECRET.test(password) ||
-      username === password || lines[9] !== '    udp: false') return false;
-  for (const line of lines.slice(11)) {
+      username === password || lines[proxyIndex + 7] !== '    udp: false') return false;
+  if (standalone && lines[3] !== `mixed-port: ${clashMixedPort(proxyPort)}`) return false;
+  for (const line of lines.slice(rulesIndex + 1)) {
     if (!line.startsWith('  - ')) return false;
     let rule;
     try { rule = JSON.parse(line.slice(4)); } catch { return false; }
     const fields = String(rule).split(',');
-    if (!['DOMAIN', 'DOMAIN-SUFFIX', 'IP-CIDR'].includes(fields[0]) || !fields[1] ||
+    if (rule === 'NETWORK,udp,REJECT') {
+      if (routingMode !== 'gateway-default' || line !== lines.at(-2) ||
+          lines.slice(rulesIndex + 1).filter(value => value === line).length !== 1) return false;
+      continue;
+    }
+    if (fields[0] === 'MATCH') {
+      if (routingMode !== 'gateway-default' || line !== lines.at(-1) || fields.length !== 2 ||
+          fields[1] !== name || lines.slice(rulesIndex + 1).filter(value => value === line).length !== 1) return false;
+      continue;
+    }
+    if (!['DOMAIN', 'DOMAIN-SUFFIX', 'IP-CIDR', 'IP-CIDR6'].includes(fields[0]) || !fields[1] ||
         !['DIRECT', name].includes(fields[2]) ||
-        (fields.length === 4 && (fields[0] !== 'IP-CIDR' || fields[3] !== 'no-resolve')) ||
+        (fields.length === 4 && (!['IP-CIDR', 'IP-CIDR6'].includes(fields[0]) || fields[3] !== 'no-resolve')) ||
         fields.length < 3 || fields.length > 4) return false;
   }
+  if (routingMode === 'gateway-default' &&
+      (lines.at(-1) !== `  - ${JSON.stringify(`MATCH,${name}`)}` ||
+       lines.at(-2) !== '  - "NETWORK,udp,REJECT"')) return false;
   return true;
 }
 
@@ -173,12 +223,14 @@ function buildGenericExport({
   networkRules,
   helperPath = null,
   credentialFile = null,
+  routingMode = 'rules-only',
 } = {}) {
   if (!GENERIC_EXPORT_ADAPTERS.includes(adapterId)) {
     throw new TypeError('generic export adapter is unsupported');
   }
+  validateIntegrationRoutingMode(adapterId, routingMode);
   const source = adapterId === 'clash_mihomo_yaml'
-    ? buildClashCompatibleYaml({ adapterId, port: rawPort, credential, networkRules })
+    ? buildClashCompatibleYaml({ adapterId, port: rawPort, credential, networkRules, routingMode })
     : buildVscodeRemoteSshSnippet({ helperPath, credentialFile, networkRules });
   const payload = Buffer.from(source, 'utf8');
   if (!payload.length || payload.length > MAX_GENERIC_EXPORT_BYTES) {
@@ -187,6 +239,7 @@ function buildGenericExport({
   }
   return Object.freeze({
     adapterId,
+    routingMode,
     payload,
     containsLocalProxyCredential: adapterId !== 'vscode_remote_ssh',
     warningCode: adapterId === 'vscode_remote_ssh'
@@ -194,13 +247,15 @@ function buildGenericExport({
       : 'INTEGRATION_LOCAL_CREDENTIAL_PRIVATE',
     ruleCount: adapterId === 'vscode_remote_ssh'
       ? 0
-      : clashRuleLines(networkRules, nodeName(networkRules.profileId)).length,
+      : clashRuleLines(networkRules, nodeName(networkRules.profileId)).length +
+        (routingMode === 'gateway-default' ? 2 : 0),
   });
 }
 
 module.exports = {
   GENERIC_EXPORT_ADAPTERS,
   MAX_GENERIC_EXPORT_BYTES,
+  DEFAULT_CLASH_MIXED_PORT,
   buildClashCompatibleYaml,
   buildGenericExport,
   buildVscodeRemoteSshSnippet,

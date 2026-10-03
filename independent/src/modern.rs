@@ -1,5 +1,6 @@
 use crate::gateway_auth::{AUTHENTICATED_SESSION_ID_LEN, AuthenticatedSessionId};
 use crate::gateway_connector::GatewayConnectorGeneration;
+use crate::gateway_tls::{GatewayTlsTrust, client_config};
 use crate::special_tls11::SpecialTls11Stream;
 use crate::{Error, ErrorKind, Result};
 use rand::Rng;
@@ -782,7 +783,14 @@ pub fn request_modern_token(
     let url = Url::parse(base_url).map_err(|_| Error("invalid modern token base URL".into()))?;
     let (host, address) = resolve_gateway(&url)?;
     let socket = connect_gateway_tcp(address, timeout)?;
-    request_modern_token_on_socket(host, address, socket, None, session)
+    request_modern_token_on_socket(
+        host,
+        address,
+        socket,
+        None,
+        session,
+        client_config(base_url, None)?,
+    )
 }
 
 pub fn request_modern_token_with_connector(
@@ -790,6 +798,16 @@ pub fn request_modern_token_with_connector(
     session: &AuthenticatedSessionId,
     timeout: Duration,
 ) -> Result<ModernTokenAcquisition> {
+    request_modern_token_with_connector_and_trust(connector, session, timeout, None)
+}
+
+pub fn request_modern_token_with_connector_and_trust(
+    connector: Arc<GatewayConnectorGeneration>,
+    session: &AuthenticatedSessionId,
+    timeout: Duration,
+    trust: Option<&GatewayTlsTrust>,
+) -> Result<ModernTokenAcquisition> {
+    let tls_config = client_config(connector.origin(), trust)?;
     let socket = connector
         .connect_tcp(timeout)
         .map_err(classify_connector_transport_error)?;
@@ -801,7 +819,20 @@ pub fn request_modern_token_with_connector(
     })?;
     let socket = configure_gateway_tcp(socket, timeout)?;
     let host = connector.host().to_owned();
-    request_modern_token_on_socket(host, address, socket, Some(connector), session)
+    request_modern_token_on_socket(host, address, socket, Some(connector), session, tls_config)
+}
+
+pub fn request_modern_token_with_trust(
+    base_url: &str,
+    session: &AuthenticatedSessionId,
+    timeout: Duration,
+    trust: Option<&GatewayTlsTrust>,
+) -> Result<ModernTokenAcquisition> {
+    let tls_config = client_config(base_url, trust)?;
+    let url = Url::parse(base_url).map_err(|_| Error("invalid modern token base URL".into()))?;
+    let (host, address) = resolve_gateway(&url)?;
+    let socket = connect_gateway_tcp(address, timeout)?;
+    request_modern_token_on_socket(host, address, socket, None, session, tls_config)
 }
 
 fn request_modern_token_on_socket(
@@ -810,12 +841,9 @@ fn request_modern_token_on_socket(
     socket: TcpStream,
     connector: Option<Arc<GatewayConnectorGeneration>>,
     session: &AuthenticatedSessionId,
+    config: ClientConfig,
 ) -> Result<ModernTokenAcquisition> {
-    let roots = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let config = ClientConfig::builder()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
-    let server_name = ServerName::try_from(host.clone())
+    let server_name = ServerName::try_from(host.trim_matches(['[', ']']).to_owned())
         .map_err(|_| Error("modern token endpoint has an invalid DNS name".into()))?;
     let connection = ClientConnection::new(Arc::new(config), server_name)
         .map_err(|_| Error("cannot create verified TLS token connection".into()))?;
@@ -826,11 +854,12 @@ fn request_modern_token_on_socket(
     let mut tls = StreamOwned::new(connection, captured);
 
     let mut request = Zeroizing::new(Vec::with_capacity(320));
+    let authority = token_http_authority(&host, address.port());
     for path in ["/por/conf.csp", "/por/rclist.csp"] {
         request.extend_from_slice(b"GET ");
         request.extend_from_slice(path.as_bytes());
         request.extend_from_slice(b" HTTP/1.1\r\nHost: ");
-        request.extend_from_slice(host.as_bytes());
+        request.extend_from_slice(authority.as_bytes());
         request.extend_from_slice(b"\r\nCookie: TWFID=");
         request.extend_from_slice(session.as_bytes());
         request.extend_from_slice(b"\r\nConnection: keep-alive\r\n\r\n");
@@ -862,6 +891,19 @@ fn request_modern_token_on_socket(
     })
 }
 
+fn token_http_authority(host: &str, port: u16) -> String {
+    let host = if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]")
+    } else {
+        host.to_owned()
+    };
+    if port == 443 {
+        host
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
 fn validate_modern_http_prefix(prefix: &[u8]) -> Result<()> {
     if prefix.starts_with(b"HTTP/1.") {
         return Ok(());
@@ -874,6 +916,24 @@ fn validate_modern_http_prefix(prefix: &[u8]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn token_host_header_preserves_nondefault_ports_and_ipv6_brackets() {
+        assert_eq!(
+            token_http_authority("gateway.example.test", 443),
+            "gateway.example.test"
+        );
+        assert_eq!(
+            token_http_authority("gateway.example.test", 4455),
+            "gateway.example.test:4455"
+        );
+        assert_eq!(
+            token_http_authority("[2001:db8::1]", 4455),
+            "[2001:db8::1]:4455"
+        );
+        assert_eq!(token_http_authority("2001:db8::1", 443), "[2001:db8::1]");
+        assert!(ServerName::try_from("[2001:db8::1]".trim_matches(['[', ']']).to_owned()).is_ok());
+    }
 
     #[test]
     fn modern_token_requires_an_http_response_prefix() {

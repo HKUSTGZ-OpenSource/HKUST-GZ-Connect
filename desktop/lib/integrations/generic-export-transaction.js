@@ -85,6 +85,7 @@ class GenericExportTransactionOwner {
     helperPath = null,
     credentialFile = null,
     targetFile = null,
+    routingMode = 'rules-only',
   } = {}) {
     if (!GENERIC_EXPORT_ADAPTERS.includes(adapterId) || !ACTIONS.includes(action) ||
         bindingValue?.adapterId !== adapterId ||
@@ -109,6 +110,7 @@ class GenericExportTransactionOwner {
         networkRules: rules,
         helperPath,
         credentialFile,
+        routingMode,
       });
     } catch (cause) {
       throw new GenericExportError('INTEGRATION_EXPORT_PREPARE_FAILED', cause);
@@ -159,6 +161,8 @@ class GenericExportTransactionOwner {
       ruleCount: generated.ruleCount,
       containsLocalProxyCredential: generated.containsLocalProxyCredential,
       warningCode: generated.warningCode,
+      warningCodes: Object.freeze([generated.warningCode,
+        ...(generated.routingMode === 'gateway-default' ? ['INTEGRATION_GATEWAY_DEFAULT_ROUTING'] : [])]),
     });
   }
 

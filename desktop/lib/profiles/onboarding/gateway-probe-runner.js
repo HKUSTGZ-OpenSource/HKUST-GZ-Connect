@@ -1,10 +1,25 @@
 'use strict';
 
 const path = require('node:path');
-const { normalizeGatewayOrigin } = require('../schema/school-profile-schema');
+const { normalizeGatewayLeafSha256 } = require('../schema/school-profile-schema');
 
 const DEFAULT_GATEWAY_PROBE_TIMEOUT_MS = 12_000;
 const MAX_GATEWAY_PROBE_OUTPUT_BYTES = 64 * 1024;
+
+// Input shape only; native public-address and TLS policy remains authoritative.
+function normalizeGatewayEntry(value) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 2048 ||
+      /[\u0000-\u001f\u007f\\]/u.test(value)) throw new TypeError('Gateway entry is invalid');
+  const entry = value.trim();
+  let url;
+  try { url = new URL(entry.includes('://') ? entry : `https://${entry}`); }
+  catch { throw new TypeError('Gateway entry is invalid'); }
+  if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username ||
+      url.password || url.search || url.hash || url.port === '0') {
+    throw new TypeError('Gateway entry is unsafe');
+  }
+  return url.pathname === '/' ? url.origin : url.href;
+}
 
 class GatewayProbeError extends Error {
   constructor(code, cause = null) {
@@ -65,16 +80,18 @@ class GatewayProbeRunner {
     this.clearTimeoutFn = clearTimeoutFn;
   }
 
-  probe(rawOrigin) {
+  probe(rawOrigin, { leafSha256 = null } = {}) {
     if (this.#active) {
       return Promise.reject(new GatewayProbeError('GATEWAY_PROBE_ALREADY_RUNNING'));
     }
-    const origin = normalizeGatewayOrigin(rawOrigin).origin;
+    const origin = normalizeGatewayEntry(rawOrigin);
+    const pin = normalizeGatewayLeafSha256(leafSha256);
     return new Promise((resolve, reject) => {
       let child;
       try {
         child = this.spawnProcess(this.executablePath, [
           ...this.argsPrefix, '--origin', origin,
+          ...(pin == null ? [] : ['--leaf-sha256', pin]),
         ], {
           cwd: path.dirname(this.executablePath),
           env: this.environment,

@@ -2,6 +2,7 @@
 
 const {
   normalizeGatewayOrigin,
+  normalizeGatewayLeafSha256,
   validateAccountHandle,
   validateProfileId,
 } = require('../schema/school-profile-schema');
@@ -124,12 +125,13 @@ class SchoolProfileOnboardingCoordinator {
     return profileViews(this.listProfilesSource({ locale }), current.profileId);
   }
 
-  async probe({ origin, schoolLabel = '' } = {}) {
+  async probe({ origin, schoolLabel = '', leafSha256 = null } = {}) {
+    const pin = normalizeGatewayLeafSha256(leafSha256);
     return this.#singleFlight(async () => {
       this.confirmationOwner.invalidate();
       const context = activeContext(this.getActiveContext());
       let result;
-      try { result = await this.probeRunner.probe(origin); }
+      try { result = await this.probeRunner.probe(origin, { leafSha256: pin }); }
       catch (error) {
         const code = onboardingErrorCode(error, 'GATEWAY_PROBE_FAILED');
         this.onDiagnostic(code);
@@ -145,6 +147,7 @@ class SchoolProfileOnboardingCoordinator {
           confirmation: this.confirmationOwner.issue({
             probeResult: result,
             schoolLabel,
+            leafSha256: pin,
             activeContext: context,
           }),
         });
@@ -155,7 +158,7 @@ class SchoolProfileOnboardingCoordinator {
     });
   }
 
-  confirm({ confirmationHandle } = {}) {
+  confirm({ confirmationHandle, trustCertificate = false } = {}) {
     if (this.#running) return Object.freeze({ ok: false, code: 'PROFILE_ONBOARDING_NOT_READY' });
     const context = activeContext(this.getActiveContext());
     let confirmation;
@@ -163,6 +166,7 @@ class SchoolProfileOnboardingCoordinator {
       confirmation = this.confirmationOwner.consume({
         confirmationHandle,
         activeContext: context,
+        trustCertificate,
       });
     } catch (error) {
       return Object.freeze({ ok: false, code: 'PROFILE_CONFIRMATION_STALE' });

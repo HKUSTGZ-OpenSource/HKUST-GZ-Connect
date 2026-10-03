@@ -231,6 +231,15 @@ test('unproven rollback retirement blocks credential mutation before intent or t
   assert.equal(value.loadWorkspaceAuthority().account.accountCredentialRevision, 1);
 });
 
+test('HKUST rollback retirement cannot be bypassed with a not-applicable outcome', (t) => {
+  const value = fixture(t);
+  const credentials = createStore(value, { retireRollback: () => ({ status: 'not-applicable', changed: false }) });
+  assert.throws(() => credentials.replace({ username: 'synthetic-user', password: 'synthetic-password' }),
+    /retirement was not proven/u);
+  assert.equal(fs.existsSync(value.layout.account.credentialTransaction), false);
+  assert.equal(fs.existsSync(value.layout.account.vpnCredential), false);
+});
+
 test('credential-free clear still proves rollback retirement but does not churn Account revision', (t) => {
   const value = fixture(t);
   const retirementCalls = [];
