@@ -2,6 +2,8 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const fs = require('node:fs');
+const acorn = require('acorn');
 const { BrowserRoutingActivationOwner } = require('../../../../lib/browser/session/browser-session-manager');
 
 function deferred() {
@@ -37,6 +39,16 @@ function fixture(overrides = {}) {
 
 test('activation owner rejects incomplete injected Session capabilities', () => {
   assert.throws(() => new BrowserRoutingActivationOwner({}), TypeError);
+});
+
+test('the extracted routing activation owner stays below the M2 owner ceiling', () => {
+  const source = fs.readFileSync(require.resolve('../../../../lib/browser/session/browser-session-manager'), 'utf8');
+  const tree = acorn.parse(source, { ecmaVersion: 'latest', locations: true });
+  const owner = tree.body.find(node => node.type === 'ClassDeclaration' &&
+    node.id.name === 'BrowserRoutingActivationOwner');
+  assert.ok(owner, 'the production owner must exist at its public entrypoint');
+  assert.ok(owner.loc.end.line - owner.loc.start.line + 1 <= 600,
+    'the extracted owner must not exceed the M2 ceiling');
 });
 
 test('a ready Session is reused without reconfiguring; a suspended Session resumes', async () => {
