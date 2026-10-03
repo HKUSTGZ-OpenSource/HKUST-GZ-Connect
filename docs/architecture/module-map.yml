@@ -161,6 +161,7 @@ modules:
       - independent/src/gateway_auth.rs
       - independent/src/gateway_connector.rs
       - independent/src/gateway_http.rs
+      - independent/src/gateway_tls.rs
       - independent/src/modern.rs
       - independent/src/special_tls11.rs
     publicEntrypoints:
@@ -190,6 +191,8 @@ modules:
       - independent/src/bin/ec-proxy-command.rs
       - independent/src/bin/ec-gateway-probe.rs
       - independent/src/gateway_probe.rs
+      - independent/src/gateway_probe/**
+      - independent/src/gateway_locator.rs
     publicEntrypoints:
       - independent/src/bin/ec-proxy-command.rs
       - independent/src/bin/ec-gateway-probe.rs

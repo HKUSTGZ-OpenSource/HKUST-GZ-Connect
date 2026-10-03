@@ -239,15 +239,25 @@ function normalizeBranding(value) {
 }
 
 function normalizeGateway(value) {
-  const gateway = exactKeys(value, ['origin', 'protocolFamily', 'engineConfigRef'],
+  const gateway = exactKeys(value, ['origin', 'protocolFamily', 'engineConfigRef', 'tlsLeafSha256'],
     ['origin', 'protocolFamily'], 'gateway');
+  const pin = normalizeGatewayLeafSha256(gateway.tlsLeafSha256);
   return Object.freeze({
     origin: normalizeGatewayOrigin(gateway.origin),
     protocolFamily: validateProtocolFamily(gateway.protocolFamily),
     engineConfigRef: gateway.engineConfigRef == null
       ? null
       : safeRelativeReference(gateway.engineConfigRef, 'engineConfigRef'),
+    ...(pin == null ? {} : { tlsLeafSha256: pin }),
   });
+}
+
+function normalizeGatewayLeafSha256(value) {
+  if (value == null || value === '') return null;
+  if (typeof value !== 'string' || !/^[a-fA-F0-9]{64}$/u.test(value)) {
+    throw new TypeError('Gateway leaf fingerprint is invalid');
+  }
+  return value.toLowerCase();
 }
 
 function normalizeBrowser(value) {
@@ -339,9 +349,8 @@ function validateSchoolProfileDocument(value) {
     normalized.browser.healthTargets.length)) {
     throw new TypeError('custom-local profiles must start with minimal unreviewed policy');
   }
-  const gatewayAddress = normalized.gateway.origin.hostname.replace(/^\[|\]$/gu, '');
-  if (normalized.evidenceClass === 'custom-local' && net.isIP(gatewayAddress) !== 0) {
-    throw new TypeError('custom-local profiles require a hostname Gateway');
+  if (normalized.evidenceClass === 'builtin-reviewed' && normalized.gateway.tlsLeafSha256 != null) {
+    throw new TypeError('reviewed profiles cannot acquire local Gateway trust');
   }
   return deepFreeze(normalized);
 }
@@ -563,6 +572,7 @@ function createCapabilitySnapshot(value) {
 }
 
 module.exports = {
+  normalizeGatewayLeafSha256,
   ACCOUNT_ROLES,
   ACCOUNT_STATES,
   CAMPUS_ACCOUNT_SCHEMA_VERSION,

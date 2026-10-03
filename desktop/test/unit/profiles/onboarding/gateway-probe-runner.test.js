@@ -74,6 +74,22 @@ test('probe rejects concurrent oversized malformed and failed child outcomes', a
   await assert.rejects(malformedPending, { code: 'GATEWAY_PROBE_OUTPUT_INVALID' });
 });
 
+test('locator and explicit public fingerprint go to the native probe but never credentials', async () => {
+  const process = child();
+  let args;
+  const runner = new GatewayProbeRunner({ executablePath: '/app/ec-gateway-probe',
+    spawnProcess: (_file, argv) => { args = argv; return process; } });
+  for (const input of ['http://u:p@entry.example.test/start', 'https://entry.example.test/?token=1',
+    'https://entry.example.test/#fragment', 'https://entry.example.test:0']) {
+    assert.throws(() => runner.probe(input));
+  }
+  assert.throws(() => runner.probe('https://vpn.example.edu', { leafSha256: 'invalid' }));
+  const pending = runner.probe('http://entry.example.test/start.php', { leafSha256: 'AB'.repeat(32) });
+  assert.deepEqual(args, ['--origin', 'http://entry.example.test/start.php', '--leaf-sha256', 'ab'.repeat(32)]);
+  process.stdout.emit('data', '{}\n'); process.emit('close', 0, null);
+  await pending;
+});
+
 test('timeout and explicit cancellation terminate the child and settle once', async () => {
   for (const action of ['timeout', 'cancel']) {
     const process = child();

@@ -21,6 +21,9 @@ function createCustomEngineConfigDocument(rawProfile) {
   return Object.freeze({
     schema_version: CUSTOM_ENGINE_CONFIG_VERSION,
     base_url: profile.gateway.origin.origin,
+    ...(profile.gateway.tlsLeafSha256 == null ? {} : {
+      gateway_tls: Object.freeze({ origin: profile.gateway.origin.origin, leaf_sha256: profile.gateway.tlsLeafSha256 }),
+    }),
     endpoints: Object.freeze({
       discovery: '/por/login_auth.csp?apiversion=1',
       logout: '/por/logout.csp?apiversion=1',
