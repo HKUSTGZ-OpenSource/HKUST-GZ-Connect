@@ -105,14 +105,15 @@ test('startup rejects asynchronous wrong or custom authority before ordinary ser
 
 test('production startup orders provisioning recovery before logs tray and network', () => {
   const main = fs.readFileSync(path.join(desktopRoot, 'main.js'), 'utf8');
-  const start = main.indexOf('app.whenReady().then(() => {');
-  const end = main.indexOf("app.on('window-all-closed'", start);
-  const source = main.slice(start, end);
-  const persistence = source.indexOf('persistenceRuntime.initialize()');
-  const multiSchool = source.indexOf('initializeMultiSchoolStartup(');
-  const log = source.indexOf('initializeLogWriter()');
-  const tray = source.indexOf('desktopShell.createTray()');
-  const network = source.indexOf('networkStartupCoordinator.start()');
+  assert.match(main, /initializeMultiSchoolStartup: \(\) => initializeMultiSchoolStartup\(persistenceRuntime, activeSchoolProfile\)/u);
+  assert.match(main, /app\.whenReady\(\)\.then\(\(\) => desktopStartup\.run\(\)\)/u);
+  const owner = fs.readFileSync(require.resolve('../../../../lib/app/startup/multi-school-startup-runtime'), 'utf8');
+  const source = owner.slice(owner.indexOf('async #initialize()'));
+  const persistence = source.indexOf('e.persistenceRuntime.initialize()');
+  const multiSchool = source.indexOf('e.initializeMultiSchoolStartup(');
+  const log = source.indexOf('e.initializeLogWriter()');
+  const tray = source.indexOf('e.desktopShell.createTray()');
+  const network = source.indexOf('e.networkStartupCoordinator.start()');
   assert.ok(persistence >= 0 && multiSchool > persistence && log > multiSchool &&
     tray > log && network > tray);
 });

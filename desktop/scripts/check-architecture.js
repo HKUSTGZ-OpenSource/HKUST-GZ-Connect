@@ -13,10 +13,9 @@ const RENDERER_SHARED_SOURCES = Object.freeze([
 // and prevent another feature from enlarging either God Module while the code
 // is extracted incrementally behind tests.
 const BASELINE = Object.freeze({
-  // One direct/transitive module was added for the reviewed one-shot Linux
-  // credential boundary. Main simultaneously stopped consuming four facade
-  // bindings, so the effective semantic dependency cap below still shrank.
-  mainDirectDependencies: 33,
+  // Reviewed Main owner extractions retire direct imports; do not regrow them
+  // behind facade bindings. The ready-startup slice adds no production module.
+  mainDirectDependencies: 24,
   // The cross-platform network-environment domain now owns one additional
   // HTTPS-only public-egress leaf. Main gained no direct dependency or lines.
   // Card Board adds one isolated App composition and four bounded layout
@@ -24,11 +23,9 @@ const BASELINE = Object.freeze({
   // The myPortal catalog is one isolated Browser-domain leaf behind the existing
   // Main binding; no direct dependency, composition member, or Main line was added.
   mainTransitiveDependencies: 170,
-  // This transition cap includes the disconnected-session recovery, async
-  // platform discovery, one-shot credential security closures and the reviewed
-  // service-desk hand-off. Further feature work must extract responsibilities
-  // instead of growing Main again.
-  mainLines: 1084,
+  // Startup ordering now lives in the existing App startup owner. Further work
+  // must extract responsibilities rather than rebuild that workflow in Main.
+  mainLines: 730,
   rendererLines: 562,
   campusBrowserLines: 1476,
   browserTabOwnerLines: 600,
@@ -37,9 +34,9 @@ const BASELINE = Object.freeze({
   libMaxFanIn: 33,
   libMaxFanOut: 14,
   runtimeCompositionExports: 1,
-  runtimeCompositionMembers: 20,
+  runtimeCompositionMembers: 16,
   mainCompositionBindings: 16,
-  mainEffectiveDirectDependencies: 47,
+  mainEffectiveDirectDependencies: 39,
 });
 
 const SKIPPED_DIRECTORIES = new Set(['node_modules', 'release']);

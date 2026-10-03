@@ -250,6 +250,12 @@ unchanged encrypted store and generation/sidecar owner through the Persistence p
 Main falls to 767 lines / 24 direct dependencies and private-edge debt to 108. Those candidate
 metrics meet the intermediate below-800/24 stage, not final 500-700/20 composition or M5 acceptance.
 
+The proposed [ready-startup sequence](desktop-ready-startup-owner.md) moves ordered
+Profile/storage recovery, startup presentation and service admission into the existing App
+startup module. Obsolete composition bindings retire; Main falls to 730 lines while
+24 direct/170 transitive dependencies remain. Exact downward budgets and three private-edge
+retirements are enforced; final 500–700/20 composition is still outstanding.
+
 Move remaining settings-surface coordination, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 

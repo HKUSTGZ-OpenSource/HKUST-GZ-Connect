@@ -4,7 +4,6 @@
   "exceptions": [
     "desktop/lib/app/card-board-main-runtime.js -> desktop/lib/card-board/runtime/card-board-store.js [private-entrypoint]",
     "desktop/lib/app/card-board-main-runtime.js -> desktop/lib/ipc/ipc-guard.js [undeclared-dependency+private-entrypoint]",
-    "desktop/lib/app/desktop-runtime-composition.js -> desktop/lib/persistence/migration/legacy-hkust/legacy-migration-inputs.js [private-entrypoint]",
     "desktop/lib/app/desktop-runtime-composition.js -> desktop/lib/persistence/migration/legacy-hkust/persistence-relaunch.js [private-entrypoint]",
     "desktop/lib/app/desktop-runtime-composition.js -> desktop/lib/persistence/paths/runtime-storage-paths.js [private-entrypoint]",
     "desktop/lib/app/desktop-runtime-composition.js -> desktop/lib/persistence/runtime/profile-workspace-pre-ready-selection.js [private-entrypoint]",
@@ -12,8 +11,6 @@
     "desktop/lib/app/desktop-runtime-composition.js -> desktop/lib/switching/active-context/active-context-lease.js [private-entrypoint]",
     "desktop/lib/app/desktop-runtime-composition.js -> desktop/lib/switching/active-context/active-context-switch-startup.js [private-entrypoint]",
     "desktop/lib/app/desktop-runtime-composition.js -> desktop/lib/switching/effects/main-profile-switch-composition.js [private-entrypoint]",
-    "desktop/lib/app/desktop-runtime-composition.js -> desktop/lib/switching/effects/profile-switch-main-effects.js [private-entrypoint]",
-    "desktop/lib/app/desktop-runtime-composition.js -> desktop/lib/switching/runtime/profile-switch-main-runtime.js [private-entrypoint]",
     "desktop/lib/app/desktop-runtime-composition.js -> desktop/lib/switching/runtime/profile-switch-relaunch.js [private-entrypoint]",
     "desktop/lib/app/startup/multi-school-startup-runtime.js -> desktop/lib/profiles/provisioning/custom-profile-provisioning-runtime.js [private-entrypoint]",
     "desktop/lib/app/startup/multi-school-startup-runtime.js -> desktop/lib/profiles/registry/profile-candidate-directory.js [private-entrypoint]",

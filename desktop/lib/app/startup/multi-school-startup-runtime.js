@@ -123,4 +123,84 @@ class MultiSchoolStartupRuntime {
   }
 }
 
-module.exports = { MultiSchoolStartupRuntime, customGatewayProductAvailability };
+// The ready sequence composes the existing domain owners. It does not implement
+// migration, deletion, connection, persistence or shell policies a second time.
+class DesktopStartupRuntime {
+  constructor(effects = {}) {
+    for (const name of ['assertSwitchStartupClear', 'relaunchPersistence',
+      'initializeMultiSchoolStartup', 'initializeLogWriter', 'getLogWriter', 'writeMarkers',
+      'currentLocale', 'fallbackLocale', 'setLocale', 'loadSettings', 'reportSettingsReadFailure',
+      'getSettingsRecoveryNotice', 'setSettingsRecoveryNoticeText', 'getPresentation', 'translate',
+      'refreshPacFile', 'onActivate']) {
+      if (typeof effects[name] !== 'function') throw new TypeError('startup effects are incomplete');
+    }
+    for (const [name, methods] of [
+      ['profileSwitching', ['recoverBeforeServices']],
+      ['persistenceRuntime', ['initialize', 'getCredentialTransactionRecovery', 'applyCredentialRecoveryOutcome']],
+      ['customProfileDeletion', ['recover']],
+      ['desktopShell', ['installApplicationMenu', 'createTray', 'createWindow', 'showWindow']],
+      ['powerMonitor', ['on']], ['connectivityRecovery', ['suspend', 'resume']],
+      ['networkStartupCoordinator', ['start']], ['updateNotifications', ['startAutomatic']],
+    ]) {
+      if (methods.some(method => typeof effects[name]?.[method] !== 'function')) {
+        throw new TypeError('startup owners are incomplete');
+      }
+    }
+    this.effects = Object.freeze({ ...effects });
+    this.flight = null;
+  }
+
+  run() {
+    // The flight is installed before injected effects can reenter startup. An
+    // application startup failure remains terminal; Main owns its error/exit UI.
+    if (!this.flight) this.flight = Promise.resolve().then(() => this.#initialize());
+    return this.flight;
+  }
+
+  async #initialize() {
+    const e = this.effects;
+    if (!e.profileSwitching.runtime) e.assertSwitchStartupClear();
+    const switchRecovery = await e.profileSwitching.recoverBeforeServices();
+    if (switchRecovery?.relaunching) return;
+    const persistence = e.persistenceRuntime.initialize();
+    if (persistence.relaunchRequired) { e.relaunchPersistence(); return; }
+    e.initializeMultiSchoolStartup();
+    e.customProfileDeletion.recover().then(result => {
+      if (!result.ok) e.getLogWriter()?.append('[profile-deletion] recovery incomplete\n');
+    });
+    e.initializeLogWriter();
+    e.writeMarkers();
+    let locale;
+    try { locale = e.currentLocale(); }
+    catch { locale = e.fallbackLocale(); }
+    e.setLocale(locale);
+    try { e.loadSettings(); }
+    catch (error) { e.reportSettingsReadFailure(error, { emitState: false }); }
+    const notice = e.getSettingsRecoveryNotice();
+    if (notice) {
+      e.setSettingsRecoveryNoticeText(e.translate(notice.kind === 'restored'
+        ? 'error.settingsRestored' : 'error.settingsDefaults'));
+    }
+    e.persistenceRuntime.applyCredentialRecoveryOutcome(
+      e.persistenceRuntime.getCredentialTransactionRecovery(), { emitState: false },
+    );
+    e.desktopShell.installApplicationMenu();
+    // A PAC failure must not remove the ordinary UI or conceal an earlier
+    // recovery/settings failure. The original domain notices stay separate.
+    try { e.refreshPacFile(); }
+    catch (error) {
+      const pacError = error.userMessage || e.translate('error.pacWriteAtBoot', { message: error.message });
+      const state = e.getPresentation();
+      state.browserNotice = [state.browserNotice, pacError].filter(Boolean).join('\n');
+    }
+    e.desktopShell.createTray();
+    e.desktopShell.createWindow();
+    e.powerMonitor.on('suspend', () => e.connectivityRecovery.suspend());
+    e.powerMonitor.on('resume', () => e.connectivityRecovery.resume());
+    e.networkStartupCoordinator.start().catch(() => {});
+    e.updateNotifications.startAutomatic(e.isPackaged);
+    e.onActivate(() => e.desktopShell.showWindow());
+  }
+}
+
+module.exports = { DesktopStartupRuntime, MultiSchoolStartupRuntime, customGatewayProductAvailability };

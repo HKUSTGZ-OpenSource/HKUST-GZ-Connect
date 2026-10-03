@@ -59,10 +59,16 @@ test('settings failures publish terminal intent state to pending waiters', () =>
 
 test('network callbacks cannot reach the deferred operation owner before construction', () => {
   const operationOwner = source.indexOf('const connectionOperations = new ConnectionOperationCoordinator(');
-  const networkStart = source.indexOf('networkStartupCoordinator.start()');
-  const powerListener = source.indexOf("powerMonitor.on('suspend'");
-  assert.ok(operationOwner >= 0 && operationOwner < networkStart);
-  assert.ok(operationOwner < powerListener);
+  const readyOwner = source.indexOf('const desktopStartup = new DesktopStartupRuntime({');
+  const readyStart = source.indexOf('app.whenReady().then(() => desktopStartup.run())');
+  assert.ok(operationOwner >= 0 && operationOwner < readyOwner && readyOwner < readyStart);
+  const ready = fs.readFileSync(require.resolve('../../../lib/app/startup/multi-school-startup-runtime'), 'utf8');
+  const readyConstructor = ready.slice(ready.indexOf('class DesktopStartupRuntime'), ready.indexOf('\n  run()', ready.indexOf('class DesktopStartupRuntime')));
+  assert.doesNotMatch(readyConstructor, /\.(?:start|suspend|resume|recoverBeforeServices)\(/u,
+    'ready startup validates owners without calling network or recovery effects during construction');
+  const readySequence = ready.slice(ready.indexOf('async #initialize()'));
+  assert.match(readySequence, /e\.networkStartupCoordinator\.start\(\)/u);
+  assert.match(readySequence, /e\.powerMonitor\.on\('suspend'/u);
 
   const recovery = fs.readFileSync(require.resolve('../../../lib/connection/recovery/connectivity-recovery'), 'utf8');
   const recoveryConstructor = recovery.slice(recovery.indexOf('  constructor('), recovery.indexOf('\n  currentIntent('));
