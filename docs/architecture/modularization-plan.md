@@ -73,6 +73,11 @@ HTML scripts and their two frozen `window.*` exports in favor of one explicit fe
 entrypoint. It keeps the existing drawer, diagnostics, focus trap and Reduced Motion behavior;
 other legacy script-order and bootstrap responsibilities keep M1 open.
 
+The proposed [new-tab settings owner](renderer-new-tab-settings-owner.md) removes one classic
+HTML script and global exception in favor of the native feature host with exact listener and
+late-result retirement. IDs, shared styling and Main save authority stay unchanged. This is
+global/dependency debt reduction, not a claim that `app.js` becomes smaller or M1 is complete.
+
 1. Add an explicit Renderer bootstrap and a checked feature registry.
 2. Freeze the list of existing `window.*` feature exports; CI rejects new ones.
 3. Give each feature one public entrypoint with injected dependencies.

@@ -116,6 +116,56 @@ async function capture(window, output, label) {
   fs.writeFileSync(path.join(output, `${label}.png`), (await window.webContents.capturePage()).toPNG());
 }
 
+async function exerciseNewTabSettings(window) {
+  const initial = await window.webContents.executeJavaScript(`(() => {
+    const input = document.getElementById('browserNewTabUrl');
+    const button = document.getElementById('saveBrowserNewTabUrl');
+    const rect = input.getBoundingClientRect();
+    return { value: input.value, inputWidth: rect.width,
+      parentWidth: input.parentElement.getBoundingClientRect().width,
+      buttonText: button.textContent, oldGlobal: typeof window.browserNewTabSettings };
+  })()`);
+  assert.equal(initial.oldGlobal, 'undefined', 'new-tab settings must be mounted by the native feature host');
+  assert.ok(initial.inputWidth > 0 && initial.inputWidth <= initial.parentWidth + 1,
+    'new-tab input must stay inside its existing responsive container');
+  assert.ok(initial.buttonText.trim(), 'the existing localized action must stay visible');
+  await window.webContents.executeJavaScript(`(() => {
+    document.getElementById('browserNewTabUrl').value = 'about:blank';
+    document.getElementById('saveBrowserNewTabUrl').click();
+  })()`);
+  async function saved(value) {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const ready = await window.webContents.executeJavaScript(`(async () => {
+        const state = await window.api.getState();
+        return state.settings.browserNewTabUrl === ${JSON.stringify(value)} &&
+          !document.getElementById('saveBrowserNewTabUrl').disabled &&
+          !!document.getElementById('browserNewTabStatus').textContent;
+      })()`);
+      if (ready) return;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.fail('new-tab setting did not produce its bounded save result');
+  }
+  await saved('about:blank');
+  const focus = await window.webContents.executeJavaScript(`(() => {
+    const input = document.getElementById('browserNewTabUrl');
+    input.value = 'https://newtab-fixture.invalid/'; input.focus();
+    return document.activeElement === input;
+  })()`);
+  assert.equal(focus, true, 'new-tab input must retain keyboard focus');
+  window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Return' });
+  window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Return' });
+  await saved('https://newtab-fixture.invalid/');
+  await window.webContents.executeJavaScript(`(() => {
+    document.getElementById('browserNewTabUrl').value = ${JSON.stringify(initial.value)};
+    document.getElementById('saveBrowserNewTabUrl').click();
+  })()`);
+  await saved(initial.value);
+  // Restore fixture-only feedback before the next baseline screenshot; the
+  // production success feedback was asserted above and is not changed.
+  await window.webContents.executeJavaScript(`document.getElementById('browserNewTabStatus').textContent = ''`);
+}
+
 async function addWebsiteSnapshot(window) {
   return window.webContents.executeJavaScript(`(() => {
     document.getElementById('addWebsite').click();
@@ -679,6 +729,7 @@ async function main() {
         notification.bodyOverflow <= 0 && notification.drawerOverflow <= 0,
       `${label}: notification drawer overflows horizontally`);
       await capture(window, output, `${label}-settings`);
+      await exerciseNewTabSettings(window);
     }
 
     if (realCatalog) {
