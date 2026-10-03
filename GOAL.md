@@ -57,8 +57,8 @@ high-risk rules. No instruction file is treated as a substitute for review or te
    resource transactions; #192-#195 move Browser navigation/route/popup/toolbar ownership;
    #179/#187/#196 move connection, Control Tower and notification presentation into native owners.
    Main is 819 lines with 30 direct / 44 effective / 170 transitive dependencies; Browser is
-   1,137 lines, Renderer bootstrap 412 and Engine root 498. M3's first line target is met, but
-   its dependency and final composition targets are not. M2's full ownership target is not met.
+   1,137 lines, Renderer bootstrap 412 and Engine root 498. M3's first 1,200/30 stage is met,
+   but its below-800/24 and final composition targets are not. M2's full ownership target is not met.
    #162's reproduced window cleanup is merged; #178 fixes the reproduced calendar source query,
    but #177 still requires a sanitized reporter retest. #200 closes custom-Profile credential
    retirement failure #199; #198 closes #197's bounded Gateway locator/explicit TLS source scope.
