@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { desktopRuntimeComposition } = require('./lib/app/desktop-runtime-composition');
-const { ActiveContextLease, assertActiveContextSwitchStartupClear, createLegacyRuntimeStoragePaths, createMainProfileSwitchComposition, createMultiSchoolStartupInitializer, createPageFavoriteController, customGatewayProductAvailability, DesktopPersistenceRuntime, ProfileWorkspaceStartupRuntime, relaunchAfterPersistenceMigration, ResourceLibraryRuntime, resolveUserDataOverride, selectProfileWorkspacePreReadyStorage, writePersistenceE2EMarker, writeProfileSwitchE2EMarker } = desktopRuntimeComposition;
+const { ActiveContextLease, assertActiveContextSwitchStartupClear, createLegacyRuntimeStoragePaths, createMainProfileSwitchComposition, createMultiSchoolStartupInitializer, createPageFavoriteController, customGatewayProductAvailability, DesktopPersistenceRuntime, DesktopStartupRuntime, ProfileWorkspaceStartupRuntime, relaunchAfterPersistenceMigration, ResourceLibraryRuntime, resolveUserDataOverride, selectProfileWorkspacePreReadyStorage, writePersistenceE2EMarker, writeProfileSwitchE2EMarker } = desktopRuntimeComposition;
 const { AuthChallengeCoordinator, EngineControlRegistry } = require('./lib/connection/engine/engine-control-suite');
 const { EngineTerminationCoordinator } = require('./lib/connection/engine/engine-connection-runtime');
 const { DesktopShell } = require('./lib/platform/shell/desktop-shell');
@@ -695,66 +695,29 @@ const browserRequestSecurity = CampusBrowserManager.createRequestSecurityBoundar
 });
 app.on('certificate-error', browserRequestSecurity.certificateError);
 app.on('login', browserRequestSecurity.proxyLogin);
-app.whenReady().then(() => {
-  if (!profileSwitching.runtime) {
-    assertActiveContextSwitchStartupClear({
-      mode: preReadyStorage.mode, filePath: ACTIVE_CONTEXT_SWITCH, profileStorageEffects,
-    });
-  }
-  return profileSwitching.recoverBeforeServices();
-}).then((switchRecovery) => {
-  if (switchRecovery?.relaunching) return;
-  const persistence = persistenceRuntime.initialize();
-  if (persistence.relaunchRequired) {
-    relaunchAfterPersistenceMigration({ application: app, argv: process.argv,
-      isPackaged: app.isPackaged, developmentEntry: __dirname });
-    return;
-  }
-  initializeMultiSchoolStartup(persistenceRuntime, activeSchoolProfile);
-  customProfileDeletion.recover().then((result) => { if (!result.ok) logWriter?.append('[profile-deletion] recovery incomplete\n'); });
-  initializeLogWriter();
-  writePersistenceE2EMarker({ application: app, environment: process.env, userData: DATA, mode: persistenceRuntime.mode }); writeProfileSwitchE2EMarker({ application: app, environment: process.env, userData: DATA, ...activeSchoolProfile.activeContextBinding() });
-  try {
-    locale = currentLocale();
-  } catch {
-    locale = effectiveLocale('auto', app.getLocale());
-  }
-  t = createT(locale);
-  try {
-    loadSettings();
-  } catch (error) {
-    reportSettingsReadFailure(error, { emitState: false });
-  }
-  if (settingsRecoveryNotice) {
-    settingsRecoveryNoticeText = t(settingsRecoveryNotice.kind === 'restored'
-      ? 'error.settingsRestored'
-      : 'error.settingsDefaults');
-  }
-  persistenceRuntime.applyCredentialRecoveryOutcome(
-    persistenceRuntime.getCredentialTransactionRecovery(),
-    { emitState: false },
-  );
-  desktopShell.installApplicationMenu();
-  // A PAC write can fail on a read-only or full user-data directory. That must
-  // not leave the user with no window and no tray, so it is reported through the
-  // normal error surface instead of aborting startup.
-  try {
-    refreshPacFile();
-  } catch (error) {
-    const pacError = error.userMessage || t('error.pacWriteAtBoot', { message: error.message });
-    // Preserve an earlier credential-recovery or settings-read failure.  PAC
-    // generation is a separate startup boundary and must not hide the reason
-    // persistence/connection remains fail-closed.
-    state.browserNotice = [state.browserNotice, pacError].filter(Boolean).join('\n');
-  }
-  desktopShell.createTray();
-  desktopShell.createWindow();
-  powerMonitor.on('suspend', () => connectivityRecovery.suspend());
-  powerMonitor.on('resume', () => connectivityRecovery.resume());
-  networkStartupCoordinator.start().catch(() => {});
-  updateNotifications.startAutomatic(app.isPackaged);
-  app.on('activate', () => desktopShell.showWindow());
-}).catch((error) => {
+const desktopStartup = new DesktopStartupRuntime({
+  profileSwitching, persistenceRuntime, customProfileDeletion,
+  assertSwitchStartupClear: () => assertActiveContextSwitchStartupClear({
+    mode: preReadyStorage.mode, filePath: ACTIVE_CONTEXT_SWITCH, profileStorageEffects,
+  }),
+  relaunchPersistence: () => relaunchAfterPersistenceMigration({ application: app, argv: process.argv,
+    isPackaged: app.isPackaged, developmentEntry: __dirname }),
+  initializeMultiSchoolStartup: () => initializeMultiSchoolStartup(persistenceRuntime, activeSchoolProfile),
+  initializeLogWriter, getLogWriter: () => logWriter,
+  writeMarkers: () => {
+    writePersistenceE2EMarker({ application: app, environment: process.env, userData: DATA, mode: persistenceRuntime.mode });
+    writeProfileSwitchE2EMarker({ application: app, environment: process.env, userData: DATA, ...activeSchoolProfile.activeContextBinding() });
+  },
+  currentLocale, fallbackLocale: () => effectiveLocale('auto', app.getLocale()),
+  setLocale: value => { locale = value; t = createT(locale); },
+  loadSettings, reportSettingsReadFailure, getSettingsRecoveryNotice: () => settingsRecoveryNotice,
+  setSettingsRecoveryNoticeText: value => { settingsRecoveryNoticeText = value; },
+  getPresentation: () => state, translate: (key, vars) => t(key, vars),
+  desktopShell, refreshPacFile, powerMonitor, connectivityRecovery,
+  networkStartupCoordinator, updateNotifications, isPackaged: app.isPackaged,
+  onActivate: handler => app.on('activate', handler),
+});
+app.whenReady().then(() => desktopStartup.run()).catch((error) => {
   dialog.showErrorBox(t('error.startupTitle'), String(error && error.message ? error.message : error));
   app.exit(1);
 });

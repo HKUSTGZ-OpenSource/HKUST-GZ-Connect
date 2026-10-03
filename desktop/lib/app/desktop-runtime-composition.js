@@ -4,8 +4,7 @@ const path = require('path');
 const { ActiveContextLease } = require('../switching/active-context/active-context-lease');
 const { assertActiveContextSwitchStartupClear } = require('../switching/active-context/active-context-switch-startup');
 const { DesktopPersistenceRuntime } = require('../persistence/runtime/desktop-persistence-runtime');
-const { LegacyMigrationCredentialOwner } = require('../persistence/migration/legacy-hkust/legacy-migration-inputs');
-const { MultiSchoolStartupRuntime, customGatewayProductAvailability } = require('./startup/multi-school-startup-runtime');
+const { DesktopStartupRuntime, MultiSchoolStartupRuntime, customGatewayProductAvailability } = require('./startup/multi-school-startup-runtime');
 const {
   createMainProfileSwitchComposition,
 } = require('../switching/effects/main-profile-switch-composition');
@@ -14,10 +13,7 @@ const { selectProfileWorkspacePreReadyStorage } =
 const { ProfileWorkspaceStartupRuntime } = require('../persistence/runtime/profile-workspace-startup-runtime');
 const { relaunchAfterPersistenceMigration, writePersistenceE2EMarker } =
   require('../persistence/migration/legacy-hkust/persistence-relaunch');
-const { createProfileSwitchBarrierEffects } = require('../switching/effects/profile-switch-main-effects');
-const { createMainProfileSwitchRuntime } = require('../switching/runtime/profile-switch-main-runtime');
-const { relaunchAfterProfileSwitch, scheduleProfileSwitchRelaunch,
-  writeProfileSwitchE2EMarker } =
+const { writeProfileSwitchE2EMarker } =
   require('../switching/runtime/profile-switch-relaunch');
 const { createLegacyRuntimeStoragePaths } = require('../persistence/paths/runtime-storage-paths');
 const {
@@ -74,19 +70,15 @@ const desktopRuntimeComposition = Object.freeze({
   assertActiveContextSwitchStartupClear,
   createLegacyRuntimeStoragePaths,
   createMainProfileSwitchComposition,
-  createMainProfileSwitchRuntime,
   createMultiSchoolStartupInitializer,
   createPageFavoriteController,
   customGatewayProductAvailability,
-  createProfileSwitchBarrierEffects,
   DesktopPersistenceRuntime,
-  LegacyMigrationCredentialOwner,
+  DesktopStartupRuntime,
   ProfileWorkspaceStartupRuntime,
   ResourceLibraryRuntime,
   resolveUserDataOverride,
   relaunchAfterPersistenceMigration,
-  relaunchAfterProfileSwitch,
-  scheduleProfileSwitchRelaunch,
   selectProfileWorkspacePreReadyStorage,
   writePersistenceE2EMarker,
   writeProfileSwitchE2EMarker,

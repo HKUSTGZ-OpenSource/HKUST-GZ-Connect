@@ -6,6 +6,7 @@ const path = require('node:path');
 const test = require('node:test');
 const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
 const persistence = fs.readFileSync(require.resolve('../../../lib/persistence/runtime/desktop-persistence-runtime'), 'utf8');
+const startupOwner = fs.readFileSync(require.resolve('../../../lib/app/startup/multi-school-startup-runtime'), 'utf8');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
 const shellSource = fs.readFileSync(
@@ -76,9 +77,10 @@ test('window close and automatic updates turn settings failures into bounded asy
 });
 
 test('a startup PAC failure does not hide an earlier recovery error', () => {
-  const startup = section('app.whenReady().then(() => {', "app.on('window-all-closed'");
+  const startup = startupOwner.slice(startupOwner.indexOf('async #initialize()'));
   assert.match(startup, /const pacError =/);
   assert.match(startup, /state\.browserNotice = \[state\.browserNotice, pacError\]\.filter\(Boolean\)\.join\('\\n'\)/);
+  assert.match(source, /getPresentation: \(\) => state, translate: \(key, vars\) => t\(key, vars\)/u);
 });
 
 test('settings, recovery, browser, and log outcomes have separate domains', () => {

@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
+const startupOwner = fs.readFileSync(require.resolve('../../../lib/app/startup/multi-school-startup-runtime'), 'utf8');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
 
@@ -29,16 +30,21 @@ test('pre-ready selection constructs the persistence owner before ordered recove
 });
 
 test('after-ready migration uses the bounded relaunch owner before services can start', () => {
-  const startup = section('app.whenReady().then(() => {', "app.on('window-all-closed'");
-  const switchGuard = startup.indexOf('assertActiveContextSwitchStartupClear(');
-  const initialize = startup.indexOf('persistenceRuntime.initialize()');
-  const relaunch = startup.indexOf('relaunchAfterPersistenceMigration(');
-  const log = startup.indexOf('initializeLogWriter()');
-  const tray = startup.indexOf('desktopShell.createTray()');
-  const network = startup.indexOf('networkStartupCoordinator.start()');
+  const startup = startupOwner.slice(startupOwner.indexOf('async #initialize()'));
+  const switchGuard = startup.indexOf('e.assertSwitchStartupClear()');
+  const initialize = startup.indexOf('e.persistenceRuntime.initialize()');
+  const relaunch = startup.indexOf('e.relaunchPersistence()');
+  const log = startup.indexOf('e.initializeLogWriter()');
+  const tray = startup.indexOf('e.desktopShell.createTray()');
+  const network = startup.indexOf('e.networkStartupCoordinator.start()');
   assert.ok(switchGuard >= 0 && initialize > switchGuard && relaunch > initialize &&
     log > relaunch && tray > log && network > tray);
-  assert.match(startup, /if \(persistence\.relaunchRequired\) \{[\s\S]*relaunchAfterPersistenceMigration\(\{[\s\S]*developmentEntry: __dirname \}\);\s*return;/u);
+  assert.match(startup, /if \(persistence\.relaunchRequired\) \{ e\.relaunchPersistence\(\); return; \}/u);
+  const composition = section('const desktopStartup = new DesktopStartupRuntime({', "app.on('window-all-closed'");
+  assert.match(composition, /assertSwitchStartupClear: \(\) => assertActiveContextSwitchStartupClear\(\{\s*mode: preReadyStorage\.mode, filePath: ACTIVE_CONTEXT_SWITCH, profileStorageEffects/u);
+  assert.match(composition, /relaunchPersistence: \(\) => relaunchAfterPersistenceMigration\(\{ application: app, argv: process\.argv,\s*isPackaged: app\.isPackaged, developmentEntry: __dirname \}\)/u);
+  assert.match(composition, /app\.whenReady\(\)\.then\(\(\) => desktopStartup\.run\(\)\)/u);
+  assert.doesNotMatch(source, /const persistence = persistenceRuntime\.initialize\(\)/u);
   assert.match(source, /let logWriter = null;[\s\S]*function initializeLogWriter\(\)/u);
 });
 
