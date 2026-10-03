@@ -16,6 +16,7 @@ const { MyPortalDataRuntime, hkustMyPortalSources, pacDataUrl } = require('./lib
 const { CampusBrowserManager, officialPortalHomeUrl } = require('./lib/browser/session/campus-browser-manager');
 const { createPreReadySchoolProfileController } = require('./lib/profiles/runtime/school-profile-controller');
 const {
+  createTrustedControlRegistrar,
   createControlStateSnapshot, createCustomProfileDeletionRuntime,
   createExternalIntegrationRuntime,
   createIntegrationTargetSelector,
@@ -35,7 +36,6 @@ const {
   externalProxyHelperPath,
 } = require('./lib/integrations/external-proxy-config');
 const { createT, effectiveLocale } = require('./lib/platform/i18n/i18n');
-const { registerTrustedIpcHandlers } = require('./lib/ipc/ipc-handlers');
 const { RoutingPolicyCoordinator, RoutingPolicyTransactionQueue } = require('./lib/routing/rules/routing-policy-transaction');
 const { stopEngineAfterBrowserSuspend } = require('./lib/switching/effects/browser-engine-barrier');
 const { ConnectionStateMachine, ConnectionWaitRegistry, ConnectionOperationCoordinator, projectConnectionStatus } = require('./lib/connection/state/connection-state-machine');
@@ -513,14 +513,11 @@ updateNotifications = new UpdateNotificationRuntime({
 // ---------- IPC ----------
 const CONTROL_RENDERER_FILE = path.join(__dirname, 'renderer', 'index.html'), CAMPUS_WORKSPACE_RENDERER_FILE = path.join(__dirname, 'renderer', 'campus-workspace.html');
 const cardBoard = require('./lib/app/card-board-main-runtime').createCardBoardMainRuntime({ favoritesFile: RESOURCE_FAVORITES, platform: process.platform, ipcMain, allowedFiles: [CONTROL_RENDERER_FILE, CAMPUS_WORKSPACE_RENDERER_FILE], getResources: safeCampusResourceLibrary, getGroups: () => resourceLibraryRuntime.listGroups(), runTransaction: runActiveContextTransaction, onChanged: (document) => { desktopShell?.send('card-board-layout-changed', document); campusBrowserManager?.browser?.refreshCardBoardLayout(document); } });
-function trustedHandle(channel, handler) {
-  registerTrustedIpcHandlers({
-    ipcMain,
-    getWebContents: () => desktopShell?.webContents || null,
-    allowedFiles: [CONTROL_RENDERER_FILE],
-    handlers: { [channel]: handler },
-  });
-}
+const trustedHandle = createTrustedControlRegistrar({
+  ipcMain,
+  getWebContents: () => desktopShell?.webContents || null,
+  allowedFiles: [CONTROL_RENDERER_FILE],
+});
 
 const controlStateSnapshot = createControlStateSnapshot({
   getStatus: statusSnapshot, loadSettings: loadSettingsOrReport,
