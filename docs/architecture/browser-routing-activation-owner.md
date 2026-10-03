@@ -1,9 +1,9 @@
 # Browser routing activation owner
 
-- Status: Proposed bounded M2 extraction; not merged or full Browser ownership
+- Status: Current merged bounded M2 ownership; not full Browser ownership
 - Owner: Desktop Browser maintainers
 - Last verified: 2026-10-03
-- Applies to: candidate based on development `main@a3785de9f56517451ab2cdcb325a3bdf7a1984f1`; not published v2.0.3
+- Applies to: merged #209; verified development `main@eb5a60743427286e5af5c6eafce48d4ddaa5b63d`; not published v2.0.3
 
 ## Ownership
 
@@ -45,7 +45,8 @@ seam adapted to the extracted owner. The new direct-owner queued-follower regres
 
 Full Node, architecture/governance, install-script, exact-tree syntax/secret, native Browser routing,
 MFA, strict proxy, retirement and performance/soak checks remain the local acceptance matrix.
-Actual macOS/Windows/Linux package checks on the eventual PR head are separate requirements.
+Exact-head macOS/Windows/Linux package checks passed for #209 and remain separate requirements
+for subsequent changes to this owner.
 These tests do not establish live Gateway behavior or change the installed application.
 
 No new production dependency node, IPC wire, persistent schema or package dependency is added.

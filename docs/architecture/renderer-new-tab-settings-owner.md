@@ -1,9 +1,9 @@
 # Renderer new-tab settings owner
 
-- Status: Proposed bounded M1 migration; not a released UI redesign or complete Renderer bootstrap
+- Status: Current merged bounded M1 owner; not a released UI redesign or complete Renderer bootstrap
 - Owner: Desktop Renderer maintainers
 - Last verified: 2026-10-03
-- Applies to: candidate based on development `main@f22e6d21d7de7755bec7060a4afea1c6ecdeea20`
+- Applies to: merged #213; verified development `main@eb5a60743427286e5af5c6eafce48d4ddaa5b63d`, not v2.0.3
 
 The new-tab address control now has one native feature entrypoint registered with
 the existing feature host. The former classic HTML script and its frozen

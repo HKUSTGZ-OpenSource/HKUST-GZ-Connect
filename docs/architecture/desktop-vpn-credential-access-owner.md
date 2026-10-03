@@ -1,9 +1,9 @@
 # Desktop VPN credential access owner
 
-- Status: Proposed bounded M3 ownership extraction; not a release or complete Main composition
+- Status: Current merged bounded M3 ownership; not a release or complete Main composition
 - Owner: Desktop Persistence maintainers
 - Last verified: 2026-10-03
-- Applies to: candidate based on validated `main@3bfc1a9a9ee22e361ee8aa2f00b255edc658a089`
+- Applies to: merged #210; verified development `main@eb5a60743427286e5af5c6eafce48d4ddaa5b63d`, not v2.0.3
 
 The existing Persistence public runtime creates `VpnCredentialAccessCoordinator`
 through one explicit factory. The coordinator lives beside the existing credential
@@ -32,9 +32,10 @@ Profile/credential, Engine lifecycle and exact-source/platform checks remain
 separate acceptance gates. No real account, installed application or network change.
 
 The three retired Main private-import edges are removed from the frozen inventory
-and its ceiling drops 113 -> 110. Main goes 819 -> 800 lines and 30 -> 27 direct
-dependencies, without a new production module or transitive graph growth. M3 is
-not complete: 800 is not below 800, 27 is not 24, and final composition remains open.
+and its ceiling drops 113 -> 110 at the #210 slice. Main goes 819 -> 800 lines and
+30 -> 27 direct dependencies without a new production module or transitive graph growth.
+That slice did not reach below-800/24; #212 later reaches that stage. Final M3 composition
+remains open; current totals belong to the implementation index, not these historical slice counts.
 
 Rollback the coordinator, public factory, Main wiring, tests and debt ratchet as a
 unit. The original store and memory-broker APIs remain available; no schema or

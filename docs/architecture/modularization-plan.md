@@ -2,7 +2,7 @@
 
 - Status: Active execution plan; M4 completed, M1/M2/M3/M5 open
 - Owner: architecture maintainers
-- Last verified: 2026-10-03 (`main@32fb83a4d21c96a9748b6c2785647ff419067cf1`)
+- Last verified: 2026-10-03 (`main@eb5a60743427286e5af5c6eafce48d4ddaa5b63d`)
 - Applies to: development `main` after published 2.0.3; merged source is not a new release
 - Supersedes: ad-hoc file-by-file extraction without an ownership receipt
 
@@ -20,11 +20,13 @@ exhausted: Main has 36 direct dependencies, 170 transitive dependencies and 1,71
 Renderer has 563 lines. At that baseline, the gate could not see the main Renderer page's ordered
 global-script graph; #110 later added a static boundary policy for new changes.
 
-At the verification commit, Renderer `app.js` is 412 lines, Campus Browser 1,137,
-Desktop Main 819 (30 direct / 44 effective / 170 transitive dependencies) and
+At the verification commit, Renderer `app.js` is 420 lines, Campus Browser 1,122,
+Desktop Main 730 (24 direct / 39 effective / 170 transitive dependencies) and
 `ec-engine.rs` 498. M4/#82 is closed through #148; the other
 four waves remain open. Counts are debt evidence, not a substitute for ownership/lifecycle gates.
 Per-wave size counts below are historical extraction receipts, not competing current totals.
+M3's intermediate below-800/24 stage is met; final 500-700/20 composition is not.
+The current static-JS debt inventory/cap is 105 and the frozen legacy Renderer list has 24 files.
 
 Primary concurrency hot spots:
 
@@ -73,12 +75,12 @@ HTML scripts and their two frozen `window.*` exports in favor of one explicit fe
 entrypoint. It keeps the existing drawer, diagnostics, focus trap and Reduced Motion behavior;
 other legacy script-order and bootstrap responsibilities keep M1 open.
 
-The proposed [new-tab settings owner](renderer-new-tab-settings-owner.md) removes one classic
+The merged #213 [new-tab settings owner](renderer-new-tab-settings-owner.md) removes one classic
 HTML script and global exception in favor of the native feature host with exact listener and
 late-result retirement. IDs, shared styling and Main save authority stay unchanged. This is
 global/dependency debt reduction, not a claim that `app.js` becomes smaller or M1 is complete.
 
-The proposed [browser-data settings owner](renderer-browser-data-settings-owner.md) retires
+The merged #214 [browser-data settings owner](renderer-browser-data-settings-owner.md) retires
 one further classic script/global with two-click confirmation and language cancellation
 unchanged. The native host owns exact listener cleanup and late presentation retirement;
 Main still owns the submitted clear. This does not add a clear policy or close M1.
@@ -142,7 +144,7 @@ and native keyboard shortcut dispatch into the existing Toolbar module. Browser 
 1,137 lines; Toolbar is 262 lines and Main dependencies do not grow. Page events and routing
 activation still need separate M2 ownership work.
 
-The proposed [routing activation owner](browser-routing-activation-owner.md) moves the Browser's
+The merged #209 [routing activation owner](browser-routing-activation-owner.md) moves the Browser's
 readiness admission and single-flight configure/resume record beside the existing Session owner.
 PAC/request-gate authority and route semantics stay unchanged; window cleanup resets only the
 coordination record. This adds no production dependency node and does not complete page-event
@@ -198,8 +200,8 @@ adaptation and settings-read feedback into the existing Runtime. Main falls to
 legacy journal recovery, its blocked/retry state, mutation dispatch and recovery
 feedback into that same Runtime. At that historical slice Main falls to 1,008 lines,
 32 direct / 46 effective dependencies, with 170 transitive dependencies unchanged.
-The first-stage dependency target was still open at that slice; the current 819-line/30-dependency
-root meets that first stage. The below-800/24 and final composition stages remain open.
+The first-stage dependency target was still open at that slice. Later #212 reaches the
+intermediate below-800/24 stage; the current 730-line/24-dependency root remains above final composition.
 
 The follow-on connectivity-operation seam extends the existing
 [Connection operation owner](desktop-connection-operation-owner.md) with recovery
@@ -233,24 +235,24 @@ resource source adaptation and ID-only open transactions into the existing Resou
 Main falls from 831 to 819 lines without a new dependency node or changed route authority.
 The next M3 size and dependency targets remain open.
 
-The proposed [VPN credential access owner](desktop-vpn-credential-access-owner.md) places
+The merged #210 [VPN credential access owner](desktop-vpn-credential-access-owner.md) places
 presence checks, process-memory selection, revision-scoped clearing and canonical validation
 behind the existing Persistence public runtime. Main falls to 800 lines / 27 direct dependencies;
 three private-import exceptions retire and the debt ceiling drops to 110. Existing protected
 storage priority, Profile binding and zeroization remain unchanged; M3 is not complete.
 
-The proposed [Browser request-security boundary](browser-request-security-boundary.md) moves
+The merged #211 [Browser request-security boundary](browser-request-security-boundary.md) moves
 application certificate/proxy challenge dispatch through the existing Browser Manager entrypoint.
 Main keeps event registration and falls to 776 lines / 26 direct dependencies; actual consent,
 proxy credentials and their teardown remain separate owners. No new policy, public import-debt
 exception or global network behavior is added; M3's 24-dependency/final targets remain open.
 
-The proposed [proxy access composition](desktop-proxy-access-composition.md) constructs the
+The merged #212 [proxy access composition](desktop-proxy-access-composition.md) constructs the
 unchanged encrypted store and generation/sidecar owner through the Persistence public entrypoint.
-Main falls to 767 lines / 24 direct dependencies and private-edge debt to 108. Those candidate
+Main falls to 767 lines / 24 direct dependencies and private-edge debt to 108. Those merged-slice
 metrics meet the intermediate below-800/24 stage, not final 500-700/20 composition or M5 acceptance.
 
-The proposed [ready-startup sequence](desktop-ready-startup-owner.md) moves ordered
+The merged #215 [ready-startup sequence](desktop-ready-startup-owner.md) moves ordered
 Profile/storage recovery, startup presentation and service admission into the existing App
 startup module. Obsolete composition bindings retire; Main falls to 730 lines while
 24 direct/170 transitive dependencies remain. Exact downward budgets and three private-edge
@@ -316,8 +318,8 @@ explicitly not promoted to complete by this coverage check.
 The static-JS ratchet now rejects new resolved cross-module bypasses against 124 exact legacy
 edges at `main@381c5f29`. Declaring the existing shared campus-route contract public reduces
 the inventory to 116. Merged #184 Routing coordination lowers it to 115 and #185 certificate
-entrypoint to 113, without new public policy or budget expansion. The current inventory/hard
-cap is 113; dynamic Renderer and Rust visibility remain separate M5 work.
+entrypoint to 113, without new public policy or budget expansion. Later #210/#212/#215 lower
+the inventory/hard cap to 105. Dynamic Renderer and Rust visibility remain separate M5 work.
 
 - Root Desktop test debt is zero; keep tests in `test/unit/<domain>`, `test/contracts` or
   `test/integrations` and reject new root-test debt.
