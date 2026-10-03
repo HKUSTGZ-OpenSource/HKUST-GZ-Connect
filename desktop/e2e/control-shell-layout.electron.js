@@ -166,6 +166,39 @@ async function exerciseNewTabSettings(window) {
   await window.webContents.executeJavaScript(`document.getElementById('browserNewTabStatus').textContent = ''`);
 }
 
+async function exerciseBrowserDataSettings(window) {
+  const result = await window.webContents.executeJavaScript(`(async () => {
+    const button = document.getElementById('clearBrowserData');
+    const status = document.getElementById('browserDataStatus');
+    const counts = () => window.api.fixtureBrowserDataClearCount();
+    const legacyGlobal = typeof window.browserDataSettings;
+    const initial = await counts();
+    button.focus(); button.click();
+    const armed = { count: await counts(), message: status.textContent, focused: document.activeElement === button };
+    document.dispatchEvent(new Event('app-locale-changed'));
+    const reset = { count: await counts(), message: status.textContent };
+    button.click();
+    const rearmed = await counts();
+    button.click();
+    for (let attempt = 0; attempt < 100 && button.disabled; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    const complete = { count: await counts(), message: status.textContent, disabled: button.disabled };
+    document.dispatchEvent(new Event('app-locale-changed'));
+    return { initial, armed, reset, rearmed, complete, legacyGlobal };
+  })()`);
+  assert.equal(result.armed.count, result.initial, 'first click cannot clear even synthetic browser data');
+  assert.equal(result.legacyGlobal, 'undefined', 'native clear owner cannot retain a classic global');
+  assert.equal(result.armed.focused, true, 'clear confirmation must retain focus');
+  assert.ok(result.armed.message, 'the existing confirmation hint must remain');
+  assert.equal(result.reset.count, result.initial);
+  assert.equal(result.reset.message, '', 'locale change must disarm and clear the hint');
+  assert.equal(result.rearmed, result.initial, 'a new first click must only rearm confirmation');
+  assert.equal(result.complete.count, result.initial + 1, 'only one confirmed synthetic clear may execute');
+  assert.equal(result.complete.disabled, false);
+  assert.ok(result.complete.message, 'completion feedback must remain visible');
+}
+
 async function addWebsiteSnapshot(window) {
   return window.webContents.executeJavaScript(`(() => {
     document.getElementById('addWebsite').click();
@@ -730,6 +763,8 @@ async function main() {
       `${label}: notification drawer overflows horizontally`);
       await capture(window, output, `${label}-settings`);
       await exerciseNewTabSettings(window);
+      await exerciseBrowserDataSettings(window);
+      await capture(window, output, `${label}-browser-data`);
     }
 
     if (realCatalog) {

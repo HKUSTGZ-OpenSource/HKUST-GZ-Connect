@@ -78,6 +78,11 @@ HTML script and global exception in favor of the native feature host with exact 
 late-result retirement. IDs, shared styling and Main save authority stay unchanged. This is
 global/dependency debt reduction, not a claim that `app.js` becomes smaller or M1 is complete.
 
+The proposed [browser-data settings owner](renderer-browser-data-settings-owner.md) retires
+one further classic script/global with two-click confirmation and language cancellation
+unchanged. The native host owns exact listener cleanup and late presentation retirement;
+Main still owns the submitted clear. This does not add a clear policy or close M1.
+
 1. Add an explicit Renderer bootstrap and a checked feature registry.
 2. Freeze the list of existing `window.*` feature exports; CI rejects new ones.
 3. Give each feature one public entrypoint with injected dependencies.

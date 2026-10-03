@@ -491,7 +491,7 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     '/renderer/certificate-manager.js',
     '/renderer/group-dialog.js',
     '/renderer/campus-service-workspace.js',
-    '/renderer/browser-data-settings.js',
+    '/renderer/features/browser-data-settings/index.mjs',
     '/renderer/proxy-auth-migration.js',
     '/renderer/i18n.js',
     '/renderer/design-tokens.css',
@@ -578,7 +578,6 @@ function verifyPackage({ resourcesArgument, platform = process.platform, archite
     'routing-manager', 'certificate-manager', 'group-dialog',
     'proxy-auth-migration',
     'campus-category-stacks', 'campus-service-workspace',
-    'browser-data-settings',
   ]) {
     const featureScript = packagedIndex.indexOf(`src="${feature}.js"`);
     const appScript = packagedIndex.indexOf('src="app.js"');

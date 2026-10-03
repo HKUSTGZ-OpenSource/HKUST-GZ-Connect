@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { start } = require('../../../renderer/browser-data-settings');
+const { create } = require('../../../renderer/features/browser-data-settings/index.mjs');
 
 function fixture(result = { ok: true }, onClearState = () => {}) {
   const listeners = new Map();
@@ -11,18 +11,21 @@ function fixture(result = { ok: true }, onClearState = () => {}) {
     disabled: false,
     textContent: '',
     addEventListener: (name, handler) => listeners.set(name, handler),
+    removeEventListener: name => listeners.delete(name),
   };
   const status = { textContent: '' };
   let calls = 0;
-  start({
+  const feature = create({
     api: { clearBrowserData: async () => { calls += 1; return result; } },
     document: {
       getElementById: (id) => id === 'clearBrowserData' ? button : status,
       addEventListener: (name, handler) => documentListeners.set(name, handler),
+      removeEventListener: name => documentListeners.delete(name),
     },
     translate: (key) => key,
     onClearState,
   });
+  assert.equal(feature.start(), true);
   return { button, status, listeners, documentListeners, get calls() { return calls; } };
 }
 
