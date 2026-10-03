@@ -38,7 +38,7 @@ const {
 const { createT, effectiveLocale } = require('./lib/platform/i18n/i18n');
 const { RoutingPolicyCoordinator, RoutingPolicyTransactionQueue } = require('./lib/routing/rules/routing-policy-transaction');
 const { stopEngineAfterBrowserSuspend } = require('./lib/switching/effects/browser-engine-barrier');
-const { ConnectionStateMachine, ConnectionWaitRegistry, ConnectionOperationCoordinator, projectConnectionStatus } = require('./lib/connection/state/connection-state-machine');
+const { ConnectionStateMachine, ConnectionWaitRegistry, ConnectionOperationCoordinator, ConnectionStatusRuntime } = require('./lib/connection/state/connection-state-machine');
 // The campus browser is intentionally constrained to the application's
 // proxy/PAC boundary. WebRTC data channels do not require camera or microphone
 // permission and Chromium may otherwise send ICE/STUN UDP directly, bypassing
@@ -153,21 +153,18 @@ connectionWaitRegistry.observe(connectionState.snapshot());
 // report a timeout while that same, still-current attempt can legitimately
 // reach listener_ready.
 const BROWSER_CONNECTION_READY_TIMEOUT_MS = 75_000;
-let connectedAt = null;
 let telemetryCoordinator = null;
-let state = {
-  clientIp: null,
-  dnsMode: 'unknown',
-  lastError: null, failureCode: null, failureKind: 'none',
-  settingsError: null,
-  recoveryError: null,
-  notice: null,
-  browserNotice: null,
-  diagnosticNotice: null,
-  pacUrl: '',
-};
-function statusSnapshot() { return projectConnectionStatus(state, connectionState.presentation(), connectedAt); }
-function reportLogFailure() { if (!state.diagnosticNotice) { state.diagnosticNotice = t('error.logUnavailable'); emit(); } }
+const connectionStatus = new ConnectionStatusRuntime({
+  connectionState, waitRegistry: connectionWaitRegistry, getPacUrl: pacUrl,
+  getShell: () => desktopShell, getLocale: () => locale,
+  getUpdate: () => updateNotifications?.snapshot(), translate: (key) => t(key),
+  clearCapabilities: () => activeSchoolProfile.clearCapabilitySnapshot(),
+  getTelemetry: () => telemetryCoordinator, now: () => Date.now(),
+  isEngineCurrent: (generation, token) => activeEngineContextCurrent(generation, token),
+});
+const state = connectionStatus.state;
+function statusSnapshot() { return connectionStatus.snapshot(); }
+function reportLogFailure() { return connectionStatus.reportLogFailure(); }
 const engineApplication = createEngineApplicationRuntime({ spawnProcess: spawn, authChallenge: {
   isContextCurrent: (token) => activeContextLease.isContextCurrent(token),
   publish: (challenge) => {
@@ -182,7 +179,7 @@ const routingPolicyTransactions = new RoutingPolicyTransactionQueue({ isContextC
 function runActiveContextTransaction(options) { return routingPolicyTransactions.run(activeContextLease.captureContext(), options); }
 let logWriter = null;
 function initializeLogWriter() {
-  logWriter = new BufferedLogWriter(LOG, { onError: reportLogFailure, onRecovered: () => { if (state.diagnosticNotice) { state.diagnosticNotice = null; emit(); } } });
+  logWriter = new BufferedLogWriter(LOG, { onError: reportLogFailure, onRecovered: () => connectionStatus.reportLogRecovered() });
 }
 const proxyAccess = DesktopPersistenceRuntime.createProxyAccess({
   credentialStore: { filePath: PROXY_CREDENTIAL, safeStorage, platform: process.platform },
@@ -290,16 +287,7 @@ function nativeResourcePath(kind) {
 }
 function enginePath() { return nativeResourcePath('ec-engine'); }
 function gatewayProbePath() { return nativeResourcePath('ec-gateway-probe'); }
-function emit() {
-  state.pacUrl = pacUrl();
-  connectionWaitRegistry.observe(connectionState.snapshot());
-  // locale rides along so a language change reaches the renderer without a
-  // separate channel; update rides along so an automatic check that finds a
-  // new release surfaces without waiting for a full refresh. get-state stays
-  // the source of truth on full refreshes.
-  desktopShell?.send('status', { ...statusSnapshot(), locale, update: updateNotifications?.snapshot() || null });
-  desktopShell?.updateTray();
-}
+function emit() { return connectionStatus.emit(); }
 
 // The gateway permits one session per account. Stop an orphaned independent
 // engine before starting the new owned child.
@@ -308,12 +296,7 @@ function killStrayEngines(resolvedEnginePath) {
     executablePath: resolvedEnginePath, ownerFile: ENGINE_OWNER });
 }
 
-function clearConnectionPresentation() {
-  connectedAt = null;
-  state.clientIp = null;
-  state.dnsMode = 'unknown'; activeSchoolProfile.clearCapabilitySnapshot();
-  telemetryCoordinator?.stop();
-}
+function clearConnectionPresentation() { return connectionStatus.clear(); }
 // ConnectivityRecovery stores these callbacks; app-ready starts the monitor
 // only after the operation owner below has been constructed.
 const connectivityRecovery = new ConnectivityRecovery({
@@ -357,7 +340,7 @@ async function connect(isRetry = false, expectedIntent = null) {
 }
 const engineTermination = engineApplication.createTermination({
   connectionState,
-  getPresentation: () => state, getConnectedAt: () => connectedAt, getTranslator: () => t,
+  getPresentation: () => state, getConnectedAt: () => connectionStatus.connectedAt, getTranslator: () => t,
   now: () => Date.now(),
   cleanupProxyAccess: DesktopPersistenceRuntime.cleanupProxyAccessForEngineClose,
   clearCredential: clearActiveProxyCredential, removeSidecar: removeExternalProxySidecar,
@@ -392,7 +375,7 @@ const engineAttempts = engineApplication.createAttempt({
   activeEngineContextCurrent, getBrowser: () => campusBrowserManager, revokeEngineServing,
   handleEngineExitBoundary, handleEngineClose,
   contextLease: { capture: options => activeContextLease.capture(options) },
-  onFirstConnected: (generation, token) => { connectedAt = Date.now(); telemetryCoordinator.start(generation, token); },
+  onFirstConnected: (generation, token) => connectionStatus.firstConnected(generation, token),
 });
 async function connectOnce(isRetry, intent) { return engineAttempts.run(isRetry, intent); }
 
@@ -664,18 +647,14 @@ telemetryCoordinator = new ConnectionTelemetryCoordinator({
   isConnected: () => connectionState.isConnected(),
   isEngineCurrent: activeEngineContextCurrent,
   isVisible: () => desktopShell.isVisible(),
-  getConnectedAt: () => connectedAt,
+  getConnectedAt: () => connectionStatus.connectedAt,
   send: (snapshot) => desktopShell.send('telemetry', snapshot),
   getAutoReconnect: () => loadSettingsOrReport().autoReconnect,
   isDesiredConnected: () => connectionState.snapshot().desiredConnected,
   reconnect: (generation, token) => activeEngineContextCurrent(generation, token)
     ? reconnect(generation)
     : Promise.resolve({ ok: false, stale: true }),
-  onRecovering: (generation, token) => {
-    if (!activeEngineContextCurrent(generation, token)) return;
-    state.lastError = t('error.tunnelRecovering');
-    emit();
-  },
+  onRecovering: (generation, token) => connectionStatus.reportRecovering(generation, token),
 });
 app.on('second-instance', () => desktopShell.showWindow());
 const browserRequestSecurity = CampusBrowserManager.createRequestSecurityBoundary({

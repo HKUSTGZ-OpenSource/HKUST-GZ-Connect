@@ -7,6 +7,7 @@ const test = require('node:test');
 const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
 const persistence = fs.readFileSync(require.resolve('../../../lib/persistence/runtime/desktop-persistence-runtime'), 'utf8');
 const startupOwner = fs.readFileSync(require.resolve('../../../lib/app/startup/multi-school-startup-runtime'), 'utf8');
+const statusOwner = fs.readFileSync(require.resolve('../../../lib/connection/state/connection-recovery-presentation'), 'utf8');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
 const shellSource = fs.readFileSync(
@@ -85,13 +86,19 @@ test('a startup PAC failure does not hide an earlier recovery error', () => {
 
 test('settings, recovery, browser, and log outcomes have separate domains', () => {
   const snapshot = section('function statusSnapshot()', 'const engineApplication');
-  assert.match(snapshot, /projectConnectionStatus\(state, connectionState\.presentation\(\), connectedAt\)/);
-  assert.match(source, /settingsError: null/);
-  assert.match(source, /recoveryError: null/);
-  assert.match(source, /diagnosticNotice: null/);
+  assert.match(snapshot, /connectionStatus\.snapshot\(\)/);
+  assert.match(source, /const connectionStatus = new ConnectionStatusRuntime\(/);
+  assert.match(source, /const state = connectionStatus\.state;/);
+  assert.match(statusOwner, /projectConnectionStatus\(\s*this\.#state, this\.#effects\.connectionState\.presentation\(\), this\.#connectedAt/);
+  assert.match(statusOwner, /settingsError: null/);
+  assert.match(statusOwner, /recoveryError: null/);
+  assert.match(statusOwner, /diagnosticNotice: null/);
   assert.match(source, /new BufferedLogWriter\(LOG, \{ onError: reportLogFailure, onRecovered:/);
-  assert.match(source, /state\.diagnosticNotice = t\('error\.logUnavailable'\)/);
-  assert.match(source, /onRecovered:[^\n]+state\.diagnosticNotice = null; emit\(\)/);
+  assert.match(source, /connectionStatus\.reportLogFailure\(\)/);
+  assert.match(statusOwner, /this\.#state\.diagnosticNotice = this\.#effects\.translate\('error\.logUnavailable'\)/);
+  assert.match(source, /onRecovered: \(\) => connectionStatus\.reportLogRecovered\(\)/);
+  assert.match(statusOwner, /this\.#state\.diagnosticNotice = null;\s*this\.emit\(\)/);
+  assert.doesNotMatch(source, /(?:let connectedAt|state\.diagnosticNotice\s*=|state\.pacUrl\s*=)/);
   assert.doesNotMatch(source, /logWriter\.(?:flush|close)\(\)\.catch\(\(\) => \{\}\)/);
   assert.match(source, /onWindowError:[\s\S]*?state\.settingsError =/);
 });

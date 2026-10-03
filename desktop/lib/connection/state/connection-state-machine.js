@@ -2,7 +2,7 @@
 
 const { planReconnect } = require('./reconnect-policy');
 const { ConnectionWaitRegistry } = require('./connection-wait-registry');
-const { connectionRecoveryPresentation } = require('./connection-recovery-presentation');
+const { projectConnectionStatus, ConnectionStatusRuntime } = require('./connection-recovery-presentation');
 
 const CONNECTION_PHASE = Object.freeze({
   IDLE: 'idle',
@@ -32,17 +32,6 @@ function connectionPresentation(snapshot) {
     phase,
     connected: phase === CONNECTION_PHASE.CONNECTED,
     connecting: CONNECTING_PHASES.has(phase),
-  });
-}
-
-function projectConnectionStatus(state, presentation, connectedAt) {
-  const notice = [state?.notice, state?.browserNotice, state?.diagnosticNotice]
-    .filter(Boolean).join('\n') || null;
-  const lastError = [state?.lastError, state?.settingsError, state?.recoveryError]
-    .filter(Boolean).join('\n') || null;
-  return Object.freeze({
-    ...state, notice, lastError, ...presentation, connectedAt,
-    recovery: connectionRecoveryPresentation({ ...state, lastError }, presentation),
   });
 }
 
@@ -559,4 +548,5 @@ module.exports = {
   ConnectionOperationCoordinator,
   connectionPresentation,
   projectConnectionStatus,
+  ConnectionStatusRuntime,
 };

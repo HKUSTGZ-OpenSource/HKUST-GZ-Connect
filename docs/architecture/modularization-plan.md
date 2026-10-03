@@ -268,6 +268,12 @@ registration closure behind the existing IPC suite while delegating unchanged se
 checks. Main reaches 20 direct imports at 720 lines; one private-edge exception retires. The
 500–700-line final composition outcome and full M5 remain outstanding.
 
+The proposed [Connection status owner](desktop-connection-status-owner.md) moves
+the display record, connection timestamp and status/log/recovery effects into the
+existing presentation module, preserving the FSM's authority. Main reaches 699
+lines/20 direct imports without a new production module or graph edge. Numeric
+targets alone do not finish the residual composition/ownership acceptance.
+
 Move remaining settings-surface coordination, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 
