@@ -13,7 +13,7 @@ const tower = fs.readFileSync(path.join(renderer, 'features/control-tower/index.
 const proxyFeature = fs.readFileSync(path.join(renderer, 'proxy-auth-migration.js'), 'utf8');
 const integrationFeature = ['features/integration-center/lifecycle.mjs', 'features/integration-center/model.mjs',
   'features/integration-center/controller.mjs', 'features/integration-center/lifetime.mjs',
-  'features/integration-center/feedback.mjs']
+  'features/integration-center/feedback.mjs', 'features/integration-center/routing-options.mjs']
   .map(file=>fs.readFileSync(path.join(renderer,file),'utf8')).join('\n');
 const main = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
 const integrationSuite = fs.readFileSync(
@@ -92,7 +92,8 @@ test('bilingual help states compatibility default, local access implications, an
 test('Clash credentials never cross into renderer JavaScript', () => {
   assert.match(html, /id="integrationList"/u);
   assert.doesNotMatch(html, /data-copy="clash"/u);
-  assert.match(integrationFeature, /api\.prepareIntegration\(\{ adapterId, action \}\)/u);
+  assert.match(integrationFeature, /api\.prepareIntegration\(routingOptions\.request\(adapterId, action\)\)/u);
+  assert.match(integrationFeature, /routingMode: mode/u);
   assert.match(integrationFeature, /api\.confirmIntegration\(\{ confirmationHandle: handle \}\)/u);
   assert.doesNotMatch(integrationFeature, /username|password|buildClashProxyYaml/u);
   assert.doesNotMatch(app, /buildClashProxyYaml|username:\s*.*Clash|password:\s*.*Clash/);

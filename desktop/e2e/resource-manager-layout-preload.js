@@ -427,7 +427,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   onOpenRoutingRules: () => {},
   listIntegrations: async () => ({ ok: true, integrations: integrationViews() }),
-  prepareIntegration: async ({ adapterId, action }) => {
+  prepareIntegration: async ({ adapterId, action, routingMode = 'rules-only' }) => {
     if (!integrationAdapters.includes(adapterId)) {
       return { ok: false, code: 'INTEGRATION_ADAPTER_UNAVAILABLE' };
     }
@@ -445,7 +445,8 @@ contextBridge.exposeInMainWorld('api', {
         byteLength: 512,
         ruleCount: 2,
         containsLocalProxyCredential: true,
-        warningCodes: ['INTEGRATION_LOCAL_CREDENTIAL_PRIVATE'],
+        warningCodes: ['INTEGRATION_LOCAL_CREDENTIAL_PRIVATE',
+          ...(routingMode === 'gateway-default' ? ['INTEGRATION_GATEWAY_DEFAULT_ROUTING'] : [])],
       },
     };
   },

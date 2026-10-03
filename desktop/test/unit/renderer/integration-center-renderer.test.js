@@ -132,6 +132,23 @@ test('list renders both non-destructive exporters and their bounded actions', as
   assert.equal(f.elements.get('integrationError').textContent, '');
 });
 
+test('gateway routing selection is sent as intent only and survives a render without secrets', async () => {
+  const f = fixture(); f.feature.start(); await f.feature.refresh();
+  const row = f.elements.get('integrationList').children[0];
+  const select = row.children[0].children.at(-1).children[1];
+  assert.equal(select.value, 'rules-only');
+  select.value = 'gateway-default'; select.listeners.get('change')();
+  f.document.activeElement = select;
+  await f.feature.refresh();
+  const replacement = f.elements.get('integrationList').children[0].children[0].children.at(-1).children[1];
+  assert.equal(replacement.value, 'gateway-default');
+  assert.equal(f.document.activeElement, replacement);
+  await f.feature.prepare('clash_mihomo_yaml', 'copy');
+  assert.deepEqual(f.calls.find(([name]) => name === 'prepare')[1], {
+    adapterId: 'clash_mihomo_yaml', action: 'copy', routingMode: 'gateway-default',
+  });
+});
+
 test('one unavailable exporter does not hide an independent supported exporter', async () => {
   const unavailable = { ...view('clash_mihomo_yaml'), compatibilityState: 'unavailable',
     bindingState: 'unavailable' };

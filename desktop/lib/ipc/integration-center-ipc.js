@@ -4,6 +4,7 @@ const { allowedKeys, boundedString, enumValue } = require('./ipc-guard');
 const {
   ACTIVE_INTEGRATION_ADAPTER_IDS,
   INTEGRATION_ACTIONS,
+  validateIntegrationRoutingMode,
 } = require('../integrations/integration-schema');
 
 const PUBLIC_CODES = new Set([
@@ -23,10 +24,16 @@ const PUBLIC_CODES = new Set([
 ]);
 
 function prepareRequest(value) {
-  const source = allowedKeys(value, ['adapterId', 'action']);
+  const source = allowedKeys(value, ['adapterId', 'action', 'routingMode']);
+  const routing = {};
+  if (Object.hasOwn(source, 'routingMode')) {
+    if (source.adapterId !== 'clash_mihomo_yaml') throw new TypeError('集成分流方式无效');
+    routing.routingMode = validateIntegrationRoutingMode(source.adapterId, source.routingMode);
+  }
   return Object.freeze({
     adapterId: enumValue(source.adapterId, ACTIVE_INTEGRATION_ADAPTER_IDS, '集成类型无效'),
     action: enumValue(source.action, INTEGRATION_ACTIONS, '集成操作无效'),
+    ...routing,
   });
 }
 
