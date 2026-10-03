@@ -482,7 +482,7 @@ const controlStateSnapshot = createControlStateSnapshot({
   getStatus: statusSnapshot, loadSettings: loadSettingsOrReport,
   hasCredential: hasCredentialForCurrentSession,
   hasAccountIdentity: () => persistenceRuntime.hasAccountIdentity() ||
-    hasOneShotCredential() || engineSupervisor.hasActive,
+    vpnCredentialAccess.hasOneShot() || engineSupervisor.hasActive,
   getPacUrl: pacUrl, getLocale: () => desktopLocale.locale, platform: process.platform,
   getVersion: () => app.getVersion(), getUpdate: () => updateNotifications.snapshot(),
   getResources: safeCampusResourceLibrary, getResourceGroups: () => resourceLibraryRuntime.listGroups(), getFallbackResources: () => safeCampusResourceLibrary({ customResources: [] }),

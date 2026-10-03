@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const vm = require('node:vm');
 const {
   CustomGatewayConfirmationOwner,
 } = require('../../../lib/profiles/onboarding/custom-gateway-onboarding');
@@ -87,18 +88,30 @@ test('real Windows credential adapters retire projections and preserve bounded l
     safeStorage: { isEncryptionAvailable: () => { throw new Error('metadata must not probe storage'); } },
   });
   t.after(() => access.clear());
+  const mainSource = fs.readFileSync(path.join(DESKTOP, 'main.js'), 'utf8');
+  const expression = mainSource.match(/hasAccountIdentity:\s*(\(\) =>[\s\S]*?),\s*getPacUrl:/u)?.[1];
+  assert.ok(expression);
+  const mainIdentity = vm.runInNewContext(`(${expression})`, {
+    persistenceRuntime: { hasAccountIdentity: () => persistent }, vpnCredentialAccess: access,
+    engineSupervisor: { get hasActive() { return engine; } },
+  });
   const readSettings = () => { reads++; return { username: 'fixture-visible-account',
     get password() { throw new Error('metadata must not read a password'); } }; };
   assert.deepEqual(access.loginAccount(readSettings), { ok: true, username: 'fixture-visible-account' });
   persistent = true;
+  assert.equal(mainIdentity(), true);
   assert.deepEqual(access.loginAccount(readSettings), { ok: false, username: '' });
   persistent = false;
   access.stage({ profileId: profile, username: 'fixture-memory-account', password: 'fixture-memory-input' });
+  assert.equal(mainIdentity(), true, 'actual Main callback must accept current Profile memory identity');
+  assert.equal(access.hasOneShot(), true, 'state projection must not consume staged memory');
   assert.deepEqual(access.loginAccount(readSettings), { ok: false, username: '' });
   profile = 'fixture-profile-b';
   engine = true;
+  assert.equal(mainIdentity(), true);
   assert.deepEqual(access.loginAccount(readSettings), { ok: false, username: '' });
   engine = false;
+  assert.equal(mainIdentity(), false);
   assert.deepEqual(access.loginAccount(readSettings), { ok: true, username: 'fixture-visible-account' });
   assert.equal(reads, 2);
   assert.deepEqual(access.loginAccount(() => { throw new Error('synthetic settings unavailable'); }),
