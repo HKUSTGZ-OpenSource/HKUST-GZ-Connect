@@ -589,6 +589,24 @@ class CampusBrowserManager {
     return this.browser;
   }
 
+  // Control/tray commands include presentation feedback. Keep it under the
+  // same Manager epoch as opening, including the outer await continuation.
+  // Resource-library opens retain their original lower-level open contract.
+  async openWithFeedback(rawRequest) {
+    const epoch = this.#openEpoch;
+    try {
+      this.reportError(null);
+      if (epoch !== this.#openEpoch) return { ok: false, stale: true };
+      const result = await this.open(rawRequest);
+      if (epoch !== this.#openEpoch) return { ok: false, stale: true };
+      if (result?.ok) this.reportError(null);
+      return epoch === this.#openEpoch ? result : { ok: false, stale: true };
+    } catch (error) {
+      if (epoch !== this.#openEpoch) return { ok: false, stale: true };
+      throw error;
+    }
+  }
+
   async open(rawRequest) {
     const epoch = this.#openEpoch;
     const translate = this.getTranslator();

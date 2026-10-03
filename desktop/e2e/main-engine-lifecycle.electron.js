@@ -10,6 +10,22 @@ const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const { app, BrowserWindow } = require('electron');
+const { CampusBrowserManager } = require('../lib/browser/session/campus-browser-manager');
+
+// Inject only a post-completion retirement, in this isolated test process. The
+// original Manager performs the real open; no production test switch is added.
+const originalManagerOpen = CampusBrowserManager.prototype.open;
+CampusBrowserManager.prototype.open = function openWithRetirementInjection(request) {
+  const opening = originalManagerOpen.call(this, request);
+  if (request?.url !== 'https://feedback-retirement.example.invalid/') return opening;
+  return opening.then(result => {
+    if (result?.ok) {
+      this.close();
+      this.reportError('synthetic replacement Browser feedback');
+    }
+    return result;
+  });
+};
 
 const TEST_TIMEOUT_MS = 25_000;
 const WAIT_TIMEOUT_MS = 10_000;
@@ -232,6 +248,16 @@ async function run() {
   assert.equal(attemptCount(), 3, 'fresh Browser open must not start another Engine generation');
   assert.equal((await invoke(control, 'window.api.getState()')).connectedAt, stillConnected.connectedAt,
     'fresh Browser open must not replace the serving generation timestamp');
+  assert.deepEqual(await invoke(control, `window.api.openCampusBrowser({
+    url: 'https://feedback-retirement.example.invalid/',
+  })`), { ok: false, stale: true },
+  'post-completion retirement must fence the outer Control feedback continuation');
+  const feedbackAfterRetirement = await invoke(control, 'window.api.getState()');
+  assert.ok(feedbackAfterRetirement.notice.includes('synthetic replacement Browser feedback'),
+    'a retired open cannot erase replacement-context feedback');
+  assert.equal(feedbackAfterRetirement.connected, true);
+  assert.equal(feedbackAfterRetirement.connectedAt, stillConnected.connectedAt);
+  assert.equal(BrowserWindow.getAllWindows().filter(window => window !== control).length, 0);
   assert.equal((await invoke(control, 'window.api.disconnect()')).ok, true);
   assert.equal((await invoke(control, 'window.api.getState()')).connectedAt, null);
   await waitFor(async () => !await loopbackConnects(port), 'held-generation listener release');

@@ -88,6 +88,156 @@ function deferredOpen() {
   return { promise, resolve, reject };
 }
 
+test('user-command feedback clears before open and after success without changing the result', async () => {
+  const f = fixture({ resolveRoute: () => ({ route: 'direct' }),
+    ensureConnected: () => { throw new Error('Direct must not need Engine'); } });
+  const original = f.manager.open.bind(f.manager);
+  let originalResult;
+  f.manager.open = async request => {
+    assert.deepEqual(f.errors, [null], 'initial clear precedes the original open');
+    originalResult = await original(request);
+    return originalResult;
+  };
+  const result = await f.manager.openWithFeedback('https://public.example.invalid/');
+  assert.equal(result, originalResult);
+  assert.deepEqual(result, { ok: true, url: 'https://public.example.invalid/', route: 'direct' });
+  assert.deepEqual(f.errors, [null, null]);
+});
+
+test('invalid requests and current connection or Browser failures keep their bounded feedback', async () => {
+  class FailedBrowser extends FakeBrowser {
+    async open() { throw new Error('synthetic Browser failure'); }
+  }
+  for (const [overrides, request] of [
+    [{}, 'file:///synthetic'],
+    [{ ensureConnected: async () => ({ ok: false, error: 'synthetic unavailable' }) }, 'https://campus.example.invalid/'],
+    [{ CampusBrowserClass: FailedBrowser }, 'about:blank'],
+  ]) {
+    const f = fixture(overrides);
+    const result = await f.manager.openWithFeedback(request);
+    assert.equal(result.ok, false);
+    assert.equal(typeof result.error, 'string');
+    assert.deepEqual(f.errors, [null, result.error]);
+  }
+});
+
+test('feedback after completed open is stale when its Browser lifetime retires before continuation', async () => {
+  const f = fixture(), original = f.manager.open.bind(f.manager);
+  f.manager.open = async request => {
+    const result = await original(request);
+    assert.equal(result.ok, true);
+    f.manager.close();
+    f.manager.reportError('replacement feedback');
+    return result;
+  };
+  assert.deepEqual(await f.manager.openWithFeedback(), { ok: false, stale: true });
+  assert.equal(f.manager.browser, null);
+  assert.deepEqual(f.errors, [null, 'replacement feedback']);
+});
+
+test('windowless retirement fences outer feedback for both late readiness outcomes', async () => {
+  for (const outcome of [{ ok: true }, { ok: false, error: 'synthetic unavailable' }]) {
+    const readiness = deferredOpen(), f = fixture({ ensureConnected: () => readiness.promise });
+    const pending = f.manager.openWithFeedback('https://campus.example.invalid/');
+    assert.equal(f.manager.browser, null);
+    assert.equal(await f.manager.closeForContextSwitch(), true);
+    f.manager.reportError('replacement feedback');
+    readiness.resolve(outcome);
+    assert.deepEqual(await pending, { ok: false, stale: true });
+    assert.equal(f.manager.browser, null);
+    assert.deepEqual(f.errors, [null, 'replacement feedback']);
+  }
+});
+
+test('current readiness rejection retains identity but retired outer rejection becomes stale', async () => {
+  for (const retire of [false, true]) {
+    const failure = new Error('synthetic readiness rejection');
+    const f = fixture({ ensureConnected: async () => { throw failure; } });
+    if (retire) {
+      const original = f.manager.open.bind(f.manager);
+      f.manager.open = async request => {
+        try { return await original(request); }
+        catch (error) {
+          f.manager.close();
+          f.manager.reportError('replacement feedback');
+          throw error;
+        }
+      };
+    }
+    const pending = f.manager.openWithFeedback('https://campus.example.invalid/');
+    if (retire) {
+      assert.deepEqual(await pending, { ok: false, stale: true });
+      assert.deepEqual(f.errors, [null, 'replacement feedback']);
+    } else {
+      await assert.rejects(pending, error => error === failure);
+      assert.deepEqual(f.errors, [null]);
+    }
+    assert.equal(f.manager.browser, null);
+  }
+});
+
+test('reentrant initial feedback retirement prevents Browser allocation', async () => {
+  const errors = [];
+  let manager;
+  ({ manager } = fixture({ reportError: message => {
+    errors.push(message);
+    if (message === null) manager.close();
+  } }));
+  assert.deepEqual(await manager.openWithFeedback(), { ok: false, stale: true });
+  assert.equal(manager.browser, null);
+  assert.deepEqual(errors, [null]);
+});
+
+test('feedback effects retain failures and reentrant terminal retirement cannot report success', async () => {
+  for (const failAt of [1, 2]) {
+    const failure = new Error('synthetic feedback failure');
+    let clears = 0;
+    const f = fixture({ reportError: message => {
+      if (message === null && ++clears === failAt) throw failure;
+    } });
+    await assert.rejects(f.manager.openWithFeedback(), error => error === failure);
+    assert.equal(f.manager.hasBrowser, failAt === 2);
+  }
+  const errors = [];
+  let manager, clears = 0;
+  ({ manager } = fixture({ reportError: message => {
+    errors.push(message);
+    if (message === null && ++clears === 2) {
+      manager.close();
+      manager.reportError('replacement feedback');
+    }
+  } }));
+  assert.deepEqual(await manager.openWithFeedback(), { ok: false, stale: true });
+  assert.equal(manager.browser, null);
+  assert.deepEqual(errors, [null, null, 'replacement feedback']);
+});
+
+test('lower-level resource opens preserve their original no-clear feedback contract', async () => {
+  const f = fixture();
+  assert.equal((await f.manager.open()).ok, true);
+  assert.deepEqual(f.errors, []);
+  assert.equal((await f.manager.openWithFeedback()).ok, true);
+  assert.deepEqual(f.errors, [null, null]);
+});
+
+test('retired feedback-effect exceptions cannot escape into a replacement context', async () => {
+  for (const failAt of [1, 2]) {
+    const errors = [], failure = new Error('synthetic retired feedback failure');
+    let manager, clears = 0;
+    ({ manager } = fixture({ reportError: message => {
+      errors.push(message);
+      if (message === null && ++clears === failAt) {
+        manager.close();
+        manager.reportError('replacement feedback');
+        throw failure;
+      }
+    } }));
+    assert.deepEqual(await manager.openWithFeedback(), { ok: false, stale: true });
+    assert.equal(manager.browser, null);
+    assert.equal(errors.at(-1), 'replacement feedback');
+  }
+});
+
 test('late campus readiness after a windowless context close cannot allocate a Browser', async () => {
   for (const outcome of [{ ok: true }, { ok: false, error: 'synthetic offline' }]) {
     const readiness = deferredOpen(), f = fixture({ ensureConnected: () => readiness.promise });
