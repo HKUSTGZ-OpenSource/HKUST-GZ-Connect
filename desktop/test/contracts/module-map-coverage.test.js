@@ -252,7 +252,13 @@ test('Main certificate dispatch uses the public Browser consent entrypoint', () 
   assert.deepEqual(moduleImportViolations(source, [['desktop/main.js', entry]]),
     { errors: [], violations: [] });
   const main = fs.readFileSync(path.join(root, 'desktop/main.js'), 'utf8');
-  assert.match(main, /require\('\.\/lib\/browser\/certificates\/certificate-controller'\)/u);
+  const managerEntry = 'desktop/lib/browser/session/campus-browser-manager.js';
+  assert.deepEqual(moduleImportViolations(source, [['desktop/main.js', managerEntry]]),
+    { errors: [], violations: [] });
+  assert.match(main, /require\('\.\/lib\/browser\/session\/campus-browser-manager'\)/u);
+  assert.match(main, /CampusBrowserManager\.createRequestSecurityBoundary\(/u);
+  const manager = fs.readFileSync(path.join(root, managerEntry), 'utf8');
+  assert.match(manager, /require\('\.\.\/certificates\/certificate-controller'\)/u);
   assert.doesNotMatch(main, /certificate-error-boundary/u);
   assert.doesNotMatch(main, /require\('\.\/lib\/browser\/certificates\/campus-certificate-trust'\)/u);
   assert.equal(fs.existsSync(path.join(root, retired)), false);

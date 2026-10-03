@@ -44,9 +44,6 @@ const {
   ensureProxyCredentialSidecar,
   externalProxyHelperPath,
 } = require('./lib/integrations/external-proxy-config');
-const {
-  CampusCertificateTrustStore, routeCertificateError,
-} = require('./lib/browser/certificates/certificate-controller');
 const { createT, effectiveLocale } = require('./lib/platform/i18n/i18n');
 const { registerTrustedIpcHandlers } = require('./lib/ipc/ipc-handlers');
 const { RoutingPolicyCoordinator, RoutingPolicyTransactionQueue } = require('./lib/routing/rules/routing-policy-transaction');
@@ -286,7 +283,7 @@ function proxyHelperPath() {
 function safeCampusResourceLibrary(settings = null) {
   return resourceLibraryRuntime.listLocalized(settings, locale);
 }
-const certificateTrustStore = new CampusCertificateTrustStore({
+const certificateTrustStore = CampusBrowserManager.createCertificateTrustStore({
   filePath: CAMPUS_CERTIFICATE_TRUST,
 });
 let serverCampusResources = activeSchoolProfile.mergeResourceLibrary([], []);
@@ -700,34 +697,13 @@ telemetryCoordinator = new ConnectionTelemetryCoordinator({
   },
 });
 app.on('second-instance', () => desktopShell.showWindow());
-app.on('certificate-error', (
-  event, webContents, url, error, certificate, callback, isMainFrame,
-) => {
-  // This exception path belongs only to untrusted pages rendered by the campus
-  // browser. The control window, the toolbar, and every unrelated Electron
-  // request retain Chromium's normal certificate handling.
-  routeCertificateError({
-    owned: campusBrowserManager.ownsWebContents(webContents),
-    isMainFrame,
-    event,
-    callback,
-    prompt: () => campusBrowserManager.handleCertificateError({
-      url, error, certificate, callback,
-    }),
-  });
+const browserRequestSecurity = CampusBrowserManager.createRequestSecurityBoundary({
+  getBrowser: () => campusBrowserManager,
+  getEngineGeneration: () => engineSupervisor.currentGeneration,
+  proxyAccess,
 });
-app.on('login', (event, webContents, _details, authInfo, callback) => {
-  // Chromium cannot authenticate SOCKS5 itself, so strict mode exposes an
-  // authenticated HTTP CONNECT frontend on the same loopback port. Only a
-  // page owned by the isolated campus browser, the exact current engine
-  // generation, and the exact Basic challenge from 127.0.0.1 may receive the
-  // in-memory credential. Control UI and arbitrary WebContents are excluded.
-  const generation = engineSupervisor.currentGeneration;
-  if (!campusBrowserManager.ownsWebContents(webContents) ||
-      !proxyAccess.matchesProxyChallenge(authInfo, generation)) return;
-  event.preventDefault();
-  proxyAccess.answerProxyChallenge(authInfo, generation, callback);
-});
+app.on('certificate-error', browserRequestSecurity.certificateError);
+app.on('login', browserRequestSecurity.proxyLogin);
 app.whenReady().then(() => {
   if (!profileSwitching.runtime) {
     assertActiveContextSwitchStartupClear({

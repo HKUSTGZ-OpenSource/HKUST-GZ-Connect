@@ -36,6 +36,37 @@ function routeCertificateError({
   return { handled: true, prompted: true };
 }
 
+// Application-level Browser request dispatch; consent and proxy credential
+// policy remain in their existing independent owners. No raw secret is held.
+class BrowserRequestSecurityBoundary {
+  constructor({ getBrowser, getEngineGeneration, proxyAccess } = {}) {
+    if ([getBrowser, getEngineGeneration].some(value => typeof value !== 'function') ||
+        !proxyAccess || ['matchesProxyChallenge', 'answerProxyChallenge']
+          .some(name => typeof proxyAccess[name] !== 'function')) {
+      throw new TypeError('Browser request security capabilities are invalid');
+    }
+    this.certificateError = (event, webContents, url, error, certificate, callback, isMainFrame) => {
+      // Control chrome and unrelated requests keep Chromium defaults; only an
+      // owned main frame may reach explicit consent, never a subresource.
+      return routeCertificateError({
+        owned: getBrowser().ownsWebContents(webContents), isMainFrame, event, callback,
+        prompt: () => getBrowser().handleCertificateError({ url, error, certificate, callback }),
+      });
+    };
+    this.proxyLogin = (event, webContents, _details, authInfo, callback) => {
+      // Chromium needs the strict loopback HTTP CONNECT challenge answered.
+      // Capture one generation and delegate exact challenge/pin checks to its
+      // credential owner; unowned pages never query or borrow credentials.
+      const generation = getEngineGeneration();
+      if (!getBrowser().ownsWebContents(webContents) ||
+          !proxyAccess.matchesProxyChallenge(authInfo, generation)) return;
+      event.preventDefault();
+      proxyAccess.answerProxyChallenge(authInfo, generation, callback);
+    };
+    Object.freeze(this);
+  }
+}
+
 function certificateTime(value, locale = 'zh', t = (key) => key) {
   const seconds = Number(value);
   if (!Number.isFinite(seconds) || seconds <= 0) return t('cert.unknown');
@@ -190,6 +221,7 @@ class CertificateController {
 }
 
 module.exports = {
+  BrowserRequestSecurityBoundary,
   CampusCertificateTrustStore,
   CertificateController,
   certificateTime,
