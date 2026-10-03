@@ -525,8 +525,8 @@ class CampusBrowser {
     const value = Number(port);
     if (!this.routingSuspended && !this.routingRequestsBlocked &&
         this.configuredPort === value && this.campusSession) return this.campusSession;
-    const current = this.routingActivationInFlight;
-    if (current) {
+    while (this.routingActivationInFlight) {
+      const current = this.routingActivationInFlight;
       await current.promise;
       if (!this.routingSuspended && !this.routingRequestsBlocked &&
           this.configuredPort === value && this.campusSession) return this.campusSession;
