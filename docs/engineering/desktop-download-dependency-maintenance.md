@@ -34,10 +34,17 @@ or a verified cross-platform replacement. Keep it separate from runtime Electron
 
 `desktop/test/contracts/packaging/builder-download-compatibility.test.js` invokes the actual
 installed builder in fresh child processes. All mirrors and proxies bind loopback; all artifacts
-are synthetic nonexecutables and caches use newly created temporary directories.
+are synthetic nonexecutables and caches use newly created temporary directories. Every child
+uses a unique synthetic artifact version: builder's global per-version lock otherwise lets an
+intentionally stalled negative experiment block an unrelated positive fixture or actual build.
+One concurrent full-suite run exposed this fixture-isolation failure; the fix separates identities
+without raising any deadline or changing production dependencies.
 
-The four checks cover valid SHA-256/cache reuse, mismatched SHA-256 rejection, actual proxy receipt,
-and bounded rejection of a stalled request. Process-local environment values are synthetic;
+The seven checks cover valid SHA-256/cache reuse, mismatched SHA-256 rejection, actual proxy receipt,
+bounded rejection of a stalled request, transient 503 retry, permanent 404 rejection and corrupted
+cache revalidation. The loopback proxy supports both absolute-form HTTP and CONNECT requests;
+it serves synthetic bytes locally and never forwards a connection to an external target.
+Process-local environment values are synthetic;
 installed Clash, system proxy, credentials, application data and school sessions are not accessed.
 
 Run from `desktop/`:
@@ -46,7 +53,8 @@ Run from `desktop/`:
 node --test test/contracts/packaging/builder-download-compatibility.test.js
 ```
 
-The existing 26.17.0/3.1.0 pair passed all four checks locally on macOS with Node 25.9.0.
+The existing 26.17.0/3.1.0 pair passed the initial four checks and the expanded seven-check
+contract locally on macOS with Node 25.9.0.
 The opt-in negative experiment is reproducible with:
 
 ```sh
@@ -57,6 +65,48 @@ The negative mode must fail proxy/deadline checks with the incompatible override
 normal validation command, an accepted configuration or a live-network acceptance result.
 Native Node 24 and Windows/Linux evidence, full final-tree gates and package acceptance remain
 separate requirements for any eventual dependency migration.
+
+## Isolated upstream migration evaluation
+
+The published npm package `electron-builder@27.0.0-alpha.9` was installed with scripts disabled
+in a newly created temporary directory, never into the product worktree. Its published integrity
+is `sha512-m8rWfMud2yvJJHWiB9mZN6kpb30nuw5QvqCqYs1BGLMk9sqSphs3UjhS9KWaLbkCYGp0CYm0aDFUx0BI0gLxWg==`.
+No upstream Git commit is asserted: registry metadata supplied no gitHead, and the matching GitHub
+release URL was unavailable. The package repository metadata points to the official builder project.
+
+The final temporary manifest uses all PR #205 devDependencies/overrides except the exact builder
+prerelease pin. Its lockfile SHA-256 is
+`2b2069a70b43c37f8bbf20e8587263fecd026d920dbbf1e43851a8e2e7475d23`.
+Electron resolves to 43.7.7, the download library to 5.1.0, and the old got/cacheable-request/
+http-cache-semantics chain is absent. Online npm audit reports zero findings for that temporary
+211-dependency graph; its lock records no dependency install scripts. This does not change the
+audit result or dependency declarations on the actual PR head.
+
+The expanded seven-check contract also passes against that temporary builder. Opt in using the
+absolute path of a newly created `hkust-builder27-evaluation.*` package root:
+
+```sh
+HKUST_TEST_BUILDER27_ROOT=/absolute/temporary/hkust-builder27-evaluation.example \
+  node --test test/contracts/packaging/builder-download-compatibility.test.js
+```
+
+This fixture uses the new vendor download helper's `options` shape and AbortSignal deadline in
+an internal test seam. It does not claim legacy Got download options remain compatible, or that
+arbitrary download options are accepted by the public CLI schema. The core test isolates the
+proxy environment from the real process, and enforces a parent watchdog for stalled downloads.
+
+The current product build configuration validates under the new builder, and its CommonJS
+afterPack function resolves successfully without invoking signing/credential effects. A separate
+minimal synthetic macOS arm64 application packaged with Electron 43.7.7, executed a CommonJS hook,
+contained the expected ASAR entries and launched to its completion marker using a temporary
+userData directory. That app had no production dependencies, Engine, network request or student
+data. Its generated bundle was moved to Trash after confirmed process exit and no open handles;
+it remains recoverable and no storage-space reclamation is asserted.
+
+These are macOS Node 25.9.0 compatibility findings, not full-app, Windows/Linux, Node 24, signing,
+installer, upgrade or published-release acceptance. ESM conversion, changed config/signing APIs,
+new packaging dependencies and the prerelease status still require explicit migration review.
+No prerelease is adopted automatically, and no audit gate is bypassed.
 
 ## Acceptance and rollback
 

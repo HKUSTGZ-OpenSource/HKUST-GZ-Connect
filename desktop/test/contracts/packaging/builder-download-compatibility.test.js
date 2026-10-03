@@ -5,6 +5,7 @@
 const assert = require('node:assert/strict');
 const { fork } = require('node:child_process');
 const crypto = require('node:crypto');
+const { createRequire } = require('node:module');
 const fs = require('node:fs/promises');
 const http = require('node:http');
 const os = require('node:os');
@@ -20,8 +21,22 @@ async function runWorker(kind, cacheRoot) {
     requests += 1;
     if (request.url.startsWith('http://127.0.0.2:')) proxied += 1;
     if (kind === 'deadline') return;
+    if ((kind === 'retry' && requests === 1) || kind === 'not-found') {
+      response.writeHead(kind === 'retry' ? 503 : 404);
+      response.end('synthetic status');
+      return;
+    }
     response.writeHead(200, { 'Content-Length': body.length });
     response.end(body);
+  });
+  // Fetch's ProxyAgent uses CONNECT even for HTTP targets. Terminate that
+  // synthetic tunnel locally; never open a connection to any external target.
+  server.on('connect', (request, socket, head) => {
+    if (!/^127\.0\.0\.2:\d+$/u.test(request.url)) { socket.destroy(); return; }
+    proxied += 1;
+    socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+    server.emit('connection', socket);
+    if (head.length) socket.unshift(head);
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
@@ -39,18 +54,36 @@ async function runWorker(kind, cacheRoot) {
       return originalLoad.call(this, request, parent, isMain);
     };
   }
-  const { downloadElectronArtifactZip } = require('app-builder-lib/out/util/electronGet');
-  const filename = `electron-v43.7.7-${process.platform}-${process.arch}.zip`;
+  const candidateRoot = process.env.HKUST_TEST_BUILDER27_ROOT;
+  let builderRequire = require;
+  let downloadElectronArtifactZip;
+  if (candidateRoot) {
+    assert.ok(path.isAbsolute(candidateRoot));
+    assert.ok(path.basename(candidateRoot).startsWith('hkust-builder27-evaluation.'));
+    builderRequire = createRequire(path.join(candidateRoot, 'package.json'));
+    const entrypoint = builderRequire.resolve('app-builder-lib');
+    // v27 no longer exports deep imports. This version-pinned vendor seam is
+    // confined to the compatibility experiment, never production Main/Preload.
+    ({ downloadElectronArtifactZip } = builderRequire(path.join(path.dirname(entrypoint), 'util', 'electronGet.js')));
+  } else {
+    ({ downloadElectronArtifactZip } = require('app-builder-lib/out/util/electronGet'));
+  }
+  // Builder locks are global by version/platform, even for different cache
+  // roots. Use a unique synthetic version so stalled negative fixtures cannot
+  // block positive tests or a real build of Electron 43.7.7.
+  const version = `43.7.7-synthetic.${process.pid}`;
+  const filename = `electron-v${version}-${process.platform}-${process.arch}.zip`;
   const options = {
-    artifactName: 'electron', version: '43.7.7',
+    artifactName: 'electron', version,
     platformName: process.platform, arch: process.arch, cacheDir: cacheRoot,
-    electronDownload: {
+    [candidateRoot ? 'options' : 'electronDownload']: {
       checksums: { [filename]: kind === 'checksum' ? '0'.repeat(64) : checksum },
       mirrorOptions: {
         resolveAssetURL: async () => `http://${kind === 'proxy' ? '127.0.0.2' : '127.0.0.1'}:${port}/${filename}`,
       },
-      downloadOptions: { timeout: { request: kind === 'deadline' ? 50 : 2_000 },
-        retry: { limit: 0 }, quiet: true },
+      downloadOptions: candidateRoot
+        ? { signal: AbortSignal.timeout(kind === 'deadline' ? 300 : 10_000), quiet: true }
+        : { timeout: { request: kind === 'deadline' ? 50 : 2_000 }, retry: { limit: 0 }, quiet: true },
     },
   };
   const started = performance.now();
@@ -62,10 +95,17 @@ async function runWorker(kind, cacheRoot) {
       const second = await downloadElectronArtifactZip(options);
       assert.equal(second, downloaded);
     }
+    if (kind === 'corrupt-cache') {
+      await fs.writeFile(downloaded, 'synthetic corrupted cache');
+      const recovered = await downloadElectronArtifactZip(options);
+      assert.deepEqual(await fs.readFile(recovered), body);
+    }
     return { outcome: 'downloaded', requests, proxied };
   } catch (error) {
     return { outcome: 'rejected', code: error.code || '', requests, proxied,
-      checksumMismatch: error instanceof require('sumchecker').ChecksumMismatchError,
+      checksumMismatch: error instanceof builderRequire('sumchecker').ChecksumMismatchError,
+      deadlineRejected: error.name === 'TimeoutError' || error.name === 'AbortError',
+      status: error.response?.statusCode ?? error.response?.status ?? null,
       elapsed: performance.now() - started };
   } finally {
     server.closeAllConnections();
@@ -90,6 +130,7 @@ if (process.argv[2] === '--builder-download-worker') {
         ELECTRON_GET_NO_PROGRESS: '1',
         // Intentionally opt-in, for the isolated negative experiment only.
         HKUST_TEST_GET5_CANDIDATE: process.env.HKUST_TEST_GET5_CANDIDATE || '',
+        HKUST_TEST_BUILDER27_ROOT: process.env.HKUST_TEST_BUILDER27_ROOT || '',
       },
       stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
     });
@@ -131,7 +172,28 @@ if (process.argv[2] === '--builder-download-worker') {
   test('builder retains its configured request deadline on a stalled loopback download', { timeout: 25_000 }, async (t) => {
     const result = await fixture(t, 'deadline');
     assert.equal(result.outcome, 'rejected');
-    assert.equal(result.code, 'ETIMEDOUT');
+    if (process.env.HKUST_TEST_BUILDER27_ROOT) assert.equal(result.deadlineRejected, true);
+    else assert.equal(result.code, 'ETIMEDOUT');
+    assert.ok(result.requests >= 1, 'the deadline must bound an actually started download');
     assert.ok(result.elapsed < 18_000, 'bounded retries must retain request deadlines');
+  });
+
+  test('builder retries a synthetic 503 then accepts the checksum-verified artifact', { timeout: 25_000 }, async (t) => {
+    const result = await fixture(t, 'retry');
+    assert.equal(result.outcome, 'downloaded');
+    assert.equal(result.requests, 2);
+  });
+
+  test('builder rejects a permanent 404 without repeating the download', { timeout: 25_000 }, async (t) => {
+    const result = await fixture(t, 'not-found');
+    assert.equal(result.outcome, 'rejected');
+    assert.equal(result.status, 404);
+    assert.equal(result.requests, 1);
+  });
+
+  test('builder revalidates a corrupt cached artifact and downloads a verified replacement', { timeout: 25_000 }, async (t) => {
+    const result = await fixture(t, 'corrupt-cache');
+    assert.equal(result.outcome, 'downloaded');
+    assert.equal(result.requests, 2);
   });
 }
