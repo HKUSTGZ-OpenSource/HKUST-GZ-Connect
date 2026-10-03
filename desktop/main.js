@@ -474,16 +474,6 @@ const profileSwitching = createMainProfileSwitchComposition({
   },
 });
 const switchSchoolProfile = profileSwitching.switchProfile;
-async function connectAndOpenCampusBrowser(rawRequest) {
-  state.browserNotice = null;
-  emit();
-  const result = await campusBrowserManager.open(rawRequest);
-  if (result?.ok) {
-    state.browserNotice = null;
-    emit();
-  }
-  return result;
-}
 // ---------- update notifications (no automatic download or installation) ----------
 updateNotifications = new UpdateNotificationRuntime({
   getVersion: () => app.getVersion(), check: checkForUpdate,
@@ -593,7 +583,7 @@ registerCoreControlIpc({
     clipboard.writeText(text);
     return { ok: true };
   },
-  openCampusBrowser: (request) => connectAndOpenCampusBrowser(request), openBookmarkManager: () => campusBrowserManager.openBookmarkManager(),
+  openCampusBrowser: (request) => campusBrowserManager.openWithFeedback(request), openBookmarkManager: () => campusBrowserManager.openBookmarkManager(),
   openResource: (request) => resourceLibraryRuntime.openByIdSerialized(request),
   checkUpdate: force => updateNotifications.run(force),
   openExternal: url => updateNotifications.open(url),
@@ -617,7 +607,7 @@ desktopShell = new DesktopShell({
   getCloseAction: () => loadSettingsOrReport().closeAction,
   connect: () => connect(),
   disconnect: () => disconnect(),
-  openCampusBrowser: () => connectAndOpenCampusBrowser(),
+  openCampusBrowser: () => campusBrowserManager.openWithFeedback(),
   rememberCloseAction,
   disposeLifecycle: () => {
     schoolProfileOnboarding.cancel(); externalIntegrationRuntime.cancel();

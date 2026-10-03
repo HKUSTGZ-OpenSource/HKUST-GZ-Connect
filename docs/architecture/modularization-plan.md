@@ -274,6 +274,12 @@ existing presentation module, preserving the FSM's authority. Main reaches 699
 lines/20 direct imports without a new production module or graph edge. Numeric
 targets alone do not finish the residual composition/ownership acceptance.
 
+The proposed [Browser command feedback owner](browser-open-feedback-owner.md)
+closes the outer-await retirement gap independently reproduced in #222. Main
+delegates the user-command flow to the existing Manager epoch without altering
+resource-open, routing or login policy. Main reaches 689 lines with graph metrics
+unchanged; this does not finish the other M2/M3 ownership outcomes.
+
 Move remaining settings-surface coordination, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 
