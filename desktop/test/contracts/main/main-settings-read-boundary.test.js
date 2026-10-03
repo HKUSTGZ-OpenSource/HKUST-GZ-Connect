@@ -50,7 +50,9 @@ test('final connection snapshot fails the FSM and classifies credential availabi
   const spawn = body.indexOf('const started = this.engineSupervisor.start(');
   const guardedStart = body.slice(marker, spawn);
   assert.match(guardedStart, /s = this\.loadSettings\(\);[\s\S]*this\.openCredential\(/);
-  assert.match(source, /openPersistent: \(\) => persistenceRuntime\.openCredential\(\)/);
+  assert.match(source, /openCredential: profileId => vpnCredentialAccess\.open\(profileId\)/);
+  const access = fs.readFileSync(require.resolve('../../../lib/persistence/credentials/credential-store'), 'utf8');
+  assert.match(access, /openPersistent: \(\) => this\.persistence\.openCredential\(\)/);
   assert.match(guardedStart, /credentialOwner\.withStrings/);
   assert.match(guardedStart, /credentialOwner\.destroy\(\)/);
   assert.match(guardedStart, /connectionState\.failIntent\(intent\);/);

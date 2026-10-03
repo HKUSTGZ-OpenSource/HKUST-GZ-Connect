@@ -6,14 +6,6 @@ const {
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
-const { parseCredentialField } = require('./lib/persistence/settings/settings-update');
-const {
-  credentialLoadErrorKey,
-  protectedStorageAvailable,
-} = require('./lib/persistence/credentials/credential-store');
-const {
-  OneShotVpnCredentialBroker, openVpnCredential,
-} = require('./lib/persistence/credentials/one-shot-vpn-credential');
 const { desktopRuntimeComposition } = require('./lib/app/desktop-runtime-composition');
 const { ActiveContextLease, assertActiveContextSwitchStartupClear, createLegacyRuntimeStoragePaths, createMainProfileSwitchComposition, createMultiSchoolStartupInitializer, createPageFavoriteController, customGatewayProductAvailability, DesktopPersistenceRuntime, ProfileWorkspaceStartupRuntime, relaunchAfterPersistenceMigration, ResourceLibraryRuntime, resolveUserDataOverride, selectProfileWorkspacePreReadyStorage, writePersistenceE2EMarker, writeProfileSwitchE2EMarker } = desktopRuntimeComposition;
 const { AuthChallengeCoordinator, EngineControlRegistry } = require('./lib/connection/engine/engine-control-suite');
@@ -97,7 +89,6 @@ const activeSchoolProfile = createPreReadySchoolProfileController({
   resourcesPath: process.resourcesPath, desktopDir: __dirname,
   profileStorageEffects,
 });
-const oneShotVpnCredential = new OneShotVpnCredentialBroker();
 const activeContextLease = new ActiveContextLease(activeSchoolProfile.activeContextBinding());
 const preReadyStorage = activeSchoolProfile.withProfileDocument((profile) => (
   selectProfileWorkspacePreReadyStorage({ userData: DATA, profile })
@@ -157,6 +148,11 @@ persistenceRuntime.prepareBeforeOwnerOnlyValidation(() => {
   ]) {
     ensureOwnerOnly(privateFile);
   }
+});
+const vpnCredentialAccess = DesktopPersistenceRuntime.createVpnCredentialAccess({
+  persistence: persistenceRuntime, safeStorage, platform: process.platform,
+  getProfileId: () => activeSchoolProfile.activeContextBinding().profileId,
+  getEngineActive: () => engineSupervisor.hasActive,
 });
 
 let desktopShell = null;
@@ -266,24 +262,9 @@ function assertSettingsPersistenceAvailable() {
 function routingSettings() { return persistenceRuntime.routingSettings(); }
 function saveSettings(settings) { return persistenceRuntime.saveSettingsWithGuard(settings); }
 function savePassword(pw, username) { return persistenceRuntime.saveCredential(pw, username); }
-function hasPersistentCredential() {
-  return persistenceRuntime.hasCredential();
-}
-function hasOneShotCredential() {
-  try {
-    return oneShotVpnCredential.has({
-      profileId: activeSchoolProfile.activeContextBinding().profileId,
-    });
-  } catch {
-    return false;
-  }
-}
-function hasStoredCredential() {
-  return hasPersistentCredential() || hasOneShotCredential();
-}
-function hasCredentialForCurrentSession() {
-  return hasStoredCredential() || engineSupervisor.hasActive;
-}
+function hasPersistentCredential() { return vpnCredentialAccess.hasPersistent(); }
+function hasStoredCredential() { return vpnCredentialAccess.hasStored(); }
+function hasCredentialForCurrentSession() { return vpnCredentialAccess.hasCredentialForCurrentSession(); }
 function socksPort() { return Number(loadSettingsOrReport().port) || 1080; }
 function clearActiveProxyCredential(expectedGeneration = null) { return proxyAccess.clearActive(expectedGeneration); }
 const clearActiveEngineControl = (expectedGeneration = null) => engineControlRegistry.clear(expectedGeneration);
@@ -421,9 +402,9 @@ const engineAttempts = new EngineAttemptCoordinator({
     clearCapabilitySnapshot: () => activeSchoolProfile.clearCapabilitySnapshot(),
     observeCapabilityReport: report => activeSchoolProfile.observeCapabilityReport(report),
   },
-  openCredential: profileId => openVpnCredential({ profileId, memoryBroker: oneShotVpnCredential,
-    openPersistent: () => persistenceRuntime.openCredential() }),
-  credentialLoadErrorKey, parseCredentialField, enginePath,
+  openCredential: profileId => vpnCredentialAccess.open(profileId),
+  credentialLoadErrorKey: status => vpnCredentialAccess.errorKey(status),
+  parseCredentialField: (value, label) => vpnCredentialAccess.parseField(value, label), enginePath,
   clearActiveProxyCredential, generationProxyCredential, removeExternalProxySidecar, killStrayEngines,
   hasStableProxyCredential: () => proxyAccess.hasStable(), proxyCredentialFile: PROXY_CREDENTIAL,
   setActiveProxyCredential: value => proxyAccess.setActive(value), engineOwnerFile: ENGINE_OWNER,
@@ -523,7 +504,7 @@ const profileSwitching = createMainProfileSwitchComposition({
     clearProxyCredential: clearActiveProxyCredential, clearConnectionPresentation,
     ensureEngineStopped, cleanupOrphanedEngine: () => killStrayEngines(enginePath()),
     revokeProxyAccess: revokeExternalProxyAccess,
-    clearServerState: () => { oneShotVpnCredential.clear(); serverCampusResources = []; state.lastError = null;
+    clearServerState: () => { vpnCredentialAccess.clear(); serverCampusResources = []; state.lastError = null;
       state.browserNotice = null; clearConnectionPresentation(); return true; },
     closeLog: () => logWriter?.close().catch(reportLogFailure),
   },
@@ -624,9 +605,9 @@ registerSettingsCredentialIpc({
   reconnect,
   disconnect,
   getActiveProfileId: () => activeSchoolProfile.activeContextBinding().profileId,
-  credentialStorageAvailable: () => protectedStorageAvailable(safeStorage, process.platform),
-  stageOneShotCredential: (request) => oneShotVpnCredential.stage(request),
-  clearOneShotCredential: (revision) => oneShotVpnCredential.clear(revision),
+  credentialStorageAvailable: () => vpnCredentialAccess.storageAvailable(),
+  stageOneShotCredential: (request) => vpnCredentialAccess.stage(request),
+  clearOneShotCredential: (revision) => vpnCredentialAccess.clear(revision),
 });
 registerCoreControlIpc({
   register: trustedHandle, getState: controlStateSnapshot, getNetworkEnvironment: () => networkEnvironmentService.snapshot(loadSettingsOrReport().underlaySourceAddress, { probePublicEgress: true }),
@@ -679,7 +660,7 @@ desktopShell = new DesktopShell({
   rememberCloseAction,
   disposeLifecycle: () => {
     schoolProfileOnboarding.cancel(); externalIntegrationRuntime.cancel();
-    oneShotVpnCredential.clear();
+    vpnCredentialAccess.clear();
     networkStartupCoordinator.dispose(); networkEnvironmentService.dispose(); connectionWaitRegistry.dispose();
     connectivityRecovery.dispose();
     networkStatusMonitor.dispose();

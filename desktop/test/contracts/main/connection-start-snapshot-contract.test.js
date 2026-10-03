@@ -23,8 +23,9 @@ test('connect takes its final settings and credential snapshot after the last pr
   assert.match(snapshotToSpawn, /s = this\.loadSettings\(\);/);
   assert.match(snapshotToSpawn,
     /const credentialOwner = this\.openCredential\(this\.profile\.activeContextBinding\(\)\.profileId\)/);
-  assert.match(source, /openCredential: profileId => openVpnCredential\(\{ profileId, memoryBroker: oneShotVpnCredential/);
-  assert.match(source, /openPersistent: \(\) => persistenceRuntime\.openCredential\(\)/);
+  assert.match(source, /openCredential: profileId => vpnCredentialAccess\.open\(profileId\)/);
+  const access = fs.readFileSync(require.resolve('../../../lib/persistence/credentials/credential-store'), 'utf8');
+  assert.match(access, /openPersistent: \(\) => this\.persistence\.openCredential\(\)/);
   assert.match(snapshotToSpawn, /credentialOwner\.withStrings\(\(account, password\)/);
   assert.match(snapshotToSpawn, /finally \{ credentialOwner\.destroy\(\); \}/);
   assert.doesNotMatch(snapshotToSpawn, /\bawait\b/);

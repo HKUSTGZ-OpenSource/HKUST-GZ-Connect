@@ -4,7 +4,8 @@ const util = require('node:util');
 const { projectRuntimeSettings } = require('../settings/profile-workspace-settings-bundle');
 const { loadSettings: readSettings, saveSettings: writeSettings } = require('../settings/settings-store');
 const { hasStoredPassword, loadPasswordResult: readPasswordResult,
-  restorePasswordSnapshot, savePassword: writePassword } = require('../credentials/credential-store');
+  restorePasswordSnapshot, savePassword: writePassword, VpnCredentialAccessCoordinator } = require('../credentials/credential-store');
+const { parseCredentialField } = require('../settings/settings-update');
 const {
   recoverCredentialSettingsTransaction,
   runCredentialSettingsMutation,
@@ -50,6 +51,10 @@ class DesktopPersistenceRuntime {
   #credentialRecoveryNoticeText = null;
   #credentialRecoveryErrorText = null;
   #routingSettingsSnapshot = null;
+
+  static createVpnCredentialAccess(options) {
+    return new VpnCredentialAccessCoordinator({ ...options, parseField: parseCredentialField });
+  }
 
   static createLegacyAdapter({ settingsFile, credentialFile, safeStorage, platform,
     getDefaultRouteDomains, onRecovery, stores = {} }) {

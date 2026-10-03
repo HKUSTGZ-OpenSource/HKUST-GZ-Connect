@@ -61,7 +61,7 @@ test('reviewed profile and config binding is validated before credential decrypt
   const spawn = connect.indexOf('const started = this.engineSupervisor.start(');
   assert.ok(profileConfig >= 0 && credential > profileConfig && spawn > credential);
   assert.match(main, /verifyEngineLaunchBinding: \(\) => activeSchoolProfile\.verifyEngineLaunchBinding\(\)/u);
-  assert.match(main, /openCredential: profileId => openVpnCredential\(/u);
+  assert.match(main, /openCredential: profileId => vpnCredentialAccess\.open\(profileId\)/u);
   assert.match(connect,
     /this\.openCredential\(this\.profile\.activeContextBinding\(\)\.profileId\)/u);
   assert.match(connect, /--profile-binding-v1-stdin/u);

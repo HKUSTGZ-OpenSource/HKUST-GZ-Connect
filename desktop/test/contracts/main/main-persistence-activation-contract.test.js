@@ -45,7 +45,10 @@ test('after-ready migration uses the bounded relaunch owner before services can 
 test('settings credential IPC and connect use the immutable persistence adapter', () => {
   const connect = attempt;
   assert.match(source, /engineAttempts\.run\(isRetry, intent\)/u);
-  assert.match(source, /openPersistent: \(\) => persistenceRuntime\.openCredential\(\)/u);
+  assert.match(source, /DesktopPersistenceRuntime\.createVpnCredentialAccess\(\{\s*persistence: persistenceRuntime/u);
+  assert.match(source, /openCredential: profileId => vpnCredentialAccess\.open\(profileId\)/u);
+  const access = fs.readFileSync(require.resolve('../../../lib/persistence/credentials/credential-store'), 'utf8');
+  assert.match(access, /openPersistent: \(\) => this\.persistence\.openCredential\(\)/u);
   assert.match(source, /function loadSettings\(\) \{ return persistenceRuntime\.loadSettings\(\); \}/u);
   assert.match(source, /persistenceRuntime\.saveCredential\(pw, username\)/u);
   assert.match(source, /removePassword: \(\) => persistenceRuntime\.clearCredential\(\)/u);

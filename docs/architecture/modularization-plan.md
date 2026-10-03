@@ -223,6 +223,12 @@ resource source adaptation and ID-only open transactions into the existing Resou
 Main falls from 831 to 819 lines without a new dependency node or changed route authority.
 The next M3 size and dependency targets remain open.
 
+The proposed [VPN credential access owner](desktop-vpn-credential-access-owner.md) places
+presence checks, process-memory selection, revision-scoped clearing and canonical validation
+behind the existing Persistence public runtime. Main falls to 800 lines / 27 direct dependencies;
+three private-import exceptions retire and the debt ceiling drops to 110. Existing protected
+storage priority, Profile binding and zeroization remain unchanged; M3 is not complete.
+
 Move remaining settings-surface coordination, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 

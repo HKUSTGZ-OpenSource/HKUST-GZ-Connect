@@ -5,44 +5,48 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
-const { OneShotVpnCredentialBroker, openVpnCredential } =
-  require('../../../lib/persistence/credentials/one-shot-vpn-credential');
+const { DesktopPersistenceRuntime } = require('../../../lib/persistence/runtime/desktop-persistence-runtime');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
 const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
+const accessSource = fs.readFileSync(require.resolve('../../../lib/persistence/credentials/credential-store'), 'utf8');
 
 test('the Main-injected selector can use explicit memory credentials when protected storage is unavailable', () => {
-  const oneShotVpnCredential = new OneShotVpnCredentialBroker();
-  oneShotVpnCredential.stage({ profileId: 'hkustgz', username: 'synthetic-memory-user',
+  const vpnCredentialAccess = DesktopPersistenceRuntime.createVpnCredentialAccess({
+    persistence: { hasCredential: () => false, openCredential: () => {
+      throw Object.assign(new Error('synthetic protected storage unavailable'), { credentialStatus: 'unavailable' });
+    } },
+    getProfileId: () => 'hkustgz', getEngineActive: () => false,
+  });
+  vpnCredentialAccess.stage({ profileId: 'hkustgz', username: 'synthetic-memory-user',
     password: 'synthetic-memory-value' });
-  const expression = source.match(/openCredential: profileId => (openVpnCredential\([\s\S]+?\}\))/u)?.[1];
+  const expression = source.match(/openCredential: profileId => (vpnCredentialAccess\.open\(profileId\))/u)?.[1];
   assert.ok(expression, 'final credential selection seam is present');
   let owner;
   assert.doesNotThrow(() => {
-    owner = vm.runInNewContext(expression, { oneShotVpnCredential, openVpnCredential, profileId: 'hkustgz',
-      activeSchoolProfile: { activeContextBinding: () => ({ profileId: 'hkustgz' }) },
-      persistenceRuntime: { openCredential: () => {
-        throw Object.assign(new Error('synthetic protected storage unavailable'), { credentialStatus: 'unavailable' });
-      } } });
+    owner = vm.runInNewContext(expression, { vpnCredentialAccess, profileId: 'hkustgz' });
   });
   owner.withStrings((username, password) => {
     assert.equal(username, 'synthetic-memory-user');
     assert.equal(password, 'synthetic-memory-value');
   });
   owner.destroy();
-  oneShotVpnCredential.clear();
+  vpnCredentialAccess.clear();
 });
 
 test('Linux memory-only credentials stay Main-owned and profile-bound', () => {
-  assert.match(source, /const oneShotVpnCredential = new OneShotVpnCredentialBroker\(\)/u);
+  assert.match(source, /const vpnCredentialAccess = DesktopPersistenceRuntime\.createVpnCredentialAccess\(/u);
+  assert.match(source, /getProfileId: \(\) => activeSchoolProfile\.activeContextBinding\(\)\.profileId/u);
+  assert.match(accessSource, /#memoryBroker = new OneShotVpnCredentialBroker\(\)/u);
   assert.match(source,
-    /openCredential: profileId => openVpnCredential\(\{ profileId, memoryBroker: oneShotVpnCredential,[\s\S]*openPersistent: \(\) => persistenceRuntime\.openCredential\(\)/u,
+    /openCredential: profileId => vpnCredentialAccess\.open\(profileId\)/u,
     'the final snapshot injects protected storage and the profile-bound memory fallback');
+  assert.match(accessSource, /profileId, memoryBroker: this\.#memoryBroker,[\s\S]*openPersistent: \(\) => this\.persistence\.openCredential\(\)/u);
   assert.match(attempt, /this\.openCredential\(this\.profile\.activeContextBinding\(\)\.profileId\)/u);
   assert.match(source,
-    /credentialStorageAvailable: \(\) => protectedStorageAvailable\(safeStorage, process\.platform\)/u);
-  assert.match(source, /stageOneShotCredential: \(request\) => oneShotVpnCredential\.stage\(request\)/u);
-  assert.match(source, /clearOneShotCredential: \(revision\) => oneShotVpnCredential\.clear\(revision\)/u);
+    /credentialStorageAvailable: \(\) => vpnCredentialAccess\.storageAvailable\(\)/u);
+  assert.match(source, /stageOneShotCredential: \(request\) => vpnCredentialAccess\.stage\(request\)/u);
+  assert.match(source, /clearOneShotCredential: \(revision\) => vpnCredentialAccess\.clear\(revision\)/u);
 });
 
 test('memory-only credentials never become a cross-launch auto-connect authority', () => {
@@ -50,6 +54,6 @@ test('memory-only credentials never become a cross-launch auto-connect authority
     source.indexOf('const connectionOperations ='));
   assert.match(startup, /hasPersistentCredential\(\)/u);
   assert.doesNotMatch(startup, /hasStoredCredential\(\)/u);
-  assert.match(source, /disposeLifecycle: \(\) => \{[\s\S]*oneShotVpnCredential\.clear\(\)/u);
-  assert.match(source, /clearServerState: \(\) => \{ oneShotVpnCredential\.clear\(\)/u);
+  assert.match(source, /disposeLifecycle: \(\) => \{[\s\S]*vpnCredentialAccess\.clear\(\)/u);
+  assert.match(source, /clearServerState: \(\) => \{ vpnCredentialAccess\.clear\(\)/u);
 });
