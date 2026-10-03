@@ -286,6 +286,12 @@ owners, without changing data/schema or removal policy. Main reaches 674 lines w
 20 direct imports; locale, recovery-notice and resource-feed ownership still require
 semantic review rather than closing M3 from the numerical milestone.
 
+The proposed [Desktop locale owner](desktop-locale-owner.md) removes Main's locale/
+translator authority into the existing Platform i18n file, preserving primitive
+selection, startup recovery and presentation order. Main reaches 669 lines/20 direct
+imports; three old private edges retire (inventory/cap 98). Recovery-notice and
+resource-feed authority still require semantic M3 review.
+
 Move remaining settings-surface coordination, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 

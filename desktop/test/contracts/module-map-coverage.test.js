@@ -179,6 +179,26 @@ test('static module imports distinguish undeclared edges from private entrypoint
     .includes('unowned import target: desktop/lib/missing/unsafe.js'));
 });
 
+test('the actual shared i18n file is public for its three existing consumers, not a hidden bypass', () => {
+  const root = path.resolve(__dirname, '../../..');
+  const source = fs.readFileSync(path.join(root, 'docs/architecture/module-map.yml'), 'utf8');
+  const target = 'desktop/lib/platform/i18n/i18n.js';
+  const imports = [
+    ['desktop/main.js', target],
+    ['desktop/lib/browser/session/campus-browser.js', target],
+    ['desktop/lib/connection/engine/engine-output.js', target],
+  ];
+  assert.deepEqual(moduleImportViolations(source, imports), { errors: [], violations: [] });
+  const map = parseModuleMap(source);
+  map.modules.find(module => module.id === 'desktop-platform').publicEntrypoints =
+    map.modules.find(module => module.id === 'desktop-platform').publicEntrypoints.filter(file => file !== target);
+  assert.equal(moduleImportViolations(JSON.stringify(map), imports).violations.length, 3,
+    'removing the declaration must reveal all old edges rather than silently exempting them');
+  const debt = JSON.parse(fs.readFileSync(path.join(root, 'desktop/scripts/module-edge-debt.json'), 'utf8'));
+  assert.equal(debt.exceptions.length, 98);
+  assert.ok(debt.exceptions.every(edge => !edge.includes('platform/i18n/i18n.js')));
+});
+
 test('static relative template specifiers cannot bypass the import graph', () => {
   assert.deepEqual(relativeRequires([
     'const owner = require(`../b/private.js`);',

@@ -430,4 +430,32 @@ function effectiveLocale(language, systemLocale) {
     : resolveLocale(systemLocale);
 }
 
-module.exports = { createT, dictionaries, effectiveLocale, resolveLocale };
+class DesktopLocaleRuntime {
+  #locale = 'zh';
+  #translator = createT('zh');
+  #readSettings;
+  #getSystemLocale;
+
+  constructor({ readSettings, getSystemLocale } = {}) {
+    if (typeof readSettings !== 'function' || typeof getSystemLocale !== 'function') {
+      throw new TypeError('desktop locale readers are required');
+    }
+    this.#readSettings = readSettings;
+    this.#getSystemLocale = getSystemLocale;
+  }
+
+  get locale() { return this.#locale; }
+  get translator() { return this.#translator; }
+
+  current() { return effectiveLocale(this.#readSettings().language, this.#getSystemLocale()); }
+  fallback() { return effectiveLocale('auto', this.#getSystemLocale()); }
+
+  set(locale) {
+    this.#locale = locale;
+    this.#translator = createT(locale);
+  }
+
+  choose(language) { this.set(effectiveLocale(language, this.#getSystemLocale())); }
+}
+
+module.exports = { createT, dictionaries, effectiveLocale, resolveLocale, DesktopLocaleRuntime };
