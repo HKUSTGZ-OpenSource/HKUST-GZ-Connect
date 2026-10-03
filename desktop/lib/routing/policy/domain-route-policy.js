@@ -164,6 +164,8 @@ function buildDomainRoutePac(options = {}, port, config = {}) {
 }
 
 class DomainRoutePolicyStore {
+  #serverResourceSource;
+
   constructor({
     filePath,
     customResources = () => [],
@@ -184,11 +186,14 @@ class DomainRoutePolicyStore {
     this.directPartnerDomains = typeof directPartnerDomains === 'function'
       ? directPartnerDomains
       : () => directPartnerDomains;
-    this.serverResources = typeof serverResources === 'function'
-      ? serverResources
-      : () => serverResources;
+    this.#serverResourceSource = serverResources;
+    this.serverResources = () => typeof this.#serverResourceSource === 'function'
+      ? this.#serverResourceSource.call(this)
+      : this.#serverResourceSource;
     this.cachedRules = null;
   }
+
+  clearServerResources() { this.#serverResourceSource = []; }
 
   cacheRules(rules) {
     this.cachedRules = Object.freeze(rules.map((rule) => Object.freeze({ ...rule })));

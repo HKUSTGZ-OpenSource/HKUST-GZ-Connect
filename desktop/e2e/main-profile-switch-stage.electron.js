@@ -10,7 +10,29 @@ dialog.showErrorBox = (title, message) => {
 const targetProfileId = process.env.HKUSTGZ_SWITCH_TARGET || '';
 if (!targetProfileId) throw new Error('Profile switch stage target is missing');
 
+// Observe actual Main composition and retirement inside this fixture process.
+// No production test hook, app-owned file or bounded IPC surface is added.
+const routing = require('../lib/routing/policy/domain-route-policy');
+const OriginalPolicyStore = routing.DomainRoutePolicyStore;
+let resourceReader = null, policyStore = null, retiredResources = false;
+routing.DomainRoutePolicyStore = class FixturePolicyStore extends OriginalPolicyStore {
+  constructor(options) {
+    assert.ok(Array.isArray(options.serverResources), 'Main must supply the existing Profile snapshot');
+    super(options);
+    policyStore = this;
+    resourceReader = this.serverResources;
+    assert.equal(resourceReader(), options.serverResources);
+  }
+  clearServerResources() {
+    super.clearServerResources();
+    assert.equal(this.serverResources, resourceReader);
+    assert.deepEqual(resourceReader(), []);
+    assert.deepEqual(this.snapshot().serverExact, []);
+    retiredResources = true;
+  }
+};
 require('../main');
+routing.DomainRoutePolicyStore = OriginalPolicyStore;
 
 async function waitFor(predicate, message) {
   const deadline = Date.now() + 15_000;
@@ -28,6 +50,8 @@ async function run() {
     window.webContents.getURL().endsWith('/renderer/index.html') && !window.webContents.isLoading()
   )), 'Profile switch control window did not start');
   const profiles = await control.webContents.executeJavaScript('window.api.listSchoolProfiles()');
+  assert.ok(policyStore);
+  assert.equal(retiredResources, false);
   assert.equal(profiles.ok, true);
   assert.equal(profiles.profiles.some((profile) => (
     profile.profileId === targetProfileId && profile.active === false
@@ -51,6 +75,7 @@ async function run() {
     relaunching: true,
   });
   assert.equal(Number.isSafeInteger(result.activeContextEpoch), true);
+  assert.equal(retiredResources, true, 'actual Profile switch must retire the source resource snapshot');
   assert.equal(Object.hasOwn(result, 'switchId'), false);
   assert.equal(BrowserWindow.getAllWindows().some((window) => (
     window.webContents.getURL().includes('/renderer/campus-browser.html')

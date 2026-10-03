@@ -20,6 +20,7 @@ const {
 } = require('../../../lib/switching/active-context/active-context-switch-store');
 const { createPrivateStorageEffects } = require('../../../lib/platform/storage/private-file');
 const { DesktopPersistenceRuntime } = require('../../../lib/persistence/runtime/desktop-persistence-runtime');
+const { DomainRoutePolicyStore } = require('../../../lib/routing/policy/domain-route-policy');
 const {
   commitActiveContextSwitch,
   createPreparedActiveContextSwitch,
@@ -62,6 +63,35 @@ function customConfirmation() {
   });
   return owner.consume({ confirmationHandle: view.confirmationHandle, activeContext });
 }
+
+test('native Main context cleanup retires the Routing snapshot in the original effect order', t => {
+  const root = privateRoot(t, 'hkustgz-native-routing-retirement-');
+  const source = fs.readFileSync(path.join(DESKTOP, 'main.js'), 'utf8');
+  const prefix = 'clearServerState: ';
+  const start = source.indexOf(prefix), end = source.indexOf(',\n    closeLog:', start);
+  assert.ok(start >= 0 && end > start);
+  const store = new DomainRoutePolicyStore({ filePath: path.join(root, 'routing-rules.json'),
+    schoolDomains: ['campus.example'], directPartnerDomains: [],
+    serverResources: [{ url: 'https://library.campus.example/', route: 'direct' }] });
+  store.upsert({ host: 'user.campus.example', route: 'direct' }, 50);
+  const fileBytes = fs.readFileSync(store.filePath), reader = store.serverResources;
+  const state = { lastError: 'synthetic-error', browserNotice: 'synthetic-notice' }, calls = [];
+  const clear = store.clearServerResources.bind(store);
+  store.clearServerResources = () => { calls.push('resources'); return clear(); };
+  const cleanup = vm.runInNewContext(`'use strict'; (${source.slice(start + prefix.length, end)})`, {
+    domainRoutePolicy: store, vpnCredentialAccess: { clear: () => calls.push('credentials') }, state,
+    clearConnectionPresentation: () => { assert.equal(state.lastError, null);
+      assert.equal(state.browserNotice, null); calls.push('presentation'); },
+  });
+  assert.equal(store.resolve('https://library.campus.example/').route, 'direct');
+  assert.equal(cleanup(), true);
+  assert.deepEqual(calls, ['credentials', 'resources', 'presentation']);
+  assert.equal(store.serverResources, reader);
+  assert.deepEqual(reader(), []);
+  assert.equal(store.resolve('https://library.campus.example/').route, 'campus');
+  assert.equal(store.resolve('https://user.campus.example/').route, 'direct');
+  assert.deepEqual(fs.readFileSync(store.filePath), fileBytes);
+});
 
 test('native settings recovery keeps Main observation and localized notice in Persistence', t => {
   const root = privateRoot(t, 'hkustgz-native-settings-recovery-');

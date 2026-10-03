@@ -40,8 +40,10 @@ test('profile drives resources, routes and a Main-resolved official portal home'
   assert.match(resourceRuntime, /current\.customResources, current\.hiddenBuiltinResourceIds/u);
   assert.match(resourceRuntime, /projectEffectiveRoutes\(mergeResources\(/u);
   assert.match(main,
-    /serverCampusResources = activeSchoolProfile\.mergeResourceLibrary\(\[\], \[\]\)/u,
+    /serverResources: activeSchoolProfile\.mergeResourceLibrary\(\[\], \[\]\)/u,
     'reviewed per-site routes must feed the shared browser and external PAC policy');
+  assert.doesNotMatch(main, /\bserverCampusResources\b/u);
+  assert.match(main, /vpnCredentialAccess\.clear\(\); domainRoutePolicy\.clearServerResources\(\); state\.lastError = null/u);
   assert.match(main, /getDefaultRouteDomains: \(\) => activeSchoolProfile\.defaultRouteDomains/u);
   const persistence = fs.readFileSync(require.resolve('../../../lib/persistence/runtime/desktop-persistence-runtime'), 'utf8');
   assert.match(persistence, /defaultRouteDomains: getDefaultRouteDomains\(\)/u);

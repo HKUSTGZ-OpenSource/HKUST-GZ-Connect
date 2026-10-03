@@ -183,3 +183,61 @@ test('DomainRoutePolicyStore persists mutations and resolves against live local 
   customResources = [];
   assert.equal(store.resolve('https://vendor.example:4433/').route, 'campus');
 });
+
+test('Routing owns its resource snapshot and captured readers observe retirement without mutating the input', () => {
+  const resources = [{ url: 'https://library.campus.example/', route: 'direct' }];
+  const store = new DomainRoutePolicyStore({ filePath: '/unused-synthetic-rules', serverResources: resources });
+  const reader = store.serverResources;
+  assert.equal(reader(), resources);
+  store.clearServerResources();
+  assert.equal(store.serverResources, reader, 'retirement must not strand a captured reader');
+  const empty = reader();
+  assert.deepEqual(empty, []);
+  assert.equal(reader(), empty, 'preserve the same empty snapshot until the next retirement');
+  assert.equal(resources.length, 1);
+  store.clearServerResources();
+  assert.deepEqual(reader(), []);
+  assert.notEqual(reader(), empty, 'each retirement replaces the old snapshot, as Main previously did');
+});
+
+test('resource providers stay lazy with the existing store receiver until retired', () => {
+  let reads = 0, store;
+  const resources = [{ url: 'https://library.campus.example/', route: 'direct' }];
+  store = new DomainRoutePolicyStore({ filePath: '/unused-synthetic-rules',
+    serverResources: function readResources() { reads++; assert.equal(this, store); return resources; } });
+  assert.equal(reads, 0);
+  const reader = store.serverResources;
+  assert.equal(reader.call(store), resources);
+  assert.equal(reads, 1);
+  store.clearServerResources();
+  assert.deepEqual(reader.call(store), []);
+  assert.equal(reads, 1, 'retired providers cannot repopulate the new context');
+});
+
+test('resource retirement preserves rule/custom precedence, safety, PAC agreement and persisted bytes', t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-policy-retirement-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const rulesFile = path.join(directory, 'routing-rules.json');
+  const resources = [{ url: 'https://library.campus.example/', route: 'direct' }];
+  const store = new DomainRoutePolicyStore({ filePath: rulesFile, serverResources: resources,
+    schoolDomains: ['campus.example'], directPartnerDomains: ['partner.example'],
+    customResources: [{ url: 'https://custom.campus.example/', route: 'direct' }] });
+  store.upsert({ host: 'user.campus.example', route: 'direct' }, 50);
+  const bytes = fs.readFileSync(rulesFile), cached = store.cachedRules;
+  assert.equal(store.resolve(resources[0].url).source, 'server-resource');
+  assert.equal(evaluate(store.buildPac(6180), resources[0].url, 'library.campus.example'), 'DIRECT');
+  store.clearServerResources();
+  assert.equal(store.resolve(resources[0].url).source, 'builtin');
+  assert.equal(store.resolve(resources[0].url).route, 'campus');
+  assert.equal(evaluate(store.buildPac(6180), resources[0].url, 'library.campus.example'), 'SOCKS5 127.0.0.1:6180');
+  for (const [url, source] of [['https://user.campus.example/', 'user-exact'],
+    ['https://custom.campus.example/', 'custom-resource'], ['https://app.partner.example/', 'builtin']]) {
+    assert.equal(store.resolve(url).source, source);
+    assert.equal(store.resolve(url).route, 'direct');
+  }
+  assert.equal(store.resolve('http://127.0.0.1/').source, 'safety');
+  assert.equal(store.resolve('http://127.0.0.1/').route, 'campus');
+  assert.equal(store.cachedRules, cached);
+  assert.deepEqual(fs.readFileSync(rulesFile), bytes);
+  assert.equal(resources[0].route, 'direct');
+});

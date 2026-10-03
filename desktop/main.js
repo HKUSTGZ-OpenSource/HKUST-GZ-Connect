@@ -252,7 +252,6 @@ function safeCampusResourceLibrary(settings = null) {
 const certificateTrustStore = CampusBrowserManager.createCertificateTrustStore({
   filePath: CAMPUS_CERTIFICATE_TRUST,
 });
-let serverCampusResources = activeSchoolProfile.mergeResourceLibrary([], []);
 const domainRoutePolicy = new DomainRoutePolicyStore({
   filePath: ROUTING_RULES,
   // Browser webRequest executes for every main-frame and subresource request.
@@ -262,7 +261,7 @@ const domainRoutePolicy = new DomainRoutePolicyStore({
   customResources: () => routingSettings().customResources,
   schoolDomains: () => routingSettings().routeDomains,
   directPartnerDomains: () => activeSchoolProfile.directPartnerDomains,
-  serverResources: () => serverCampusResources,
+  serverResources: activeSchoolProfile.mergeResourceLibrary([], []),
 });
 // ---------- engine ----------
 function nativeResourcePath(kind) {
@@ -452,7 +451,7 @@ const profileSwitching = createMainProfileSwitchComposition({
     clearProxyCredential: clearActiveProxyCredential, clearConnectionPresentation,
     ensureEngineStopped, cleanupOrphanedEngine: () => killStrayEngines(enginePath()),
     revokeProxyAccess: revokeExternalProxyAccess,
-    clearServerState: () => { vpnCredentialAccess.clear(); serverCampusResources = []; state.lastError = null;
+    clearServerState: () => { vpnCredentialAccess.clear(); domainRoutePolicy.clearServerResources(); state.lastError = null;
       state.browserNotice = null; clearConnectionPresentation(); return true; },
     closeLog: () => logWriter?.close().catch(reportLogFailure),
   },
