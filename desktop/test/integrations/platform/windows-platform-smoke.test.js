@@ -63,6 +63,41 @@ function customConfirmation() {
   return owner.consume({ confirmationHandle: view.confirmationHandle, activeContext });
 }
 
+test('native settings recovery keeps Main observation and localized notice in Persistence', t => {
+  const root = privateRoot(t, 'hkustgz-native-settings-recovery-');
+  const source = fs.readFileSync(path.join(DESKTOP, 'main.js'), 'utf8');
+  const expression = source.match(/onRecovery:\s*(notice => persistenceRuntime\.observeSettingsRecovery\(notice\))/u)?.[1];
+  assert.ok(expression, 'exercise the actual Main callback, not a replacement policy');
+  for (const kind of ['restored', 'defaults']) {
+    const settingsFile = path.join(root, `${kind}.json`);
+    const state = { notice: null };
+    let runtime, emitted = 0;
+    const callback = vm.runInNewContext(`(${expression})`, {
+      get persistenceRuntime() { return runtime; },
+    });
+    const legacy = DesktopPersistenceRuntime.createLegacyAdapter({
+      settingsFile, credentialFile: path.join(root, `${kind}.enc`), safeStorage: {},
+      platform: process.platform, getDefaultRouteDomains: () => ['example.invalid'], onRecovery: callback,
+    });
+    if (kind === 'restored') legacy.saveSettings({ port: 6180 });
+    fs.writeFileSync(settingsFile, '{synthetic-corrupt-document');
+    runtime = new DesktopPersistenceRuntime({
+      preReadySelection: { mode: 'legacy-flat', paths: {} },
+      initializeAfterReady: () => ({ mode: 'legacy-flat' }), legacy,
+      settingsPresentation: { getState: () => state, translate: key => key,
+        emit: () => { emitted++; }, getAdditionalNotice: () => runtime.settingsRecoveryNoticeText },
+    });
+    runtime.initialize();
+    runtime.loadSettings();
+    assert.deepEqual(JSON.parse(JSON.stringify(runtime.settingsRecoveryNotice)), { kind, quarantined: true });
+    runtime.setSettingsRecoveryNoticeText(`synthetic-${kind}`);
+    runtime.applyCredentialRecoveryOutcome({ ok: true, status: 'recovered' }, { emitState: false });
+    assert.equal(state.notice, `synthetic-${kind}\nerror.credentialRecoveryRecovered`);
+    assert.equal(emitted, 0);
+    assert.equal(fs.existsSync(path.join(root, `${kind}.enc`)), false);
+  }
+});
+
 test('real Windows credential adapters retire projections and preserve bounded login metadata', {
   skip: process.platform !== 'win32',
 }, t => {

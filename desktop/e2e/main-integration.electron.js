@@ -9,6 +9,28 @@ const { ProfileWorkspaceStartupRuntime } = require('../lib/persistence/runtime/p
 const { projectRuntimeSettings } = require('../lib/persistence/settings/profile-workspace-settings-bundle');
 const { saveSettings } = require('../lib/persistence/settings/settings-store');
 const { createLegacyRuntimeStoragePaths } = require('../lib/persistence/paths/runtime-storage-paths');
+const { DesktopPersistenceRuntime } = require('../lib/persistence/runtime/desktop-persistence-runtime');
+const { createT } = require('../lib/platform/i18n/i18n');
+
+// Test-process-only observation through Main's actual legacy callback. It must
+// be translated and merged by ordinary startup before the first state read.
+const recoveryKind = process.env.HKUSTGZ_FIXTURE_RECOVERY_KIND || 'restored';
+assert.ok(['restored', 'defaults'].includes(recoveryKind));
+const originalLegacyAdapter = DesktopPersistenceRuntime.createLegacyAdapter;
+const originalLoadSettings = DesktopPersistenceRuntime.prototype.loadSettings;
+let observeRecovery = null;
+DesktopPersistenceRuntime.createLegacyAdapter = function captureRecovery(options) {
+  observeRecovery = options.onRecovery;
+  return originalLegacyAdapter.call(this, options);
+};
+DesktopPersistenceRuntime.prototype.loadSettings = function observeFixtureRecovery(...args) {
+  if (observeRecovery) {
+    const callback = observeRecovery;
+    observeRecovery = null;
+    callback({ kind: recoveryKind, quarantined: true });
+  }
+  return originalLoadSettings.apply(this, args);
+};
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-main-e2e-'));
 process.env.HKUSTGZ_USER_DATA_DIR = profile;
@@ -88,6 +110,8 @@ async function run() {
   const initial = await invoke(control, 'window.api.getState()');
   assert.equal(initial.settings.port, 1080);
   assert.equal(initial.dnsMode, 'unknown');
+  assert.equal(initial.notice, createT('zh')(recoveryKind === 'restored'
+    ? 'error.settingsRestored' : 'error.settingsDefaults'));
   assert.deepEqual(await invoke(control, 'window.api.getLoginAccount()'), { ok: true, username: '' });
   const initialCardBoard = await invoke(control, 'window.api.getCardBoardLayout()');
   assert.equal(initialCardBoard.document.schemaVersion, 1);
