@@ -33,7 +33,9 @@ Nine public-seam cases initially fail because the factory is absent, then pass:
 effect-free construction, ownership/frame gates, exact forwarding, prompt failure,
 unowned/nonmatching proxy challenges, captured generation, current Browser and
 unchanged trust-store type/deferred file access. The existing consent and module
-contracts remain. Actual isolated Electron strict-proxy/MFA/Profile/Engine and
+contracts remain. The isolated Electron strict-proxy fixture now directly registers
+this production dispatch handler for Chromium's real HTTP/WS challenge path,
+rather than keeping a duplicate fixture-only policy. MFA/Profile/Engine and
 exact-source/platform checks are separate requirements, not real Gateway evidence.
 
 Main falls from 800 to 776 lines and 27 to 26 direct dependencies with no new

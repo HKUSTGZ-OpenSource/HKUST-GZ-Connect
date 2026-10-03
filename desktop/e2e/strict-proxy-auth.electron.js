@@ -15,7 +15,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { app, BrowserWindow, WebContentsView, session } = require('electron');
 const { CampusBrowser } = require('../lib/browser/session/campus-browser');
-const { createCampusBrowserWindowOwner } = require('../lib/browser/session/campus-browser-manager');
+const { CampusBrowserManager, createCampusBrowserWindowOwner } = require('../lib/browser/session/campus-browser-manager');
 const { buildDomainRoutePac } = require('../lib/routing/policy/domain-route-policy');
 const { pacDataUrl } = require('../lib/browser/session/browser-session-manager');
 const { EphemeralProxyCredential } = require('../lib/persistence/credentials/proxy-credential');
@@ -302,13 +302,18 @@ async function run() {
   resources.browser = browser;
 
   let loginChallenges = 0;
-  resources.loginHandler = (event, webContents, _details, authInfo, callback) => {
-    if (!browser.ownsWebContents(webContents) ||
-        !credential.matchesProxyChallenge(authInfo, 1)) return;
-    loginChallenges += 1;
-    event.preventDefault();
-    credential.answerProxyChallenge(authInfo, 1, callback);
-  };
+  const security = CampusBrowserManager.createRequestSecurityBoundary({
+    getBrowser: () => browser,
+    getEngineGeneration: () => 1,
+    proxyAccess: {
+      matchesProxyChallenge: (info, generation) => credential.matchesProxyChallenge(info, generation),
+      answerProxyChallenge: (info, generation, callback) => {
+        loginChallenges++;
+        return credential.answerProxyChallenge(info, generation, callback);
+      },
+    },
+  });
+  resources.loginHandler = security.proxyLogin;
   app.on('login', resources.loginHandler);
 
   await browser.open(HTTP_TARGET, port, 'campus');
