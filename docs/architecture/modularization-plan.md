@@ -235,6 +235,11 @@ Main keeps event registration and falls to 776 lines / 26 direct dependencies; a
 proxy credentials and their teardown remain separate owners. No new policy, public import-debt
 exception or global network behavior is added; M3's 24-dependency/final targets remain open.
 
+The proposed [proxy access composition](desktop-proxy-access-composition.md) constructs the
+unchanged encrypted store and generation/sidecar owner through the Persistence public entrypoint.
+Main falls to 767 lines / 24 direct dependencies and private-edge debt to 108. Those candidate
+metrics meet the intermediate below-800/24 stage, not final 500-700/20 composition or M5 acceptance.
+
 Move remaining settings-surface coordination, connection start/stop, browser-open and update
 orchestration behind existing domain services. Main should perform:
 

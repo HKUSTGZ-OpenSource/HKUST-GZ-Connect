@@ -6,6 +6,8 @@ const { loadSettings: readSettings, saveSettings: writeSettings } = require('../
 const { hasStoredPassword, loadPasswordResult: readPasswordResult,
   restorePasswordSnapshot, savePassword: writePassword, VpnCredentialAccessCoordinator } = require('../credentials/credential-store');
 const { parseCredentialField } = require('../settings/settings-update');
+const { ProxyAccessCoordinator, cleanupProxyAccessForEngineClose } = require('../credentials/proxy-credential');
+const { ExternalProxyCredentialStore } = require('../credentials/external-proxy-credential-store');
 const {
   recoverCredentialSettingsTransaction,
   runCredentialSettingsMutation,
@@ -54,6 +56,16 @@ class DesktopPersistenceRuntime {
 
   static createVpnCredentialAccess(options) {
     return new VpnCredentialAccessCoordinator({ ...options, parseField: parseCredentialField });
+  }
+
+  static createProxyAccess({ credentialStore, ...effects } = {}) {
+    return new ProxyAccessCoordinator({
+      ...effects, store: new ExternalProxyCredentialStore(credentialStore),
+    });
+  }
+
+  static cleanupProxyAccessForEngineClose(options) {
+    return cleanupProxyAccessForEngineClose(options);
   }
 
   static createLegacyAdapter({ settingsFile, credentialFile, safeStorage, platform,
