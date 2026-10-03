@@ -2,7 +2,7 @@
 
 - Status: Active execution plan; M4 completed, M1/M2/M3/M5 open
 - Owner: architecture maintainers
-- Last verified: 2026-09-27 (`main@4b095e9beb6dd8d26f657afa3888c9768c5bc4b9`)
+- Last verified: 2026-10-03 (`main@32fb83a4d21c96a9748b6c2785647ff419067cf1`)
 - Applies to: development `main` after published 2.0.3; merged source is not a new release
 - Supersedes: ad-hoc file-by-file extraction without an ownership receipt
 
@@ -20,10 +20,11 @@ exhausted: Main has 36 direct dependencies, 170 transitive dependencies and 1,71
 Renderer has 563 lines. At that baseline, the gate could not see the main Renderer page's ordered
 global-script graph; #110 later added a static boundary policy for new changes.
 
-At the verification commit, Renderer `app.js` is 562 lines, Campus Browser 1,476,
-Desktop Main 1,084 (33 direct / 47 effective / 170 transitive dependencies) and
+At the verification commit, Renderer `app.js` is 412 lines, Campus Browser 1,137,
+Desktop Main 819 (30 direct / 44 effective / 170 transitive dependencies) and
 `ec-engine.rs` 498. M4/#82 is closed through #148; the other
 four waves remain open. Counts are debt evidence, not a substitute for ownership/lifecycle gates.
+Per-wave size counts below are historical extraction receipts, not competing current totals.
 
 Primary concurrency hot spots:
 
@@ -56,7 +57,7 @@ without changing connection authority or completing the remaining M1 bootstrap w
 
 The [feature host](renderer-feature-host.md) and separate lifecycle slices now mount campus-data,
 official-favorites, interactive-auth and Integration Center from explicit entrypoints (#108–#120).
-The staged [Control Tower form owner](renderer-control-tower-owner.md) moves the bounded advanced
+The merged #187 [Control Tower form owner](renderer-control-tower-owner.md) moves the bounded advanced
 settings form/apply and feedback lifecycle out of the Renderer bootstrap without changing its
 markup or immediate proxy-auth migration owner. It is one M1 slice, not bootstrap completion.
 The [static Renderer policy](renderer-boundaries.md) in #110 rejects new legacy exports and invalid
@@ -67,7 +68,7 @@ candidate SHAs in linked review records are historical; none is part of publishe
 remaining `app.js` composition and legacy global/HTML-order debt prevent closing M1 merely because
 these slices passed CI. The host must not mask missing owner cleanup with a no-op.
 
-The staged [Notifications and Help owner](renderer-notifications-owner.md) retires two classic
+The merged #196 [Notifications and Help owner](renderer-notifications-owner.md) retires two classic
 HTML scripts and their two frozen `window.*` exports in favor of one explicit feature-host
 entrypoint. It keeps the existing drawer, diagnostics, focus trap and Reduced Motion behavior;
 other legacy script-order and bootstrap responsibilities keep M1 open.
@@ -95,22 +96,22 @@ acceptance result.
 
 The first tab-view ownership boundary is documented in
 [Browser tab lifecycle owner](browser-tab-lifecycle.md). It is a separately reviewable extraction,
-not a completion claim for all Browser owners. The current-base candidate reduces the remaining
-Browser orchestrator from 1,804 to 1,627 lines; its tab owner is 397 lines, below the 600-line
+not a completion claim for all Browser owners. That historical #142 extraction reduced the
+Browser orchestrator from 1,804 to 1,627 lines; its tab owner was 397 lines, below the 600-line
 per-owner ceiling.
 
 [Workspace ownership](browser-workspace-owner.md) moves Browser-facing workspace and favorite
 projection/effects into the existing Workspace module, keeping its sandbox protocol unchanged.
 
-The proposed [Campus Browser window owner](browser-window-owner.md) isolates the chrome window's
+The merged #161 [Campus Browser window owner](browser-window-owner.md) isolates the chrome window's
 creation, toolbar event binding and close confirmation in the existing Browser manager module,
 without adding a production dependency node or changing credential-popup ownership.
 
-The staged [Browser toolbar owner](browser-toolbar-owner.md) moves toolbar state projection,
+The merged #186 [Browser toolbar owner](browser-toolbar-owner.md) moves toolbar state projection,
 coalesced updates and teardown cancellation out of the Browser orchestrator. It is based on the
-certificate-entrypoint candidate and is not a full M2 completion or a shipped Browser change.
+merged #185 certificate entrypoint and is not a full M2 completion or a released Browser change.
 
-The staged [Browser navigation owner](browser-navigation-owner.md) gives tab-bound intent, Home,
+The merged #192 [Browser navigation owner](browser-navigation-owner.md) gives tab-bound intent, Home,
 New Tab, address navigation and reload to a distinct class co-located with the existing tab
 lifecycle module. The Browser orchestrator falls from 1,437 to 1,368 lines; the tab file remains
 below 600 and the transitive dependency budget remains unchanged. M2 is still open.
@@ -120,7 +121,7 @@ effective navigation-route selection and tab route refresh into that same owner.
 falls further to 1,333 lines, the co-located owner file remains below 600 and the Routing policy
 and dependency budget stay unchanged. M2 is not complete.
 
-The staged [managed credential popup owner](browser-managed-popup-owner.md) moves native MFA
+The merged #194 [managed credential popup owner](browser-managed-popup-owner.md) moves native MFA
 child-window construction, event wiring and idempotent close out of the Browser orchestrator.
 The Browser root falls to 1,236 lines; the separate owner class shares the existing 492-line
 credential module, below 600, without changing Session or credential-flow authority. M2 remains
@@ -179,9 +180,10 @@ adaptation and settings-read feedback into the existing Runtime. Main falls to
 
 [Credential transaction ownership](desktop-credential-transaction-owner.md) moves
 legacy journal recovery, its blocked/retry state, mutation dispatch and recovery
-feedback into that same Runtime. At the candidate tree Main falls to 1,008 lines,
+feedback into that same Runtime. At that historical slice Main falls to 1,008 lines,
 32 direct / 46 effective dependencies, with 170 transitive dependencies unchanged.
-The first-stage direct dependency target and remaining M3 composition work stay open.
+The first-stage dependency target was still open at that slice; the current 819-line/30-dependency
+root meets that first stage. The below-800/24 and final composition stages remain open.
 
 The follow-on connectivity-operation seam extends the existing
 [Connection operation owner](desktop-connection-operation-owner.md) with recovery
@@ -191,26 +193,26 @@ existing state entrypoint is 541; 32 direct / 46 effective / 170 transitive
 dependencies are unchanged. M3 remains open: this does not reach the below-800/24
 intermediate or 500–700/20 final target.
 
-The [Routing policy coordinator](desktop-routing-policy-coordinator.md) candidate moves derived
+The merged #184 [Routing policy coordinator](desktop-routing-policy-coordinator.md) moves derived
 PAC publication and rule commit/restore bundles into the existing Routing entrypoint. Main
 falls to 896 lines / 31 direct / 45 effective / 170 transitive dependencies; M3 remains open.
 
-The staged [proxy access owner](desktop-proxy-access-owner.md) keeps the stable local-proxy secret,
+The merged #188 [proxy access owner](desktop-proxy-access-owner.md) keeps the stable local-proxy secret,
 per-Engine copy, owner-only helper sidecar and generation-bound retirement in the existing
 Persistence credential entrypoint. Main falls from 895 to 864 lines without a new production
 module or expanded dependency budget. It remains above the next M3 size/dependency targets.
 
-The [settings transaction owner](desktop-settings-transaction-owner.md) candidate moves the
+The merged #189 [settings transaction owner](desktop-settings-transaction-owner.md) moves the
 cached route-settings snapshot and the close-action commit/rollback factory into the existing
 Persistence Runtime. Main falls from 864 to 845 lines; dependency metrics remain stable. This is
-still a staged M3 contribution, not the below-800/24 intermediate gate.
+merged source, not the below-800/24 intermediate gate.
 
-The [Browser readiness owner](desktop-browser-readiness-owner.md) candidate returns the two
+The merged #190 [Browser readiness owner](desktop-browser-readiness-owner.md) returns the two
 intent-bound Browser connection wait outcomes to the existing Connection operation entrypoint.
 Main falls from 845 to 831 lines; the reviewed 75-second deadline and dependency budgets stay
 unchanged. Browser launch/routing behavior and the later M3 targets remain separate.
 
-The staged [Resource library owner](desktop-resource-open-owner.md) moves Profile-backed
+The merged #191 [Resource library owner](desktop-resource-open-owner.md) moves Profile-backed
 resource source adaptation and ID-only open transactions into the existing Resources runtime.
 Main falls from 831 to 819 lines without a new dependency node or changed route authority.
 The next M3 size and dependency targets remain open.
@@ -274,12 +276,12 @@ The schema-2 path/entrypoint subset is defined in
 explicitly not promoted to complete by this coverage check.
 The static-JS ratchet now rejects new resolved cross-module bypasses against 124 exact legacy
 edges at `main@381c5f29`. Declaring the existing shared campus-route contract public reduces
-the candidate inventory to 116; the rest remain M5 migration work, not accepted public APIs.
-Routing coordination removes Main's private PAC-file edge and lowers the follow-on candidate
-inventory and cap to 115, without adding a transitive module.
+the inventory to 116. Merged #184 Routing coordination lowers it to 115 and #185 certificate
+entrypoint to 113, without new public policy or budget expansion. The current inventory/hard
+cap is 113; dynamic Renderer and Rust visibility remain separate M5 work.
 
-- Move remaining root Desktop tests into `test/unit/<domain>`, `test/contracts` or
-  `test/integrations`; reject new root-test debt.
+- Root Desktop test debt is zero; keep tests in `test/unit/<domain>`, `test/contracts` or
+  `test/integrations` and reject new root-test debt.
 - Validate `module-map.yml` path coverage and public entrypoints.
 - Add dependency checks for Renderer globals/ES modules and Rust visibility.
 - Keep stable required GitHub status contexts even when internal jobs are reorganized.

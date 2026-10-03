@@ -2,7 +2,7 @@
 
 - Status: Path-coverage contract plus static-JS edge ratchet for M5; full dependency enforcement remains incomplete
 - Owner: architecture and repository maintainers
-- Last verified: 2026-09-29
+- Last verified: 2026-10-03 (`main@32fb83a4d21c96a9748b6c2785647ff419067cf1`)
 - Applies to: `module-map.yml` schema 2, `desktop/scripts/module-map-coverage.js`,
   `desktop/scripts/check-architecture.js` and `desktop/scripts/module-edge-debt.json`
 - Scope: path coverage, ownership uniqueness, schema, public-entrypoint existence and
@@ -53,18 +53,19 @@ edges use only `ROUTE_CAMPUS`, `ROUTE_DIRECT`, `routeForUrl`, `CAMPUS_PARTITION`
 existing file, including other exported Routing helpers, is importable. This declares the actual
 shared boundary rather than pretending those helpers have a curated façade. It changes no runtime
 behavior. The rule store, host-safety logic and PAC files remain private. The debt inventory and
-hard cap are 116 edges, down from the 124-edge baseline.
+hard cap at that slice were 116 edges, down from the 124-edge baseline.
 
 The follow-on [Routing coordinator](desktop-routing-policy-coordinator.md) removes Main's direct
 private PAC-file import by placing derived publication in the existing public Routing owner.
-Its candidate inventory and hard cap are 115; no additional runtime module is introduced.
+Merged #184 reduced the inventory and hard cap to 115; no additional runtime module was introduced.
 
-The [Browser certificate entrypoint](browser-certificate-entrypoint.md) candidate puts the
+The merged #185 [Browser certificate entrypoint](browser-certificate-entrypoint.md) puts the
 unchanged owned/main-frame dispatch helpers beside the existing consent controller and exposes
 that file as Browser's certificate boundary. Main no longer imports the separate private
 dispatch leaf or the private trust-store file; it constructs the unchanged store through the
-public class re-export. Its candidate inventory/cap fall to 113, Main's direct dependencies to 30
-and transitive modules to 169. Low-level trust persistence remains private; consent is unchanged.
+public class re-export. Its inventory/cap fell to 113 and Main's direct dependencies to 30.
+Current static-JS debt remains 113; Main's transitive graph is 170, not a claim that that older
+169-module slice is still the current count. Low-level trust persistence stays private; consent is unchanged.
 
 This is an explicit migration ratchet, not a claim that all current imports already respect the
 module map. A reviewed policy change can alter the debt manifest, so its diff and the resulting
@@ -97,11 +98,13 @@ enforcement on.
 
 `dependencyEnforcement: inventory-only` is an explicit schema field. The path-coverage checker
 validates referenced module IDs, while the separate architecture ratchet rejects new resolved
-static-JS violations but still records 113 legacy exceptions at the certificate-entrypoint candidate.
+static-JS violations but still records 113 legacy exceptions in the verified current source.
 It does not resolve computed
 `require()`/`import()` targets or Rust visibility and cannot prove full cross-module enforcement.
 Do not change the field to claim otherwise. The existing Renderer feature checks cover their
-separately documented subset; complete M5 enforcement remains outstanding, alongside M2–M4.
+separately documented subset; complete M5 enforcement remains outstanding, alongside M1/M2/M3.
+M4's process-composition outcome is closed; broader Rust visibility/config/tunnel boundaries
+are not silently treated as completed M5 enforcement.
 
 `requiredChecks` records module review requirements; this checker accepts only its closed reviewed
 vocabulary of existing GitHub contexts and local acceptance aliases, rejecting typos and invented
