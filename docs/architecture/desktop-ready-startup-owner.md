@@ -1,9 +1,9 @@
 # Desktop ready-startup sequence
 
-- Status: Proposed bounded M3 migration; not final Main composition or a released change
+- Status: Current merged bounded M3 startup owner; not final Main composition or a released change
 - Owner: Desktop App maintainers
 - Last verified: 2026-10-03
-- Applies to: candidate based on development `main@72eb4199131f06d557883617b892e14023d1591e`
+- Applies to: merged #215; verified development `main@eb5a60743427286e5af5c6eafce48d4ddaa5b63d`, not v2.0.3
 
 The existing App startup module holds the separately tested `DesktopStartupRuntime`
 and `MultiSchoolStartupRuntime`. The first coordinates the application ready

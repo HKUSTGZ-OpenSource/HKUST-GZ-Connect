@@ -1,9 +1,9 @@
 # Renderer browser-data settings owner
 
-- Status: Proposed bounded M1 migration; not complete Renderer bootstrap or a released change
+- Status: Current merged bounded M1 owner; not complete Renderer bootstrap or a released change
 - Owner: Desktop Renderer maintainers
 - Last verified: 2026-10-03
-- Applies to: candidate based on development `main@a4f5a7d29ec288bb84c7271168616d6f5ec09244`
+- Applies to: merged #214; verified development `main@eb5a60743427286e5af5c6eafce48d4ddaa5b63d`, not v2.0.3
 
 The browser-data control has one native feature entrypoint mounted by the existing
 feature host. Its classic HTML script and frozen `window.browserDataSettings`

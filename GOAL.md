@@ -5,7 +5,7 @@
 - Baseline: `main@15738338ff2a280300b66e98a1823659f24630a4`
 - Started: 2026-09-04
 - Last verified: 2026-10-03 (before this documentation PR)
-- Development main at verification: `32fb83a4d21c96a9748b6c2785647ff419067cf1`
+- Development main at verification: `eb5a60743427286e5af5c6eafce48d4ddaa5b63d`
 - Scope: repository governance, documentation truth, agent instructions, module boundaries,
   contributor workflow, GitHub protections and organization migration
 
@@ -56,9 +56,14 @@ high-risk rules. No instruction file is treated as a substitute for review or te
    Later #184/#188/#189/#190/#191 narrow Main's policy, proxy-access, settings, readiness and
    resource transactions; #192-#195 move Browser navigation/route/popup/toolbar ownership;
    #179/#187/#196 move connection, Control Tower and notification presentation into native owners.
-   Main is 819 lines with 30 direct / 44 effective / 170 transitive dependencies; Browser is
-   1,137 lines, Renderer bootstrap 412 and Engine root 498. M3's first 1,200/30 stage is met,
-   but its below-800/24 and final composition targets are not. M2's full ownership target is not met.
+   #208 repairs the reproduced queued routing-follower race (#207); #209 moves routing activation
+   into its Session owner. #210-#212 narrow credential access, Browser request-security dispatch
+   and proxy-access composition. #213/#214 retire the new-tab and browser-data classic globals;
+   #215 owns ordered ready startup and removes unused App composition exports.
+   Main is 730 lines with 24 direct / 39 effective / 170 transitive dependencies; Browser is
+   1,122 lines, Renderer bootstrap 420 and Engine root 498. M3's first 1,200/30 and intermediate
+   below-800/24 stages are met, but final 500-700/20 composition is not. M2's full ownership target
+   is not met. Static-JS private-edge inventory/cap is 105; 24 legacy Renderer files remain.
    #162's reproduced window cleanup is merged; #178 fixes the reproduced calendar source query,
    but #177 still requires a sanitized reporter retest. #200 closes custom-Profile credential
    retirement failure #199; #198 closes #197's bounded Gateway locator/explicit TLS source scope.
@@ -68,7 +73,8 @@ high-risk rules. No instruction file is treated as a substitute for review or te
    43.7.7 and older supported platforms. Its build tool is pinned to an explicitly reviewed
    prerelease (`electron-builder@27.0.0-alpha.9`), not silently represented as stable tooling.
    None of these post-tag changes is in 2.0.3. M1/M2/M3/M5 and the original Windows report #127
-   remain open. An empty PR queue is not completion; active candidates are not released capabilities.
+   remain open. Exact-main CI `37123050750` passed on the verification commit after #215.
+   An empty PR queue is not completion; merged post-tag source is not a released capability.
 5. Repository Rulesets, CODEOWNERS, templates, Dependabot, release Environment and immutable Action
    policies are active. Two Organization owners are present. Protected `main` still requires one
    approval and seven strict checks; the maintainer authorized one-time administrator squash merges
@@ -212,7 +218,7 @@ release assumptions.
 
 Stable remains immutable `v2.0.3@b57c394c73e0b07a0076e26f58e1666e29f00135`.
 Development source at this checkpoint is
-`main@32fb83a4d21c96a9748b6c2785647ff419067cf1`; later source fixes and owner extractions
+`main@eb5a60743427286e5af5c6eafce48d4ddaa5b63d`; post-tag source fixes and owner extractions
 do not silently alter that release or the installed application. An empty PR queue is not
 goal completion. M4/#82 and dependency backlog #105 are
 closed; Renderer, remaining Browser, Main composition, full dependency enforcement, deferred

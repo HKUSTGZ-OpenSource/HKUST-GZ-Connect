@@ -2,7 +2,7 @@
 
 - Status: Path-coverage contract plus static-JS edge ratchet for M5; full dependency enforcement remains incomplete
 - Owner: architecture and repository maintainers
-- Last verified: 2026-10-03 (`main@32fb83a4d21c96a9748b6c2785647ff419067cf1`)
+- Last verified: 2026-10-03 (`main@eb5a60743427286e5af5c6eafce48d4ddaa5b63d`)
 - Applies to: `module-map.yml` schema 2, `desktop/scripts/module-map-coverage.js`,
   `desktop/scripts/check-architecture.js` and `desktop/scripts/module-edge-debt.json`
 - Scope: path coverage, ownership uniqueness, schema, public-entrypoint existence and
@@ -64,8 +64,11 @@ unchanged owned/main-frame dispatch helpers beside the existing consent controll
 that file as Browser's certificate boundary. Main no longer imports the separate private
 dispatch leaf or the private trust-store file; it constructs the unchanged store through the
 public class re-export. Its inventory/cap fell to 113 and Main's direct dependencies to 30.
-Current static-JS debt remains 113; Main's transitive graph is 170, not a claim that that older
-169-module slice is still the current count. Low-level trust persistence stays private; consent is unchanged.
+Later #210 credential access, #212 proxy composition and #215 App startup retire three,
+two and three additional private edges respectively. Current inventory/cap is 105 and Main's
+transitive graph is 170, not the older 169-module slice. Main has 24 direct / 39 effective
+dependencies; its hard line cap is 730 and App composition member cap is 16. Low-level trust
+persistence stays private; consent is unchanged.
 
 This is an explicit migration ratchet, not a claim that all current imports already respect the
 module map. A reviewed policy change can alter the debt manifest, so its diff and the resulting
@@ -98,7 +101,7 @@ enforcement on.
 
 `dependencyEnforcement: inventory-only` is an explicit schema field. The path-coverage checker
 validates referenced module IDs, while the separate architecture ratchet rejects new resolved
-static-JS violations but still records 113 legacy exceptions in the verified current source.
+static-JS violations but still records 105 legacy exceptions in the verified current source.
 It does not resolve computed
 `require()`/`import()` targets or Rust visibility and cannot prove full cross-module enforcement.
 Do not change the field to claim otherwise. The existing Renderer feature checks cover their

@@ -1,9 +1,9 @@
 # Browser application request-security boundary
 
-- Status: Proposed bounded M3 extraction; not a release or full Browser/Main composition
+- Status: Current merged bounded M3 boundary; not a release or full Browser/Main composition
 - Owner: Desktop Browser maintainers
 - Last verified: 2026-10-03
-- Applies to: candidate based on development `main@d553493719860853c680d72a2c6f05f32ab19f73`
+- Applies to: merged #211; verified development `main@eb5a60743427286e5af5c6eafce48d4ddaa5b63d`, not v2.0.3
 
 `BrowserRequestSecurityBoundary` co-locates the existing application-event dispatch
 with the Browser certificate consent entrypoint. The public Browser Manager factory
@@ -38,11 +38,11 @@ this production dispatch handler for Chromium's real HTTP/WS challenge path,
 rather than keeping a duplicate fixture-only policy. MFA/Profile/Engine and
 exact-source/platform checks are separate requirements, not real Gateway evidence.
 
-Main falls from 800 to 776 lines and 27 to 26 direct dependencies with no new
+At the #211 slice Main falls from 800 to 776 lines and 27 to 26 direct dependencies with no new
 production file or transitive dependency. Static private-edge debt remains 110;
 removing one already-public import is not represented as eliminating another debt
-exception. M3 is incomplete because the intermediate dependency target is 24 and
-the final composition target is still stricter.
+exception. That slice did not reach the 24-dependency intermediate target; #212 later
+does. Final composition remains incomplete; current totals belong to the implementation index.
 
 Rollback the Manager factory, boundary, Main wiring, test-seam update and this
 record together. No IPC/schema/migration, user data, global networking, installed

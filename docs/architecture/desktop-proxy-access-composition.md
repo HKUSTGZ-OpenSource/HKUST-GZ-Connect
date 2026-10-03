@@ -1,9 +1,9 @@
 # Desktop proxy-access composition boundary
 
-- Status: Proposed bounded M3/M5 ownership convergence; not a release or complete Main composition
+- Status: Current merged bounded M3/M5 boundary; not a release or complete Main composition
 - Owner: Desktop Persistence maintainers
 - Last verified: 2026-10-03
-- Applies to: candidate based on development `main@803ed1937400349b9edac140419aacaed3346f92`
+- Applies to: merged #212; verified development `main@eb5a60743427286e5af5c6eafce48d4ddaa5b63d`, not v2.0.3
 
 The existing Persistence public runtime constructs the unchanged encrypted
 `ExternalProxyCredentialStore` and `ProxyAccessCoordinator` together. Main injects
@@ -27,10 +27,10 @@ challenge scope, failure/no-publication, stale cleanup and redacted diagnostics.
 Simulated Windows assertions are not native Windows acceptance; exact-head native
 private-file/platform/package CI remains mandatory.
 
-Main falls from 776 to 767 lines and 26 to 24 direct dependencies, with 170
+At the #212 slice Main falls from 776 to 767 lines and 26 to 24 direct dependencies, with 170
 transitive modules unchanged and no new production file. Exactly two obsolete Main
 private-import exceptions retire; the frozen inventory/ceiling drop 110 -> 108.
-The intermediate below-800/24 stage is reached by these measured candidate values,
+The intermediate below-800/24 stage is reached by these measured merged-slice values,
 not the final 500-700/20 composition outcome. M3 and full M5 remain open.
 
 No changed encryption format, persistent schema, credential migration, default
