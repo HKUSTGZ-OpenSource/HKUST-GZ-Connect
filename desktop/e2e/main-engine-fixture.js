@@ -46,6 +46,8 @@ const attemptFile = path.join(userData, 'synthetic-engine-attempt.txt');
 const observationFile = path.join(userData, 'synthetic-engine-observations.jsonl');
 const stableFirstAttempt = process.env.HKUSTGZ_SYNTHETIC_ENGINE_STABLE_E2E === '1';
 const dropAfterConnected = process.env.HKUSTGZ_SYNTHETIC_ENGINE_DROP_AFTER_CONNECTED_E2E === '1';
+const holdReadiness = process.env.HKUSTGZ_SYNTHETIC_ENGINE_READY_HOLD_E2E === '1';
+const readinessReleaseFile = path.join(userData, 'synthetic-engine-readiness-release.txt');
 let attempt = 1;
 try { attempt = Number(fs.readFileSync(attemptFile, 'utf8')) + 1; } catch {}
 fs.writeFileSync(attemptFile, String(attempt));
@@ -132,7 +134,7 @@ input.on('line', (line) => {
 
     state('connected', generation - 1);
     observe('stale_generation_sent', { staleGeneration: generation - 1 });
-    setTimeout(() => {
+    const publishReadiness = () => {
       state('connecting');
       state('authenticating');
       state('preparing_tunnel');
@@ -164,7 +166,18 @@ input.on('line', (line) => {
           }
         }, 300);
       });
-    }, 600);
+    };
+    if (holdReadiness) {
+      observe('readiness_held');
+      const deadline = Date.now() + 10_000;
+      const release = () => {
+        if (stopping) return;
+        if (fs.existsSync(readinessReleaseFile)) { publishReadiness(); return; }
+        if (Date.now() >= deadline) { observe('readiness_hold_timeout'); process.exit(70); }
+        setTimeout(release, 25);
+      };
+      release();
+    } else setTimeout(publishReadiness, 600);
     return;
   }
 

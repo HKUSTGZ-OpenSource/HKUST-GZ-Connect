@@ -82,6 +82,86 @@ function fixture(overrides = {}) {
   return { errors, manager };
 }
 
+function deferredOpen() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+test('late campus readiness after a windowless context close cannot allocate a Browser', async () => {
+  for (const outcome of [{ ok: true }, { ok: false, error: 'synthetic offline' }]) {
+    const readiness = deferredOpen(), f = fixture({ ensureConnected: () => readiness.promise });
+    const opening = f.manager.open('https://campus.example.invalid/');
+    assert.equal(f.manager.browser, null);
+    assert.equal(await f.manager.closeForContextSwitch(), true);
+    readiness.resolve(outcome);
+    assert.deepEqual(await opening, { ok: false, stale: true });
+    assert.equal(f.manager.browser, null);
+    assert.deepEqual(f.errors, []);
+    if (outcome.ok) {
+      assert.equal((await f.manager.open('https://campus.example.invalid/')).ok, true,
+        'the same Manager remains reusable for a newly requested open');
+    }
+  }
+});
+
+test('retired readiness rejection is stale while a current readiness rejection keeps its original cause', async () => {
+  for (const retire of [false, true]) {
+    const readiness = deferredOpen(), f = fixture({ ensureConnected: () => readiness.promise });
+    const opening = f.manager.open('https://campus.example.invalid/');
+    const failure = new Error('synthetic readiness failure');
+    if (retire) f.manager.close();
+    readiness.reject(failure);
+    if (retire) assert.deepEqual(await opening, { ok: false, stale: true });
+    else await assert.rejects(opening, error => error === failure);
+    assert.equal(f.manager.browser, null);
+    assert.deepEqual(f.errors, []);
+  }
+});
+
+test('late Browser success or error after disposal cannot affect the replacement Browser', async () => {
+  for (const reject of [false, true]) {
+    const loaded = deferredOpen(); let firstBrowser = null;
+    class DelayedBrowser extends FakeBrowser {
+      async open(...args) {
+        if (firstBrowser === null) firstBrowser = this;
+        if (this === firstBrowser) return loaded.promise;
+        return super.open(...args);
+      }
+    }
+    const f = fixture({ CampusBrowserClass: DelayedBrowser });
+    const opening = f.manager.open();
+    const old = f.manager.browser;
+    f.manager.close();
+    const replacement = f.manager.getOrCreate();
+    assert.notEqual(replacement, old);
+    if (reject) loaded.reject(new Error('synthetic retired Browser failure'));
+    else loaded.resolve();
+    assert.deepEqual(await opening, { ok: false, stale: true });
+    assert.equal(f.manager.browser, replacement);
+    assert.deepEqual(f.errors, []);
+    assert.equal((await f.manager.open()).ok, true);
+  }
+});
+
+test('context-close admission retires pending opens before the Browser confirms closure', async () => {
+  const loaded = deferredOpen(), closing = deferredOpen();
+  class DelayedBrowser extends FakeBrowser {
+    async open() { return loaded.promise; }
+    closeForContextSwitch() { return closing.promise; }
+  }
+  const f = fixture({ CampusBrowserClass: DelayedBrowser });
+  const opening = f.manager.open(), browser = f.manager.browser;
+  const close = f.manager.closeForContextSwitch();
+  assert.equal(f.manager.browser, browser, 'close retains ownership until confirmation');
+  loaded.resolve();
+  assert.deepEqual(await opening, { ok: false, stale: true });
+  assert.deepEqual(f.errors, []);
+  closing.resolve(true);
+  assert.equal(await close, true);
+  assert.equal(f.manager.browser, null);
+});
+
 test('manager creates one browser with Engine-neutral injected policies', async () => {
   const f = fixture();
   const result = await f.manager.open({ url: 'https://campus.example.test/x' });

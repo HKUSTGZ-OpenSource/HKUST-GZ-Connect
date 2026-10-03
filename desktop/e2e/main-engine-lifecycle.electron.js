@@ -198,6 +198,31 @@ async function run() {
   assert.ok(events.some((entry) => entry.type === 'listener_ready_sent'));
   assert.ok(events.some((entry) => entry.type === 'shutdown_received'));
   assert.ok(events.filter((entry) => entry.type === 'provider_capabilities_requested').length >= 2);
+
+  // Real Main/IPC/Manager regression for a windowless close while Engine
+  // readiness is pending. Only this isolated fixture partition is cleared.
+  assert.equal((await invoke(control, 'window.api.clearBrowserData()')).ok, true);
+  process.env.HKUSTGZ_SYNTHETIC_ENGINE_READY_HOLD_E2E = '1';
+  const retiredOpening = invoke(control, `window.api.openCampusBrowser({
+    url: 'https://retired-waiter.example.invalid/',
+  })`);
+  await waitFor(() => observations().some(entry => entry.attempt === 3 && entry.type === 'readiness_held'),
+    'held synthetic readiness');
+  assert.equal(BrowserWindow.getAllWindows().filter(window => window !== control).length, 0,
+    'no Browser window may exist before held readiness');
+  assert.equal((await invoke(control, 'window.api.clearBrowserData()')).ok, true);
+  fs.writeFileSync(path.join(profile, 'synthetic-engine-readiness-release.txt'), 'release');
+  assert.deepEqual(await retiredOpening, { ok: false, stale: true },
+    'late readiness cannot reopen a Browser after confirmed data-close admission');
+  assert.equal(BrowserWindow.getAllWindows().filter(window => window !== control).length, 0);
+  const stillConnected = await invoke(control, 'window.api.getState()');
+  assert.equal(stillConnected.connected, true, 'Browser retirement must not cancel Engine work');
+  assert.equal((await invoke(control, `window.api.openCampusBrowser({
+    url: 'https://fresh-waiter.example.invalid/',
+  })`)).ok, true, 'a new request may reuse the healthy Engine and create a Browser');
+  assert.equal(attemptCount(), 3, 'fresh Browser open must not start another Engine generation');
+  assert.equal((await invoke(control, 'window.api.disconnect()')).ok, true);
+  await waitFor(async () => !await loopbackConnects(port), 'held-generation listener release');
   process.stdout.write('main synthetic Engine lifecycle: PASS\n');
 }
 
