@@ -44,4 +44,93 @@ function connectionRecoveryPresentation(state = {}, presentation = {}) {
   return Object.freeze({ schemaVersion: 1, category, action });
 }
 
-module.exports = { connectionRecoveryPresentation };
+function projectConnectionStatus(state, presentation, connectedAt) {
+  const notice = [state?.notice, state?.browserNotice, state?.diagnosticNotice]
+    .filter(Boolean).join('\n') || null;
+  const lastError = [state?.lastError, state?.settingsError, state?.recoveryError]
+    .filter(Boolean).join('\n') || null;
+  return Object.freeze({
+    ...state, notice, lastError, ...presentation, connectedAt,
+    recovery: connectionRecoveryPresentation({ ...state, lastError }, presentation),
+  });
+}
+
+// Presentation has no connection-phase authority. Existing Engine/persistence
+// owners retain the same mutable display record; the FSM alone projects phases.
+// Effects are late-bound because Main constructs the shell and telemetry later.
+class ConnectionStatusRuntime {
+  #effects;
+  #state;
+  #connectedAt = null;
+
+  constructor(effects) {
+    this.#effects = effects;
+    this.#state = {
+      clientIp: null,
+      dnsMode: 'unknown',
+      lastError: null, failureCode: null, failureKind: 'none',
+      settingsError: null,
+      recoveryError: null,
+      notice: null,
+      browserNotice: null,
+      diagnosticNotice: null,
+      pacUrl: '',
+    };
+  }
+
+  get state() { return this.#state; }
+  get connectedAt() { return this.#connectedAt; }
+
+  snapshot() {
+    return projectConnectionStatus(
+      this.#state, this.#effects.connectionState.presentation(), this.#connectedAt,
+    );
+  }
+
+  emit() {
+    this.#state.pacUrl = this.#effects.getPacUrl();
+    this.#effects.waitRegistry.observe(this.#effects.connectionState.snapshot());
+    // get-state remains the full-refresh authority. Locale and update ride
+    // along with status so their changes require no additional event channel.
+    this.#effects.getShell()?.send('status', {
+      ...this.snapshot(), locale: this.#effects.getLocale(),
+      update: this.#effects.getUpdate() || null,
+    });
+    this.#effects.getShell()?.updateTray();
+  }
+
+  clear() {
+    this.#connectedAt = null;
+    this.#state.clientIp = null;
+    this.#state.dnsMode = 'unknown';
+    this.#effects.clearCapabilities();
+    this.#effects.getTelemetry()?.stop();
+  }
+
+  firstConnected(generation, token) {
+    this.#connectedAt = this.#effects.now();
+    this.#effects.getTelemetry().start(generation, token);
+  }
+
+  reportRecovering(generation, token) {
+    if (!this.#effects.isEngineCurrent(generation, token)) return;
+    this.#state.lastError = this.#effects.translate('error.tunnelRecovering');
+    this.emit();
+  }
+
+  reportLogFailure() {
+    if (!this.#state.diagnosticNotice) {
+      this.#state.diagnosticNotice = this.#effects.translate('error.logUnavailable');
+      this.emit();
+    }
+  }
+
+  reportLogRecovered() {
+    if (this.#state.diagnosticNotice) {
+      this.#state.diagnosticNotice = null;
+      this.emit();
+    }
+  }
+}
+
+module.exports = { connectionRecoveryPresentation, projectConnectionStatus, ConnectionStatusRuntime };

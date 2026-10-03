@@ -145,6 +145,8 @@ async function run() {
   assert.equal(connected.phase, 'connected');
   assert.equal(connected.dnsMode, 'gateway');
   assert.ok(connected.clientIp);
+  assert.ok(Number.isSafeInteger(connected.connectedAt) && connected.connectedAt > 0 &&
+    connected.connectedAt <= Date.now(), 'accepted connection must expose its presentation timestamp');
   assert.equal(Object.hasOwn(connected, 'capabilitySnapshot'), false,
     'Engine capability diagnostics must not be projected into the Control Renderer');
   assert.equal(await loopbackConnects(port), true,
@@ -169,6 +171,8 @@ async function run() {
   control = await controlWindow(oldContentsId);
   const recovered = await invoke(control, 'window.api.getState()');
   assert.equal(recovered.connected, true, 'renderer recovery must not stop the healthy Engine');
+  assert.equal(recovered.connectedAt, connected.connectedAt,
+    'renderer recreation must preserve the same Connection-owned timestamp');
   assert.equal(Object.hasOwn(recovered, 'capabilitySnapshot'), false);
 
   const stopped = await invoke(control, 'window.api.disconnect()');
@@ -178,6 +182,9 @@ async function run() {
     return !state.connected && !state.connecting ? state : null;
   }, 'graceful disconnect');
   assert.equal(disconnected.phase, 'idle');
+  assert.equal(disconnected.connectedAt, null);
+  assert.equal(disconnected.clientIp, null);
+  assert.equal(disconnected.dnsMode, 'unknown');
   assert.equal(Object.hasOwn(disconnected, 'capabilitySnapshot'), false);
   await waitFor(async () => !await loopbackConnects(port), 'loopback listener release');
 
@@ -217,11 +224,16 @@ async function run() {
   assert.equal(BrowserWindow.getAllWindows().filter(window => window !== control).length, 0);
   const stillConnected = await invoke(control, 'window.api.getState()');
   assert.equal(stillConnected.connected, true, 'Browser retirement must not cancel Engine work');
+  assert.ok(Number.isSafeInteger(stillConnected.connectedAt) &&
+    stillConnected.connectedAt >= connected.connectedAt);
   assert.equal((await invoke(control, `window.api.openCampusBrowser({
     url: 'https://fresh-waiter.example.invalid/',
   })`)).ok, true, 'a new request may reuse the healthy Engine and create a Browser');
   assert.equal(attemptCount(), 3, 'fresh Browser open must not start another Engine generation');
+  assert.equal((await invoke(control, 'window.api.getState()')).connectedAt, stillConnected.connectedAt,
+    'fresh Browser open must not replace the serving generation timestamp');
   assert.equal((await invoke(control, 'window.api.disconnect()')).ok, true);
+  assert.equal((await invoke(control, 'window.api.getState()')).connectedAt, null);
   await waitFor(async () => !await loopbackConnects(port), 'held-generation listener release');
   process.stdout.write('main synthetic Engine lifecycle: PASS\n');
 }

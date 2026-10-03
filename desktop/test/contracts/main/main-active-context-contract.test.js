@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
+const statusOwner = fs.readFileSync(require.resolve('../../../lib/connection/state/connection-recovery-presentation'), 'utf8');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
 
@@ -42,7 +43,11 @@ test('Engine callbacks require context epoch connection intent and process gener
   assert.match(connect, /Number\(s\.port\), isCurrentEngineContext,/u);
   assert.match(connect, /revokeEngineServing\(engineGeneration, isCurrentEngineContext\)/u);
   assert.match(connect, /this\.onFirstConnected\(engineGeneration, engineContextToken\)/u);
-  assert.match(source, /telemetryCoordinator\.start\(generation, token\)/u);
+  assert.match(source, /onFirstConnected: \(generation, token\) => connectionStatus\.firstConnected\(generation, token\)/u);
+  assert.match(statusOwner, /this\.#effects\.getTelemetry\(\)\.start\(generation, token\)/u);
+  assert.match(source, /isEngineCurrent: \(generation, token\) => activeEngineContextCurrent\(generation, token\)/u);
+  assert.match(source, /onRecovering: \(generation, token\) => connectionStatus\.reportRecovering\(generation, token\)/u);
+  assert.match(statusOwner, /if \(!this\.#effects\.isEngineCurrent\(generation, token\)\) return;/u);
   assert.match(source, /isEngineCurrent: activeEngineContextCurrent/u);
   assert.match(source, /reconnect: \(generation, token\) => activeEngineContextCurrent\(generation, token\)/u);
   assert.doesNotMatch(connect, /activeContextEpoch:\s*1/u);
