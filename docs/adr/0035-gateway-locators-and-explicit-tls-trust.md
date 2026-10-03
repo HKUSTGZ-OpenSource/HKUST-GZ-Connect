@@ -2,7 +2,7 @@
 
 - Status: Proposed; source candidate for review, not a released support claim
 - Owner: project maintainers
-- Last verified: 2026-10-01
+- Last verified: 2026-10-03
 - Applies to: Gateway onboarding, HTTPS session and Modern token acquisition; issue #197
 - Amends: ADR-0003 root-only input and custom hostname-only restrictions, ADR-0022 and ADR-0028 probe argv
 
@@ -81,3 +81,10 @@ Metadata/TLS evidence does not establish account authentication or tunnel
 acceptance. Public reports contain capability and validation summaries only:
 never deployment addresses, user identities, certificate fingerprints, private
 configuration, authentication data or private-environment observations.
+
+The convergence review reproduced UnknownIssuer short-circuiting WebPKI before
+its name check. First-use observation now runs the public Rustls DNS/IP name
+verifier before recording an observed fingerprint. Wrong DNS/IP names have a
+RED/green synthetic regression; the positive case uses the existing generated
+certificate's actual SAN, not a mismatched test name. No extra trust root,
+global exception, new dependency, private key or weakened assertion is used.

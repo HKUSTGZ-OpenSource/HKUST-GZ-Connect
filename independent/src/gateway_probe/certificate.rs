@@ -3,9 +3,10 @@
 
 use crate::gateway_connector::GatewayConnectorGeneration;
 use crate::{Error, ErrorKind, Result};
-use rustls::client::WebPkiServerVerifier;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::client::{WebPkiServerVerifier, verify_server_name};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::server::ParsedCertificate;
 use rustls::{
     CertificateError, ClientConfig, ClientConnection, DigitallySignedStruct, RootCertStore,
     SignatureScheme,
@@ -62,6 +63,10 @@ impl ServerCertVerifier for Observer {
                 "Invalid first-use Gateway certificate".into(),
             ));
         }
+        // UnknownIssuer short-circuits WebPKI before its name check. A leaf
+        // that is otherwise self-issued and current must still cover this
+        // exact DNS/IP name before a first-use observation can be offered.
+        verify_server_name(&ParsedCertificate::try_from(leaf)?, name)?;
         *self
             .fingerprint
             .lock()
@@ -165,7 +170,7 @@ mod tests {
             fingerprint: Mutex::new(None),
         };
         let leaf = CertificateDer::from(bytes.as_slice());
-        let name = ServerName::try_from("gateway.example.test").unwrap();
+        let name = ServerName::try_from("synthetic-gateway.invalid").unwrap();
         let time = |seconds| UnixTime::since_unix_epoch(Duration::from_secs(seconds));
         assert!(
             observer
@@ -182,6 +187,22 @@ mod tests {
             observer.fingerprint.lock().unwrap().as_ref().unwrap().len(),
             64
         );
+        observer.fingerprint.lock().unwrap().take();
+        for wrong_name in ["other.example.test", "127.0.0.2"] {
+            assert!(
+                observer
+                    .verify_server_cert(
+                        &leaf,
+                        &[],
+                        &ServerName::try_from(wrong_name).unwrap(),
+                        &[],
+                        time(cert.validity().not_before.timestamp() as u64 + 10)
+                    )
+                    .is_err(),
+                "unknown issuer must not hide a mismatched certificate name"
+            );
+            assert!(observer.fingerprint.lock().unwrap().is_none());
+        }
         for seconds in [0, cert.validity().not_after.timestamp() as u64 + 1] {
             assert!(
                 observer
