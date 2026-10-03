@@ -1,5 +1,11 @@
 # HKUST(GZ) Connect 1.2.3 baseline and roadmap
 
+- Status: Current implementation/evidence ledger with historical 1.x baselines
+- Owner: project maintainers
+- Last verified: 2026-10-03
+- Applies to: immutable stable v2.0.3 and separately verified development main; see
+  [current status](docs/2.0-status.md) for exact source identities
+
 This roadmap is an implementation and evidence ledger, not a promise that an
 unobserved proprietary gateway revision will work forever. A trait, parser,
 capability marker, mock, or sanitized fixture is useful preparation, but it is
@@ -37,7 +43,7 @@ x64 EXE和Linux x64 AppImage。学校真实canary与Architecture Frozen开放项
 | --- | --- | --- | --- |
 | Independent password + modern L3 engine | `I3` | Current tree `E2`; earlier restricted canary is historical evidence | Rust owns auth, tunnel, userspace TCP/UDP and loopback proxying; repeat an authorized canary after Gateway/client changes |
 | Isolated Campus Browser | `I3` | `E3` package/synthetic Electron; current release campus-site canary pending | Multi-tab, direct/campus routing, local vault and fail-closed policy; repeat campus-site/partner SSO canaries |
-| SOCKS/PAC/Clash/SSH frontends | `I3` | Current tree `E3`; Windows sidecar DACL and three-platform package passed | New installs strict, legacy downgrade explicit, no global mutation; obtain exact-SHA real Clash/SSH evidence |
+| SOCKS/PAC/Clash/SSH frontends | `I3` | Current tree `E3`; Windows sidecar DACL and three-platform package passed | Desktop compatibility/optional authentication is the default; strict authentication remains explicit, existing choices are preserved, raw Engine and macOS CLI retain distinct defaults, no global mutation; obtain exact-SHA real Clash/SSH evidence |
 | Authentication correctness | `I3` for password; `I2` generic challenge framework | Current `E2`; real Gateway MFA `E0` | Typed outcomes, stale-cancel fix and Engine budgets exist; real provider remains unsupported |
 | Lifecycle and recovery | `I3` locally converged | `E3`; real sleep/network canary pending | Auth/Transport cancellation, deterministic data-plane drain, Main E2E, a 100-round real-Engine non-routing post-Transport soak and exact-SHA packages exist; real-network evidence remains missing |
 | Desktop performance | `I2/E2` measurement harness | Offline synthetic only | Establish supported-device and real campus-page baselines before enforcing product targets |
