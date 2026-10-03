@@ -30,7 +30,7 @@ const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, plat
 const { BufferedLogWriter, readLogTail } = require('./lib/diagnostics/logging/log-writer');
 const { UpdateNotificationRuntime, checkForUpdate } = require('./lib/platform/update/update-check');
 const { ConnectivityRecovery } = require('./lib/connection/recovery/connectivity-recovery');
-const { createNetworkStartupSystem } = require('./lib/connection/telemetry/network-status-monitor');
+const { createNetworkStartupSystem, createStartupAutoConnectEligibility } = require('./lib/connection/telemetry/network-status-monitor');
 const {
   ensureProxyCredentialSidecar,
   externalProxyHelperPath,
@@ -225,7 +225,6 @@ function assertSettingsPersistenceAvailable() {
 function routingSettings() { return persistenceRuntime.routingSettings(); }
 function saveSettings(settings) { return persistenceRuntime.saveSettingsWithGuard(settings); }
 function savePassword(pw, username) { return persistenceRuntime.saveCredential(pw, username); }
-function hasPersistentCredential() { return vpnCredentialAccess.hasPersistent(); }
 function hasStoredCredential() { return vpnCredentialAccess.hasStored(); }
 function hasCredentialForCurrentSession() { return vpnCredentialAccess.hasCredentialForCurrentSession(); }
 function socksPort() { return Number(loadSettingsOrReport().port) || 1080; }
@@ -292,7 +291,7 @@ const connectivityRecovery = new ConnectivityRecovery({
 const { monitor: networkStatusMonitor, startup: networkStartupCoordinator, environment: networkEnvironmentService } = createNetworkStartupSystem({
   appIsPackaged: app.isPackaged, environment: process.env, dataDirectory: DATA, fileSystem: fs,
   isOnline: () => electronNet.isOnline(), onOffline: () => connectivityRecovery.networkOffline(),
-  onOnline: () => connectivityRecovery.networkOnline(), shouldAutoConnect: () => { const s = loadSettingsOrReport(); return s.autoConnect !== false && Boolean(s.username) && hasPersistentCredential(); },
+  onOnline: () => connectivityRecovery.networkOnline(), shouldAutoConnect: createStartupAutoConnectEligibility({ readSettings: loadSettingsOrReport, hasPersistentCredential: () => vpnCredentialAccess.hasPersistent() }),
   pauseOffline: () => { connectivityRecovery.cancel(); const intent = connectionState.beginConnectIntent(); return connectivityRecovery.networkOffline(intent) ? intent : null; },
   resumeInitialOffline: (intent) => connectivityRecovery.initialNetworkOnline(intent), connect: () => connect(), isQuitting: () => desktopShell?.isQuitting === true, onPublicEgress: (snapshot) => desktopShell?.send('network-environment', snapshot),
 });

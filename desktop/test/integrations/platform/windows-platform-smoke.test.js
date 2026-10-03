@@ -21,6 +21,7 @@ const {
 const { createPrivateStorageEffects } = require('../../../lib/platform/storage/private-file');
 const { DesktopPersistenceRuntime } = require('../../../lib/persistence/runtime/desktop-persistence-runtime');
 const { DomainRoutePolicyStore } = require('../../../lib/routing/policy/domain-route-policy');
+const { createStartupAutoConnectEligibility } = require('../../../lib/connection/telemetry/network-status-monitor');
 const {
   commitActiveContextSwitch,
   createPreparedActiveContextSwitch,
@@ -63,6 +64,35 @@ function customConfirmation() {
   });
   return owner.consume({ confirmationHandle: view.confirmationHandle, activeContext });
 }
+
+test('native Main startup admission requires persistent presence and never opens staged memory credentials', t => {
+  let persistent = false, presenceReads = 0;
+  const access = DesktopPersistenceRuntime.createVpnCredentialAccess({
+    persistence: { hasCredential: () => { presenceReads++; return persistent; },
+      openCredential: () => { throw new Error('startup admission must not open credentials'); } },
+    getProfileId: () => 'fixture-profile', getEngineActive: () => false, platform: process.platform,
+    safeStorage: { isEncryptionAvailable: () => { throw new Error('startup admission must not probe protected storage'); } },
+  });
+  t.after(() => access.clear());
+  let settings = { autoConnect: true, username: 'fixture-visible-account',
+    get password() { throw new Error('startup admission must not read a password'); } };
+  const source = fs.readFileSync(path.join(DESKTOP, 'main.js'), 'utf8');
+  const expression = source.match(/shouldAutoConnect:\s*(createStartupAutoConnectEligibility\(\{[\s\S]*?\}\)),\s*pauseOffline:/u)?.[1];
+  assert.ok(expression, 'exercise Main public factory wiring, not another predicate');
+  const eligible = vm.runInNewContext(`(${expression})`, {
+    createStartupAutoConnectEligibility, loadSettingsOrReport: () => settings, vpnCredentialAccess: access,
+  });
+  assert.equal(presenceReads, 0, 'construction cannot read presence');
+  assert.equal(eligible(), false);
+  access.stage({ profileId: 'fixture-profile', username: 'fixture-memory-user', password: 'fixture-memory-input' });
+  assert.equal(eligible(), false, 'memory-only input cannot authorize cross-launch auto-connect');
+  assert.equal(access.hasOneShot(), true, 'eligibility must not consume staged input');
+  persistent = true; assert.equal(eligible(), true);
+  const reads = presenceReads;
+  settings = { autoConnect: false, username: 'fixture-visible-account' }; assert.equal(eligible(), false);
+  settings = { autoConnect: true, username: '' }; assert.equal(eligible(), false);
+  assert.equal(presenceReads, reads, 'disabled/empty settings retain short-circuit');
+});
 
 test('native Main context cleanup retires the Routing snapshot in the original effect order', t => {
   const root = privateRoot(t, 'hkustgz-native-routing-retirement-');
