@@ -41,9 +41,22 @@ async function runWorker(kind, cacheRoot) {
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
   if (kind === 'proxy') process.env.HTTP_PROXY = `http://127.0.0.1:${port}`;
+  const candidateRoot = process.env.HKUST_TEST_BUILDER27_ROOT;
+  let builderRequire = require;
+  if (candidateRoot) {
+    assert.ok(path.isAbsolute(candidateRoot));
+    assert.ok(path.basename(candidateRoot).startsWith('hkust-builder27-evaluation.'));
+    builderRequire = createRequire(path.join(candidateRoot, 'package.json'));
+  }
+  const entrypoint = builderRequire.resolve('app-builder-lib');
+  const manifest = builderRequire(path.join(path.dirname(entrypoint), '..', 'package.json'));
+  const major = Number(manifest.version.split('.')[0]);
+  assert.ok([26, 27].includes(major), 'a new builder major needs an explicit compatibility review');
+  const usesFetch = major === 27;
   // Optional local negative experiment: replace only builder's @electron/get import.
   // This does not edit node_modules, the lockfile or any installed application.
   if (process.env.HKUST_TEST_GET5_CANDIDATE === '1') {
+    assert.equal(major, 26, 'the unsafe override experiment applies only to the legacy builder');
     const Module = require('node:module');
     const candidate = require('@electron/get');
     const originalLoad = Module._load;
@@ -54,20 +67,9 @@ async function runWorker(kind, cacheRoot) {
       return originalLoad.call(this, request, parent, isMain);
     };
   }
-  const candidateRoot = process.env.HKUST_TEST_BUILDER27_ROOT;
-  let builderRequire = require;
-  let downloadElectronArtifactZip;
-  if (candidateRoot) {
-    assert.ok(path.isAbsolute(candidateRoot));
-    assert.ok(path.basename(candidateRoot).startsWith('hkust-builder27-evaluation.'));
-    builderRequire = createRequire(path.join(candidateRoot, 'package.json'));
-    const entrypoint = builderRequire.resolve('app-builder-lib');
-    // v27 no longer exports deep imports. This version-pinned vendor seam is
-    // confined to the compatibility experiment, never production Main/Preload.
-    ({ downloadElectronArtifactZip } = builderRequire(path.join(path.dirname(entrypoint), 'util', 'electronGet.js')));
-  } else {
-    ({ downloadElectronArtifactZip } = require('app-builder-lib/out/util/electronGet'));
-  }
+  // v27 no longer exports deep imports. This vendor seam is confined to the
+  // download contract, never production Main/Preload. It works with both layouts.
+  const { downloadElectronArtifactZip } = builderRequire(path.join(path.dirname(entrypoint), 'util', 'electronGet.js'));
   // Builder locks are global by version/platform, even for different cache
   // roots. Use a unique synthetic version so stalled negative fixtures cannot
   // block positive tests or a real build of Electron 43.7.7.
@@ -76,12 +78,12 @@ async function runWorker(kind, cacheRoot) {
   const options = {
     artifactName: 'electron', version,
     platformName: process.platform, arch: process.arch, cacheDir: cacheRoot,
-    [candidateRoot ? 'options' : 'electronDownload']: {
+    [usesFetch ? 'options' : 'electronDownload']: {
       checksums: { [filename]: kind === 'checksum' ? '0'.repeat(64) : checksum },
       mirrorOptions: {
         resolveAssetURL: async () => `http://${kind === 'proxy' ? '127.0.0.2' : '127.0.0.1'}:${port}/${filename}`,
       },
-      downloadOptions: candidateRoot
+      downloadOptions: usesFetch
         ? { signal: AbortSignal.timeout(kind === 'deadline' ? 300 : 10_000), quiet: true }
         : { timeout: { request: kind === 'deadline' ? 50 : 2_000 }, retry: { limit: 0 }, quiet: true },
     },
@@ -100,9 +102,9 @@ async function runWorker(kind, cacheRoot) {
       const recovered = await downloadElectronArtifactZip(options);
       assert.deepEqual(await fs.readFile(recovered), body);
     }
-    return { outcome: 'downloaded', requests, proxied };
+    return { outcome: 'downloaded', requests, proxied, usesFetch };
   } catch (error) {
-    return { outcome: 'rejected', code: error.code || '', requests, proxied,
+    return { outcome: 'rejected', code: error.code || '', requests, proxied, usesFetch,
       checksumMismatch: error instanceof builderRequire('sumchecker').ChecksumMismatchError,
       deadlineRejected: error.name === 'TimeoutError' || error.name === 'AbortError',
       status: error.response?.statusCode ?? error.response?.status ?? null,
@@ -172,7 +174,7 @@ if (process.argv[2] === '--builder-download-worker') {
   test('builder retains its configured request deadline on a stalled loopback download', { timeout: 25_000 }, async (t) => {
     const result = await fixture(t, 'deadline');
     assert.equal(result.outcome, 'rejected');
-    if (process.env.HKUST_TEST_BUILDER27_ROOT) assert.equal(result.deadlineRejected, true);
+    if (result.usesFetch) assert.equal(result.deadlineRejected, true);
     else assert.equal(result.code, 'ETIMEDOUT');
     assert.ok(result.requests >= 1, 'the deadline must bound an actually started download');
     assert.ok(result.elapsed < 18_000, 'bounded retries must retain request deadlines');
