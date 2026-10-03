@@ -86,6 +86,28 @@ test('a different requested port waits before configuring a second Session trans
   assert.equal(f.state.configuredPort, 7180);
 });
 
+test('same-port followers behind another port still share the next transition', async t => {
+  const firstGate = deferred();
+  const nextGate = deferred();
+  t.after(() => { firstGate.resolve(); nextGate.resolve(); });
+  const f = fixture({ configure: async port => {
+    f.calls.push(['configure', port]);
+    await (port === 6180 ? firstGate.promise : nextGate.promise);
+    Object.assign(f.state, { configuredPort: port, requestsBlocked: false, campusSession: f.session });
+    return f.session;
+  } });
+  const first = f.owner.activate(6180);
+  const next = f.owner.activate(7180);
+  const follower = f.owner.activate(7180);
+  firstGate.resolve();
+  await first;
+  assert.deepEqual(f.calls, [['configure', 6180], ['configure', 7180]],
+    'waiting followers must recheck a replacement flight before starting another transition');
+  nextGate.resolve();
+  await Promise.all([next, follower]);
+  assert.equal(f.owner.inFlight, null);
+});
+
 test('rejected activation releases its flight so the next explicit attempt can proceed', async () => {
   const pending = deferred();
   let fail = true;
