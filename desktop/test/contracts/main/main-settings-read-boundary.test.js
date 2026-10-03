@@ -81,6 +81,13 @@ test('window close and automatic updates turn settings failures into bounded asy
   assert.match(shellSource, /this\.handleWindowClose\(event\)\.catch\(this\.onWindowError\)/);
 });
 
+test('Main retires update work before other shutdown resources and forwards its request signal', () => {
+  assert.match(source, /disposeLifecycle: \(\) => \{\s*updateNotifications\?\.dispose\(\); schoolProfileOnboarding\.cancel\(\)/u);
+  assert.match(source, /app\.on\('will-quit', \(\) => updateNotifications\?\.dispose\(\)\)/u);
+  assert.match(source, /check: \(version, options\) => checkForUpdate\(version, undefined, options\)/u);
+  assert.doesNotMatch(source, /updateNotifications\?\.stopAutomatic\(\)/u);
+});
+
 test('a startup PAC failure does not hide an earlier recovery error', () => {
   const startup = startupOwner.slice(startupOwner.indexOf('async #initialize()'));
   assert.match(startup, /const pacError =/);

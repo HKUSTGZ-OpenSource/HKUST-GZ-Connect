@@ -458,7 +458,7 @@ const profileSwitching = createMainProfileSwitchComposition({
 const switchSchoolProfile = profileSwitching.switchProfile;
 // ---------- update notifications (no automatic download or installation) ----------
 updateNotifications = new UpdateNotificationRuntime({
-  getVersion: () => app.getVersion(), check: checkForUpdate,
+  getVersion: () => app.getVersion(), check: (version, options) => checkForUpdate(version, undefined, options),
   readSettings: loadSettingsOrReport, saveSettings,
   assertPersistence: assertSettingsPersistenceAvailable,
   runTransaction: runActiveContextTransaction, onAvailable: emit,
@@ -586,7 +586,7 @@ desktopShell = new DesktopShell({
   openCampusBrowser: () => campusBrowserManager.openWithFeedback(),
   rememberCloseAction,
   disposeLifecycle: () => {
-    schoolProfileOnboarding.cancel(); externalIntegrationRuntime.cancel();
+    updateNotifications?.dispose(); schoolProfileOnboarding.cancel(); externalIntegrationRuntime.cancel();
     vpnCredentialAccess.clear();
     networkStartupCoordinator.dispose(); networkEnvironmentService.dispose(); connectionWaitRegistry.dispose();
     connectivityRecovery.dispose();
@@ -663,4 +663,4 @@ app.on('before-quit', (event) => {
   event.preventDefault();
   desktopShell.requestQuit();
 });
-app.on('will-quit', () => updateNotifications?.stopAutomatic());
+app.on('will-quit', () => updateNotifications?.dispose());

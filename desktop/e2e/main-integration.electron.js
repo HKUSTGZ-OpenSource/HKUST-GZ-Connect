@@ -12,6 +12,42 @@ const { createLegacyRuntimeStoragePaths } = require('../lib/persistence/paths/ru
 const { DesktopPersistenceRuntime } = require('../lib/persistence/runtime/desktop-persistence-runtime');
 const { createT } = require('../lib/platform/i18n/i18n');
 
+// Test-process-only update transport and quit gate. Every ordinary check is
+// offline; a parked result is deliberately allowed to arrive after retirement.
+const updates = require('../lib/platform/update/update-check');
+const shells = require('../lib/platform/shell/desktop-shell');
+const OriginalUpdater = updates.UpdateNotificationRuntime, OriginalShell = shells.DesktopShell;
+let updater, lateUpdate, finishUpdate, updateSignal, updatesArmed = false, retiredSettings = false;
+let validateQuit;
+const quitValidated = new Promise(resolve => { validateQuit = resolve; });
+const updateEffects = { read: 0, write: 0, notify: 0 };
+updates.UpdateNotificationRuntime = class FixtureUpdater extends OriginalUpdater {
+  constructor(effects) {
+    super({ ...effects,
+      check: (_version, { signal } = {}) => {
+        if (!updatesArmed) return Promise.resolve(null);
+        updateSignal = signal;
+        return new Promise(resolve => { finishUpdate = resolve; });
+      },
+      readSettings: () => { updateEffects.read++;
+        assert.equal(retiredSettings, false, 'update read after quit resource retirement'); return effects.readSettings(); },
+      saveSettings: value => { updateEffects.write++;
+        assert.equal(retiredSettings, false, 'update write after quit resource retirement'); return effects.saveSettings(value); },
+      onAvailable: () => { updateEffects.notify++;
+        assert.equal(retiredSettings, false, 'late update publication after quit'); return effects.onAvailable(); },
+    });
+    updater = this;
+  }
+};
+shells.DesktopShell = class FixtureShell extends OriginalShell {
+  constructor(effects) {
+    super({ ...effects, cleanupQuit: async () => {
+      if (updatesArmed) await quitValidated;
+      return effects.cleanupQuit();
+    } });
+  }
+};
+
 // Test-process-only observation through Main's actual legacy callback. It must
 // be translated and merged by ordinary startup before the first state read.
 const recoveryKind = process.env.HKUSTGZ_FIXTURE_RECOVERY_KIND || 'restored';
@@ -67,6 +103,27 @@ const startupProjections = [...new Set([
 for (const file of startupProjections) fs.writeFileSync(file, 'synthetic-startup-projection', { mode: 0o600 });
 
 require('../main');
+updates.UpdateNotificationRuntime = OriginalUpdater;
+shells.DesktopShell = OriginalShell;
+let quitChecked = false;
+app.on('before-quit', () => {
+  if (!updatesArmed || quitChecked) return;
+  quitChecked = true;
+  (async () => {
+    assert.equal(updateSignal?.aborted, true, 'actual Main must cancel pending update before cleanup');
+    const before = { ...updateEffects };
+    retiredSettings = true;
+    finishUpdate({ updateAvailable: true, latestVersion: '99.0.0',
+      url: 'https://github.com/synthetic/project/releases/tag/v99.0.0' });
+    assert.equal(await lateUpdate, null);
+    assert.deepEqual(updateEffects, before);
+    assert.equal(updater.inFlightCount, 0);
+    assert.equal(updater.snapshot(), null);
+    assert.deepEqual(updater.open('https://github.com/synthetic/project/releases/tag/v99.0.0'), { ok: false });
+    process.stdout.write('main late update quit retirement: PASS\n');
+    validateQuit();
+  })().catch(error => { process.stderr.write(`${error.stack || error}\n`); app.exit(1); });
+});
 for (const file of startupProjections) assert.equal(fs.existsSync(file), false,
   'Main must retire both the legacy and selected disposable projections before services start');
 
@@ -284,6 +341,9 @@ async function run() {
   assert.equal(rules.rules[0].host, 'login.microsoftonline.com');
   assert.ok(fs.readFileSync(persistence.paths.externalPac, 'utf8').includes('127.0.0.1:6180'));
   process.stdout.write('main integration: PASS\n');
+  updatesArmed = true;
+  lateUpdate = updater.run(true);
+  await waitFor(() => typeof finishUpdate === 'function', 'parked Main update request');
 }
 
 run().then(
