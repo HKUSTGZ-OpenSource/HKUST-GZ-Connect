@@ -13,7 +13,8 @@ const operations = fs.readFileSync(require.resolve('../../../lib/connection/stat
 
 test('engine exit closes the browser request boundary before stdio close cleanup', () => {
   assert.match(source, /engineTermination\.exit\(\.\.\.args\)/u);
-  assert.match(source, /isGenerationCurrent: generation => engineSupervisor\.isCurrent\(generation\)/u);
+  assert.match(source, /const engineTermination = engineApplication\.createTermination\(/u);
+  assert.match(attempt, /isGenerationCurrent: generation => supervisor\.isCurrent\(generation\)/u);
   assert.match(source, /clearCredential: clearActiveProxyCredential, removeSidecar: removeExternalProxySidecar/u);
   assert.match(source, /suspendBrowser: suspendOpenBrowserPolicy, clearPresentation: clearConnectionPresentation/u);
   assert.match(termination, /this\.isGenerationCurrent\(generation\)/);

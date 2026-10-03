@@ -84,7 +84,7 @@ test('a startup PAC failure does not hide an earlier recovery error', () => {
 });
 
 test('settings, recovery, browser, and log outcomes have separate domains', () => {
-  const snapshot = section('function statusSnapshot()', 'const authChallengeCoordinator');
+  const snapshot = section('function statusSnapshot()', 'const engineApplication');
   assert.match(snapshot, /projectConnectionStatus\(state, connectionState\.presentation\(\), connectedAt\)/);
   assert.match(source, /settingsError: null/);
   assert.match(source, /recoveryError: null/);

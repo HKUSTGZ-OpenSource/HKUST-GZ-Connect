@@ -2,9 +2,10 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { EngineConnectionRuntime, EngineServingCoordinator } = require('./engine-connection-runtime');
+const { EngineConnectionRuntime, EngineServingCoordinator, EngineTerminationCoordinator } = require('./engine-connection-runtime');
 const { classifyEngineCode } = require('./engine-output');
-const { writeEngineOwnerRecord, removeEngineOwnerRecord } = require('./engine-supervisor');
+const { EngineSupervisor, cleanupOrphanedEngine, writeEngineOwnerRecord, removeEngineOwnerRecord } = require('./engine-supervisor');
+const { AuthChallengeCoordinator, EngineControlRegistry } = require('./engine-control-suite');
 const { STOP_FORCE_WAIT_MS } = require('../state/stop-policy');
 
 const SYNTHETIC_ENGINE_E2E_ENV = 'HKUSTGZ_SYNTHETIC_ENGINE_E2E';
@@ -135,6 +136,28 @@ function resolveGatewayProbeLaunch({
     argsPrefix: Object.freeze([fixture]),
     electronRunAsNode: true,
     synthetic: true,
+  });
+}
+
+// Process/control owners share one assembly, not another lifecycle policy.
+// Main still injects Profile, storage, presentation and application effects.
+function createEngineApplicationRuntime({ spawnProcess, authChallenge = {} } = {}) {
+  if (typeof spawnProcess !== 'function') throw new TypeError('Engine spawn effect is required');
+  const authChallenges = new AuthChallengeCoordinator(authChallenge);
+  const controlRegistry = new EngineControlRegistry({ authChallenges });
+  const supervisor = new EngineSupervisor({ spawnProcess });
+  return Object.freeze({
+    authChallenges, controlRegistry, supervisor,
+    createAttempt: options => new EngineAttemptCoordinator({
+      ...options, engineSupervisor: supervisor, controlRegistry,
+    }),
+    createTermination: options => new EngineTerminationCoordinator({
+      ...options,
+      isGenerationCurrent: generation => supervisor.isCurrent(generation),
+      scheduleRetry: (generation, delay, callback) => supervisor.schedule(generation, delay, callback),
+      clearControl: generation => controlRegistry.clear(generation),
+    }),
+    cleanupOrphaned: options => cleanupOrphanedEngine(options),
   });
 }
 
@@ -437,6 +460,7 @@ class EngineAttemptCoordinator {
 }
 
 module.exports = {
+  createEngineApplicationRuntime,
   EngineAttemptCoordinator,
   SYNTHETIC_ENGINE_E2E_ENV,
   SYNTHETIC_ENGINE_FIXTURE,
