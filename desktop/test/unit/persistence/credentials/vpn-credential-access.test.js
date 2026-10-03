@@ -66,6 +66,7 @@ test('valid persistent ownership wins and only typed unavailability uses staged 
   assert.equal(f.access.hasOneShot(), true, 'persistent selection must not consume staged memory');
   f.state.error = Object.assign(new Error('synthetic protected store failure'), { credentialStatus: 'unavailable' });
   const owner = f.access.open('profile-a');
+  assert.equal(f.calls.opened, 2, 'each final snapshot must ask the current persistence owner');
   assert.deepEqual(owner.withStrings((username, password) => [username, password]),
     ['fixture-account', 'fixture-password']);
   assert.throws(() => owner.withStrings(() => {}), /unavailable/);
