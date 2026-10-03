@@ -11,6 +11,18 @@ const os = require('node:os');
 const path = require('node:path');
 const { app, BrowserWindow } = require('electron');
 const { CampusBrowserManager } = require('../lib/browser/session/campus-browser-manager');
+const { DesktopPersistenceRuntime } = require('../lib/persistence/runtime/desktop-persistence-runtime');
+
+// Availability is injected only into this isolated fixture's access owner.
+// Restore the actual store before the original persistent/retry assertions.
+let forceMemoryStorage = true;
+const originalCredentialAccess = DesktopPersistenceRuntime.createVpnCredentialAccess;
+DesktopPersistenceRuntime.createVpnCredentialAccess = function fixtureCredentialAccess(options) {
+  return originalCredentialAccess.call(this, { ...options, safeStorage: {
+    isEncryptionAvailable: () => !forceMemoryStorage && options.safeStorage.isEncryptionAvailable(),
+    getSelectedStorageBackend: () => options.safeStorage.getSelectedStorageBackend(),
+  } });
+};
 
 // Inject only a post-completion retirement, in this isolated test process. The
 // original Manager performs the real open; no production test switch is added.
@@ -104,6 +116,18 @@ async function run() {
   await app.whenReady();
   let control = await controlWindow();
   const port = await allocateLoopbackPort();
+  const memorySaved = await invoke(control, `window.api.save({
+    username: 'synthetic-memory-only-user', password: 'synthetic-memory-only-input',
+    expectedProfileId: 'hkustgz',
+  })`);
+  assert.equal(memorySaved.ok, true);
+  assert.equal(memorySaved.outcome, 'saved_memory_only');
+  const memoryState = await invoke(control, 'window.api.getState()');
+  assert.equal(memoryState.hasPassword, true);
+  assert.equal(memoryState.loggedIn, true);
+  assert.equal(memoryState.connected, false);
+  assert.doesNotMatch(JSON.stringify(memoryState), /synthetic-memory-only-user|synthetic-memory-only-input/);
+  forceMemoryStorage = false;
   const savedCredential = await invoke(control, `window.api.save({
     username: 'synthetic-main-user',
     password: 'synthetic-main-password',
