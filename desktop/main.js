@@ -35,7 +35,7 @@ const {
   ensureProxyCredentialSidecar,
   externalProxyHelperPath,
 } = require('./lib/integrations/external-proxy-config');
-const { createT, effectiveLocale } = require('./lib/platform/i18n/i18n');
+const { DesktopLocaleRuntime } = require('./lib/platform/i18n/i18n');
 const { RoutingPolicyCoordinator, RoutingPolicyTransactionQueue } = require('./lib/routing/rules/routing-policy-transaction');
 const { stopEngineAfterBrowserSuspend } = require('./lib/switching/effects/browser-engine-barrier');
 const { ConnectionStateMachine, ConnectionWaitRegistry, ConnectionOperationCoordinator, ConnectionStatusRuntime } = require('./lib/connection/state/connection-state-machine');
@@ -146,7 +146,7 @@ const BROWSER_CONNECTION_READY_TIMEOUT_MS = 75_000;
 let telemetryCoordinator = null;
 const connectionStatus = new ConnectionStatusRuntime({
   connectionState, waitRegistry: connectionWaitRegistry, getPacUrl: pacUrl,
-  getShell: () => desktopShell, getLocale: () => locale,
+  getShell: () => desktopShell, getLocale: () => desktopLocale.locale,
   getUpdate: () => updateNotifications?.snapshot(), translate: (key) => t(key),
   clearCapabilities: () => activeSchoolProfile.clearCapabilitySnapshot(),
   getTelemetry: () => telemetryCoordinator, now: () => Date.now(),
@@ -195,16 +195,16 @@ const resourceLibraryRuntime = new ResourceLibraryRuntime({
   isContextCurrent: (context) => activeContextLease.isContextCurrent(context),
   openRequest: (request) => campusBrowserManager.open(request),
   runTransaction: runActiveContextTransaction,
-  getLocale: () => locale,
+  getLocale: () => desktopLocale.locale,
   translate: (key) => t(key),
 });
 // Last known "newer release exists" result. Failures never land here, so the
 // renderer can render it without distinguishing network errors from silence.
 let updateNotifications = null;
-// UI locale follows the OS; Chinese stays the fallback until whenReady reads
-// the real locale, so early failures still render a coherent language.
-let locale = 'zh';
-let t = createT(locale);
+const desktopLocale = new DesktopLocaleRuntime({
+  readSettings: loadSettings, getSystemLocale: () => app.getLocale(),
+});
+function t(key, vars) { return desktopLocale.translator(key, vars); }
 let settingsRecoveryNotice = null;
 let settingsRecoveryNoticeText = null;
 
@@ -220,11 +220,7 @@ function reportSettingsReadFailure(cause, options) {
   return persistenceRuntime.reportSettingsReadFailure(cause, options);
 }
 function loadSettingsOrReport(options) { return persistenceRuntime.loadSettingsOrReport(options); }
-// The saved language override ('zh'/'en') wins over the OS locale; 'auto'
-// follows the system, and Chinese remains the fallback when both are silent.
-function currentLocale() {
-  return effectiveLocale(loadSettings().language, app.getLocale());
-}
+function currentLocale() { return desktopLocale.current(); }
 function assertSettingsPersistenceAvailable() {
   persistenceRuntime.assertCredentialTransactionAvailable();
 }
@@ -253,7 +249,7 @@ function proxyHelperPath() {
   });
 }
 function safeCampusResourceLibrary(settings = null) {
-  return resourceLibraryRuntime.listLocalized(settings, locale);
+  return resourceLibraryRuntime.listLocalized(settings, desktopLocale.locale);
 }
 const certificateTrustStore = CampusBrowserManager.createCertificateTrustStore({
   filePath: CAMPUS_CERTIFICATE_TRUST,
@@ -308,7 +304,7 @@ const connectionOperations = new ConnectionOperationCoordinator({
   loadSettingsOrReport,
   cancelRecovery: () => { networkStartupCoordinator?.cancel(); connectivityRecovery.cancel(); },
   clearProxyCredential: clearActiveProxyCredential, clearPresentation: clearConnectionPresentation,
-  removeSidecar: removeExternalProxySidecar, getPresentation: () => state, getTranslator: () => t, emit,
+  removeSidecar: removeExternalProxySidecar, getPresentation: () => state, getTranslator: () => desktopLocale.translator, emit,
   waitForConnected: intent => connectionWaitRegistry.wait(intent, {
     timeoutMs: BROWSER_CONNECTION_READY_TIMEOUT_MS,
   }),
@@ -330,7 +326,7 @@ async function connect(isRetry = false, expectedIntent = null) {
 }
 const engineTermination = engineApplication.createTermination({
   connectionState,
-  getPresentation: () => state, getConnectedAt: () => connectionStatus.connectedAt, getTranslator: () => t,
+  getPresentation: () => state, getConnectedAt: () => connectionStatus.connectedAt, getTranslator: () => desktopLocale.translator,
   now: () => Date.now(),
   cleanupProxyAccess: DesktopPersistenceRuntime.cleanupProxyAccessForEngineClose,
   clearCredential: clearActiveProxyCredential, removeSidecar: removeExternalProxySidecar,
@@ -342,7 +338,7 @@ function revokeEngineServing(...args) { return engineTermination.revokeServing(.
 function handleEngineExitBoundary(...args) { return engineTermination.exit(...args); }
 const engineAttempts = engineApplication.createAttempt({
   connectionState, appIsPackaged: app.isPackaged, baseDirectory: __dirname,
-  getState: () => state, getTranslator: () => t, getLogWriter: () => logWriter,
+  getState: () => state, getTranslator: () => desktopLocale.translator, getLogWriter: () => logWriter,
   isCredentialTransactionBlocked: () => persistenceRuntime.isCredentialTransactionBlocked(),
   retryCredentialTransactionRecovery: () => persistenceRuntime.retryCredentialTransactionRecovery(),
   loadSettingsOrReport, loadSettings, reportSettingsReadFailure, reportLogFailure, emit,
@@ -412,16 +408,16 @@ campusBrowserManager = new CampusBrowserManager({
   toolbarFile: path.join(__dirname, 'renderer', 'campus-browser.html'), workspaceFile: path.join(__dirname, 'renderer', 'campus-workspace.html'),
   toolbarPreload: path.join(__dirname, 'lib', 'browser', 'toolbar', 'campus-toolbar-contract.js'), workspacePreload: path.join(__dirname, 'lib', 'browser', 'workspace', 'campus-workspace-preload.js'),
   campusPreload: path.join(__dirname, 'campus-preload.js'),
-  homeUrl: officialPortalHomeUrl(activeSchoolProfile.createPresentation({ locale }).schoolProfile, safeCampusResourceLibrary()),
+  homeUrl: officialPortalHomeUrl(activeSchoolProfile.createPresentation({ locale: desktopLocale.locale }).schoolProfile, safeCampusResourceLibrary()),
   browserPartition: preReadyStorage.authority?.layout?.browserPartition || activeSchoolProfile.browserPartition,
   routingPolicy: browserRoutingPolicy,
   ensureCampusReady: () => connectionOperations.ensureBrowserReady(),
   resolveRoute: (url) => domainRoutePolicy.resolve(url),
   ensureConnected: () => connectionOperations.ensureBrowserConnected(),
   getSocksPort: socksPort, getNewTabUrl: () => loadSettingsOrReport().browserNewTabUrl,
-  getLocale: () => locale,
-  getTranslator: () => t,
-  getProfilePresentation: () => activeSchoolProfile.createPresentation({ locale }).schoolProfile, getWorkspaceResources: () => safeCampusResourceLibrary(), getWorkspaceGroups: () => resourceLibraryRuntime.listGroups(), getSharedPortalCredential: (origin) => origin === 'https://sso.hkust-gz.edu.cn' && activeSchoolProfile.activeContextBinding().profileId === 'hkustgz' ? persistenceRuntime.openCredential() : null,
+  getLocale: () => desktopLocale.locale,
+  getTranslator: () => desktopLocale.translator,
+  getProfilePresentation: () => activeSchoolProfile.createPresentation({ locale: desktopLocale.locale }).schoolProfile, getWorkspaceResources: () => safeCampusResourceLibrary(), getWorkspaceGroups: () => resourceLibraryRuntime.listGroups(), getSharedPortalCredential: (origin) => origin === 'https://sso.hkust-gz.edu.cn' && activeSchoolProfile.activeContextBinding().profileId === 'hkustgz' ? persistenceRuntime.openCredential() : null,
   onTogglePageFavorite: (candidate) => pageFavoriteController.toggle(candidate).catch((error) => ({ ok: false, error: error.message })), onRecordPageOpen: (url) => (resourceLibraryRuntime.recordOpenByUrl(url) && (emit(), true)), onOpenResource: (resourceId) => resourceLibraryRuntime.openByIdSerialized({ resourceId }), onWorkspaceMutation: (command) => pageFavoriteController.handleWorkspaceCommand(command),
   showItemInFolder: (file) => shell.showItemInFolder(file), showSettings: () => { desktopShell?.showWindow(); desktopShell?.send('open-settings'); },
   showRoutingRules: () => {
@@ -487,7 +483,7 @@ const controlStateSnapshot = createControlStateSnapshot({
   hasCredential: hasCredentialForCurrentSession,
   hasAccountIdentity: () => persistenceRuntime.hasAccountIdentity() ||
     hasOneShotCredential() || engineSupervisor.hasActive,
-  getPacUrl: pacUrl, getLocale: () => locale, platform: process.platform,
+  getPacUrl: pacUrl, getLocale: () => desktopLocale.locale, platform: process.platform,
   getVersion: () => app.getVersion(), getUpdate: () => updateNotifications.snapshot(),
   getResources: safeCampusResourceLibrary, getResourceGroups: () => resourceLibraryRuntime.listGroups(), getFallbackResources: () => safeCampusResourceLibrary({ customResources: [] }),
   getProfilePresentation: (options) => activeSchoolProfile.createPresentation(options),
@@ -515,7 +511,7 @@ registerControlDataIpc({
     routingPolicy: domainRoutePolicy,
     activityStore: resourceLibraryRuntime, onChanged: resourcesChanged,
   }, cardBoard,
-  schools: { onboarding: schoolProfileOnboarding, getLocale: () => locale,
+  schools: { onboarding: schoolProfileOnboarding, getLocale: () => desktopLocale.locale,
     isCustomGatewayEnabled: () => customGatewayOnboardingEnabled,
     deleteProfile: (request) => customProfileDeletion.deleteProfile({ ...request, activeProfileId: activeSchoolProfile.activeContextBinding().profileId }),
     switchProfile: switchSchoolProfile },
@@ -533,10 +529,9 @@ registerSettingsCredentialIpc({
   assertPersistence: assertSettingsPersistenceAvailable,
   translate: (key) => t(key),
   onLanguageChanged: (language) => {
-    locale = effectiveLocale(language, app.getLocale());
-    t = createT(locale);
+    desktopLocale.choose(language);
     desktopShell?.installApplicationMenu();
-    campusBrowserManager.setLocale(locale, t);
+    campusBrowserManager.setLocale(desktopLocale.locale, desktopLocale.translator);
     emit();
   },
   setStartAtLogin: (enabled) => {
@@ -652,8 +647,8 @@ const desktopStartup = new DesktopStartupRuntime({
     writePersistenceE2EMarker({ application: app, environment: process.env, userData: DATA, mode: persistenceRuntime.mode });
     writeProfileSwitchE2EMarker({ application: app, environment: process.env, userData: DATA, ...activeSchoolProfile.activeContextBinding() });
   },
-  currentLocale, fallbackLocale: () => effectiveLocale('auto', app.getLocale()),
-  setLocale: value => { locale = value; t = createT(locale); },
+  currentLocale, fallbackLocale: () => desktopLocale.fallback(),
+  setLocale: value => desktopLocale.set(value),
   loadSettings, reportSettingsReadFailure, getSettingsRecoveryNotice: () => settingsRecoveryNotice,
   setSettingsRecoveryNoticeText: value => { settingsRecoveryNoticeText = value; },
   getPresentation: () => state, translate: (key, vars) => t(key, vars),

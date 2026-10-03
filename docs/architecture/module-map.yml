@@ -141,6 +141,7 @@ modules:
     publicEntrypoints:
       - desktop/lib/platform/shell/desktop-shell.js
       - desktop/lib/platform/storage/private-file.js
+      - desktop/lib/platform/i18n/i18n.js
       - desktop/lib/network-environment/runtime/network-environment-service.js
     allowedDependencies: [desktop-diagnostics]
     risk: high

@@ -201,6 +201,15 @@ async function run() {
   const campusWindow = BrowserWindow.getAllWindows().find((candidate) => (
     candidate.webContents.getURL().includes('/renderer/campus-browser.html')
   ));
+  for (const language of ['en', 'zh']) {
+    assert.equal((await invoke(control, `window.api.save({ language: '${language}' })`)).ok, true);
+    assert.equal((await invoke(control, 'window.api.getState()')).locale, language);
+    const htmlLanguage = language === 'zh' ? 'zh-CN' : 'en';
+    await waitForRenderer(control, `document.documentElement.lang === '${htmlLanguage}'`,
+      'Control locale did not follow the saved language');
+    await waitForRenderer(campusWindow, `document.documentElement.lang === '${htmlLanguage}'`,
+      'Browser locale did not follow the same Desktop owner');
+  }
   await campusWindow.webContents.executeJavaScript(
     `document.getElementById('browserSettings').click()`,
   );
