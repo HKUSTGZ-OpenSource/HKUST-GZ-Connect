@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { CampusBrowser } = require('../../../../lib/browser/session/campus-browser');
+const { BrowserRoutingActivationOwner } = require('../../../../lib/browser/session/browser-session-manager');
 
 function deferred() {
   let resolve;
@@ -18,7 +19,6 @@ function fixture(transition = async () => ({})) {
     routingRequestsBlocked: true,
     configuredPort: null,
     campusSession: null,
-    routingActivationInFlight: null,
   };
   const apply = async (kind, port) => {
     calls.push([kind, port]);
@@ -30,8 +30,21 @@ function fixture(transition = async () => ({})) {
   };
   browser.configure = port => apply('configure', port);
   browser.resumeRoutingPolicy = port => apply('resume', port);
+  browser.routingActivationOwner = new BrowserRoutingActivationOwner({
+    getSessionState: () => ({
+      suspended: browser.routingSuspended, requestsBlocked: browser.routingRequestsBlocked,
+      configuredPort: browser.configuredPort, campusSession: browser.campusSession,
+    }),
+    ensureCampusReady: async () => true,
+    isContextCurrent: () => true,
+    configure: port => browser.configure(port),
+    resume: port => browser.resumeRoutingPolicy(port),
+  });
+  Object.defineProperty(browser, 'routingActivationInFlight', {
+    get: () => browser.routingActivationOwner.inFlight,
+  });
   const activate = port => CampusBrowser.prototype.activateRoutingPolicy.call(browser, port);
-  return { browser, calls, activate };
+  return { browser, calls, activate, reset: () => browser.routingActivationOwner.reset() };
 }
 
 test('same-port followers queued behind another port share the next production transition', async t => {
@@ -118,8 +131,8 @@ test('a late production completion after repeated reset cannot erase a replaceme
   t.after(() => { old.resolve(session); replacement.resolve(session); });
   const f = fixture(port => port === 6180 ? old.promise : replacement.promise);
   const first = f.activate(6180);
-  f.browser.routingActivationInFlight = null;
-  f.browser.routingActivationInFlight = null;
+  f.reset();
+  f.reset();
   const second = f.activate(7180);
   const current = f.browser.routingActivationInFlight;
   old.resolve(session);

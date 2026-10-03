@@ -349,6 +349,66 @@ class BrowserSessionManager {
   }
 }
 
+// Browser-facing admission and single-flight coordination belong beside the
+// Session transition owner. This class never applies PAC or opens the request
+// gate itself: those effects and intent fencing remain in BrowserSessionManager.
+class BrowserRoutingActivationOwner {
+  constructor({ getSessionState, ensureCampusReady, isContextCurrent, configure, resume } = {}) {
+    if (![getSessionState, ensureCampusReady, isContextCurrent, configure, resume]
+      .every(value => typeof value === 'function')) {
+      throw new TypeError('Browser routing activation capabilities are invalid');
+    }
+    this.getSessionState = getSessionState;
+    this.ensureCampusReady = ensureCampusReady;
+    this.isContextCurrent = isContextCurrent;
+    this.configure = configure;
+    this.resume = resume;
+    this.inFlight = null;
+  }
+
+  async ensureReady(resolution, port) {
+    if (!resolution || ![ROUTE_CAMPUS, ROUTE_DIRECT].includes(resolution.route)) return false;
+    if ((resolution.route === ROUTE_CAMPUS && !await this.ensureCampusReady()) ||
+        !this.isContextCurrent()) return false;
+    const activated = await this.activate(port);
+    // A superseding suspend intent resolves activation to null. Navigation
+    // remains forbidden while the Session's fail-closed gate is authoritative.
+    const state = this.getSessionState();
+    return activated !== null && !state.suspended && !state.requestsBlocked;
+  }
+
+  activeSessionForPort(port) {
+    const state = this.getSessionState();
+    return !state.suspended && !state.requestsBlocked &&
+      state.configuredPort === port && state.campusSession ? state.campusSession : null;
+  }
+
+  async activate(port) {
+    const value = Number(port);
+    const ready = this.activeSessionForPort(value);
+    if (ready) return ready;
+    while (this.inFlight) {
+      const current = this.inFlight;
+      await current.promise;
+      const activated = this.activeSessionForPort(value);
+      if (activated) return activated;
+    }
+    const operation = this.getSessionState().suspended ? this.resume(value) : this.configure(value);
+    const record = { port: value, promise: operation };
+    this.inFlight = record;
+    try { return await operation; }
+    finally {
+      if (this.inFlight === record) this.inFlight = null;
+    }
+  }
+
+  reset() {
+    // Window teardown forgets coordination, not the shared Session/Engine.
+    // An old completion cannot clear a newer record established after reset.
+    this.inFlight = null;
+  }
+}
+
 // Personal campus-data reads deliberately share the Campus Browser partition.
 // Only bounded display projections cross IPC; credentials and raw responses
 // remain owned by Chromium's Session in Main.
@@ -992,6 +1052,7 @@ class MyPortalDataRuntime {
 }
 
 module.exports = {
+  BrowserRoutingActivationOwner,
   BrowserSessionManager,
   CAMPUS_REQUEST_FILTER,
   FAIL_CLOSED_PAC,
