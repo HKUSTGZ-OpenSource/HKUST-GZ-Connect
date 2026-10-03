@@ -50,6 +50,15 @@ function cleanupProxyAccessForEngineClose({
   return true;
 }
 
+function removeSidecarProjection(filePath, fileSystem) {
+  try {
+    fileSystem.unlinkSync(filePath);
+    return true;
+  } catch (error) {
+    return error?.code === 'ENOENT';
+  }
+}
+
 class EphemeralProxyCredential {
   #username;
   #password;
@@ -149,6 +158,16 @@ class ProxyAccessCoordinator {
   #stable = null;
   #active = null;
 
+  static discardStartupSidecar(filePath, fileSystem = fs) {
+    if (typeof filePath !== 'string' || !path.isAbsolute(filePath) ||
+        typeof fileSystem?.unlinkSync !== 'function') {
+      throw new TypeError('startup proxy projection declaration is invalid');
+    }
+    // Best-effort startup retirement retains the original behavior. Strict
+    // publication still fails closed later if this path cannot be replaced.
+    return removeSidecarProjection(filePath, fileSystem);
+  }
+
   constructor({ store, sidecarFile, fileSystem = fs, writeSidecar,
     currentProfileId, createEphemeral = (options) => new EphemeralProxyCredential(options) } = {}) {
     if (typeof store?.loadOrCreate !== 'function' ||
@@ -174,12 +193,7 @@ class ProxyAccessCoordinator {
   }
 
   removeSidecar() {
-    try {
-      this.#fileSystem.unlinkSync(this.#sidecarFile);
-      return true;
-    } catch (error) {
-      return error?.code === 'ENOENT';
-    }
+    return removeSidecarProjection(this.#sidecarFile, this.#fileSystem);
   }
 
   ensureSidecar(port) {

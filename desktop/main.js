@@ -67,9 +67,7 @@ app.setName('HKUST(GZ) Connect');
 // ---------- paths & state ----------
 const DATA = app.getPath('userData');
 const legacyRuntimeStoragePaths = createLegacyRuntimeStoragePaths(DATA);
-try { fs.unlinkSync(legacyRuntimeStoragePaths.proxyHelperCredential); } catch (error) {
-  if (error?.code !== 'ENOENT') { /* strict access fails closed if replacement is unsafe */ }
-}
+DesktopPersistenceRuntime.discardStartupProxySidecar(legacyRuntimeStoragePaths.proxyHelperCredential, fs);
 const activeSchoolProfile = createPreReadySchoolProfileController({
   userData: DATA,
   packageRoot: __dirname, isPackaged: app.isPackaged,
@@ -96,15 +94,7 @@ const ACTIVE_CONTEXT_SWITCH = runtimeStoragePaths.activeContextSwitch;
 const PROXY_CREDENTIAL = runtimeStoragePaths.proxyCredential;
 const PROXY_HELPER_CREDENTIAL = runtimeStoragePaths.proxyHelperCredential;
 const syntheticEngineE2e = !app.isPackaged && process.env[SYNTHETIC_ENGINE_E2E_ENV] === '1';
-// The helper sidecar is a short-lived, owner-only plaintext projection of the
-// encrypted stable credential. It is valid only while this app owns (or is
-// about to start) the loopback listener, so never carry it across launches.
-try { fs.unlinkSync(PROXY_HELPER_CREDENTIAL); } catch (error) {
-  if (error?.code !== 'ENOENT') {
-    // A later strict connect/copy operation will fail closed if the path
-    // cannot be safely replaced. Compatibility mode remains usable.
-  }
-}
+DesktopPersistenceRuntime.discardStartupProxySidecar(PROXY_HELPER_CREDENTIAL, fs);
 const GATEWAY_HOST = syntheticEngineE2e ? '127.0.0.1' : activeSchoolProfile.gatewayHost;
 const GATEWAY_PORT = activeSchoolProfile.gatewayPort;
 const persistenceRuntime = new DesktopPersistenceRuntime({
@@ -562,12 +552,7 @@ registerSettingsCredentialIpc({
 });
 registerCoreControlIpc({
   register: trustedHandle, getState: controlStateSnapshot, getNetworkEnvironment: () => networkEnvironmentService.snapshot(loadSettingsOrReport().underlaySourceAddress, { probePublicEgress: true }),
-  getLoginAccount: () => {
-    try {
-      if (hasCredentialForCurrentSession()) return { ok: false, username: '' };
-      return { ok: true, username: loadSettingsOrReport().username };
-    } catch { return { ok: false, username: '' }; }
-  },
+  getLoginAccount: () => vpnCredentialAccess.loginAccount(loadSettingsOrReport),
   connect: async () => { const { intent: _intent, ...result } = await connect(); return result; },
   disconnect: () => disconnect(),
   reconnect: async () => { const { intent: _intent, ...result } = await reconnect(); return result; },

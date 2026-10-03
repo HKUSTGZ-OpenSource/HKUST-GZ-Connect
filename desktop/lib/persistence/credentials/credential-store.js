@@ -117,6 +117,13 @@ class VpnCredentialAccessCoordinator {
 
   hasCredentialForCurrentSession() { return this.hasStored() || this.getEngineActive(); }
 
+  loginAccount(readSettings) {
+    try {
+      if (this.hasCredentialForCurrentSession()) return { ok: false, username: '' };
+      return { ok: true, username: readSettings().username };
+    } catch { return { ok: false, username: '' }; }
+  }
+
   open(profileId) {
     return openVpnCredential({
       profileId, memoryBroker: this.#memoryBroker,

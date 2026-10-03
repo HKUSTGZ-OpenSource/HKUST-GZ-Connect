@@ -123,3 +123,48 @@ test('active Engine and retired Profile checks preserve their original short-cir
   assert.equal(f.access.hasOneShot(), false);
   assert.equal(f.access.hasCredentialForCurrentSession(), true);
 });
+
+test('login account reads fresh settings identity only when a credential/session is absent', t => {
+  const f = fixture(t);
+  let username = 'fixture-login-a', reads = 0;
+  const readSettings = () => { reads++; return {
+    username, get password() { throw new Error('login presentation must not read a secret'); },
+  }; };
+  assert.deepEqual(f.access.loginAccount(readSettings), { ok: true, username });
+  username = 'fixture-login-b';
+  assert.deepEqual(f.access.loginAccount(readSettings), { ok: true, username });
+  assert.equal(reads, 2);
+  assert.equal(f.calls.opened, 0);
+  assert.equal(f.calls.storage, 0);
+});
+
+test('persistent memory and active-Engine login suppression retain original short-circuit order', t => {
+  for (const kind of ['persistent', 'memory', 'engine']) {
+    const f = fixture(t);
+    if (kind === 'persistent') f.state.persistent = true;
+    if (kind === 'memory') stage(f.access);
+    if (kind === 'engine') f.state.engine = true;
+    assert.deepEqual(f.access.loginAccount(() => { throw new Error('must not read settings'); }),
+      { ok: false, username: '' });
+    assert.equal(f.calls.opened, 0);
+    assert.equal(f.calls.storage, 0);
+    assert.equal(f.calls.engine, kind === 'engine' ? 1 : 0);
+  }
+  const f = fixture(t);
+  stage(f.access);
+  f.state.profile = 'profile-b';
+  assert.deepEqual(f.access.loginAccount(() => ({ username: 'fixture-profile-b' })),
+    { ok: true, username: 'fixture-profile-b' });
+});
+
+test('login presentation failures stay bounded and never open credential material', t => {
+  const f = fixture(t);
+  for (const readSettings of [undefined, () => null, () => { throw new Error('synthetic settings refusal'); }]) {
+    assert.deepEqual(f.access.loginAccount(readSettings), { ok: false, username: '' });
+  }
+  f.access.hasCredentialForCurrentSession = () => { throw new Error('synthetic presence refusal'); };
+  assert.deepEqual(f.access.loginAccount(() => { throw new Error('must not read'); }),
+    { ok: false, username: '' });
+  assert.equal(f.calls.opened, 0);
+  assert.equal(f.calls.storage, 0);
+});
