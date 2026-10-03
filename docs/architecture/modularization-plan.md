@@ -131,6 +131,12 @@ and native keyboard shortcut dispatch into the existing Toolbar module. Browser 
 1,137 lines; Toolbar is 262 lines and Main dependencies do not grow. Page events and routing
 activation still need separate M2 ownership work.
 
+The proposed [routing activation owner](browser-routing-activation-owner.md) moves the Browser's
+readiness admission and single-flight configure/resume record beside the existing Session owner.
+PAC/request-gate authority and route semantics stay unchanged; window cleanup resets only the
+coordination record. This adds no production dependency node and does not complete page-event
+ownership or the other M2 acceptance gates.
+
 Extract tested owners for:
 
 ```text

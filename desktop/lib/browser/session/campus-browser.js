@@ -16,6 +16,7 @@ const { CertificateController } = require('../certificates/certificate-controlle
 const { BrowserDownloadController } = require('../downloads/download-controller');
 const { CredentialController, ManagedCredentialPopupOwner } = require('../credentials/credential-controller');
 const {
+  BrowserRoutingActivationOwner,
   BrowserSessionManager,
   applyCampusSessionPolicy,
   campusProxyConfig,
@@ -342,6 +343,13 @@ class CampusBrowser {
       },
       onSessionReady: (browserSession) => this.applyDownloadHandler(browserSession),
     });
+    this.routingActivationOwner = new BrowserRoutingActivationOwner({
+      getSessionState: () => this.browserSessionManager,
+      ensureCampusReady: () => this.ensureCampusReady(),
+      isContextCurrent: () => !this.windowOwner?.contextRetired,
+      configure: port => this.configure(port),
+      resume: port => this.resumeRoutingPolicy(port),
+    });
     this.popupOwner = new ManagedCredentialPopupOwner({
       BrowserWindow,
       getParentWindow: () => this.window,
@@ -398,7 +406,6 @@ class CampusBrowser {
     });
     this.findOpen = false;
     this.scheduledLayout = null;
-    this.routingActivationInFlight = null;
     this.toolbarOwner = new BrowserToolbarOwner({
       getWindow: () => this.window,
       getActiveTab: () => this.activeTab(),
@@ -460,6 +467,7 @@ class CampusBrowser {
   get campusSession() { return this.browserSessionManager.campusSession; }
   get routingSuspended() { return this.browserSessionManager.suspended; }
   get routingRequestsBlocked() { return this.browserSessionManager.requestsBlocked; }
+  get routingActivationInFlight() { return this.routingActivationOwner.inFlight; }
 
   ownsWebContents(webContents) {
     return !!webContents && (this.tabs.some((tab) => tab?.view?.webContents === webContents) ||
@@ -512,34 +520,11 @@ class CampusBrowser {
   async openNewTab() { return this.navigationOwner.openNewTab(); }
 
   async ensureRoutingReady(resolution, port = this.configuredPort || 1080) {
-    if (!resolution || ![ROUTE_CAMPUS, ROUTE_DIRECT].includes(resolution.route)) return false;
-    if ((resolution.route === ROUTE_CAMPUS && !await this.ensureCampusReady()) || this.windowOwner?.contextRetired) return false;
-    const activated = await this.activateRoutingPolicy(port);
-    // A superseding suspend intent makes BrowserSessionManager activation
-    // resolve null. Never start a navigation while its fail-closed gate remains
-    // authoritative.
-    return activated !== null && !this.routingSuspended && !this.routingRequestsBlocked;
+    return this.routingActivationOwner.ensureReady(resolution, port);
   }
 
   async activateRoutingPolicy(port) {
-    const value = Number(port);
-    if (!this.routingSuspended && !this.routingRequestsBlocked &&
-        this.configuredPort === value && this.campusSession) return this.campusSession;
-    const current = this.routingActivationInFlight;
-    if (current) {
-      await current.promise;
-      if (!this.routingSuspended && !this.routingRequestsBlocked &&
-          this.configuredPort === value && this.campusSession) return this.campusSession;
-    }
-    const operation = this.routingSuspended
-      ? this.resumeRoutingPolicy(value)
-      : this.configure(value);
-    const record = { port: value, promise: operation };
-    this.routingActivationInFlight = record;
-    try { return await operation; }
-    finally {
-      if (this.routingActivationInFlight === record) this.routingActivationInFlight = null;
-    }
+    return this.routingActivationOwner.activate(port);
   }
 
   async navigateWhenReady(rawUrl, tab = this.activeTab()) {
@@ -1038,7 +1023,7 @@ class CampusBrowser {
     this.tabManager.clear();
     this.view = null;
     this.attachedView = null;
-    this.routingActivationInFlight = null;
+    this.routingActivationOwner.reset();
     this.findOpen = false;
     this.toolbarOwner.reset();
   }
@@ -1096,7 +1081,7 @@ class CampusBrowser {
     this.tabManager.clearTransientState();
     this.view = null;
     this.attachedView = null;
-    this.routingActivationInFlight = null;
+    this.routingActivationOwner.reset();
     this.tabManager.clear();
     this.findOpen = false;
     this.toolbarOwner.reset();
