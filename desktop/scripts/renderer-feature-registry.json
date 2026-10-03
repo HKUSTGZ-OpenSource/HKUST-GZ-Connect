@@ -11,9 +11,6 @@
     "renderer/add-website-dialog.js": [
       "addWebsiteDialog"
     ],
-    "renderer/browser-data-settings.js": [
-      "browserDataSettings"
-    ],
     "renderer/campus-browser.js": [
       "@binding:address",
       "@binding:applyLang",
@@ -182,7 +179,7 @@
       "root": "renderer/features/feature-host",
       "entrypoint": "renderer/features/feature-host/index.mjs",
       "exports": ["FEATURE_DEFINITIONS", "createRendererFeatures"],
-      "allowedDependencies": ["campus-data", "official-favorites", "auth-challenge", "integration-center", "connection-overview", "update-notices", "notifications", "control-tower", "browser-new-tab-settings"]
+      "allowedDependencies": ["campus-data", "official-favorites", "auth-challenge", "integration-center", "connection-overview", "update-notices", "notifications", "control-tower", "browser-new-tab-settings", "browser-data-settings"]
     },
     {
       "id": "connection-overview",
@@ -209,6 +206,13 @@
       "id": "control-tower",
       "root": "renderer/features/control-tower",
       "entrypoint": "renderer/features/control-tower/index.mjs",
+      "exports": ["create"],
+      "allowedDependencies": []
+    },
+    {
+      "id": "browser-data-settings",
+      "root": "renderer/features/browser-data-settings",
+      "entrypoint": "renderer/features/browser-data-settings/index.mjs",
       "exports": ["create"],
       "allowedDependencies": []
     },

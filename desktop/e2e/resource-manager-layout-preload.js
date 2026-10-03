@@ -54,6 +54,7 @@ let workspaceOpenCount = 0;
 let bookmarkManagerOpenCount = 0;
 let nextCustomId = 1;
 let pendingIntegration = null;
+let browserDataClearCount = 0;
 let cardBoardRequests = { get: 0, commit: 0, reset: 0, lastOperations: [] };
 
 function serviceDeskFixture() {
@@ -275,7 +276,8 @@ contextBridge.exposeInMainWorld('api', {
   disconnect: async () => ({ ok: true }),
   reconnect: async () => ({ ok: true }),
   logout: async () => ({ ok: true }),
-  clearBrowserData: async () => ({ ok: true }),
+  clearBrowserData: async () => { browserDataClearCount++; return { ok: true }; },
+  fixtureBrowserDataClearCount: () => browserDataClearCount,
   getLogs: async () => '',
   openLog: async () => ({ ok: true }),
   copy: async () => ({ ok: true }),

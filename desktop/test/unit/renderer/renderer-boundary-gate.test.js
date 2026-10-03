@@ -263,8 +263,9 @@ test('mutable member escapes are rejected and migrated DOM/network globals requi
 
 test('static feature ownership includes the bounded host and native entrypoints without retired globals', () => {
   const registry=require('../../../scripts/renderer-feature-registry.json');
-  assert.deepEqual(registry.features.map(({id})=>id).sort(),['auth-challenge','browser-new-tab-settings','campus-data','connection-overview','control-tower','feature-host','integration-center','localization','notifications','official-favorites','update-notices']);
-  assert.deepEqual(registry.features.find(({id})=>id==='feature-host').allowedDependencies,['campus-data','official-favorites','auth-challenge','integration-center','connection-overview','update-notices','notifications','control-tower','browser-new-tab-settings']);
+  assert.deepEqual(registry.features.map(({id})=>id).sort(),['auth-challenge','browser-data-settings','browser-new-tab-settings','campus-data','connection-overview','control-tower','feature-host','integration-center','localization','notifications','official-favorites','update-notices']);
+  assert.deepEqual(registry.features.find(({id})=>id==='feature-host').allowedDependencies,['campus-data','official-favorites','auth-challenge','integration-center','connection-overview','update-notices','notifications','control-tower','browser-new-tab-settings','browser-data-settings']);
+  assert.equal(Object.hasOwn(registry.legacyGlobals,'renderer/browser-data-settings.js'),false);
   assert.equal(Object.hasOwn(registry.legacyGlobals,'renderer/browser-new-tab-settings.js'),false);
   assert.equal(Object.hasOwn(registry.legacyGlobals,'renderer/notification-view.js'),false);
   assert.equal(Object.hasOwn(registry.legacyGlobals,'renderer/notification-drawer.js'),false);

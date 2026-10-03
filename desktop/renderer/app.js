@@ -333,7 +333,11 @@ controlTowerFeature = rendererFeatures.mount('control-tower', {
 window.routingManager.start({
   openTower: () => { show('dash'); setPage('tower'); },
 });
-window.certificateManager.start(); window.browserDataSettings.start({ api: window.api, document, translate: (key) => t(key), onClearState: pending => campusDataFeature?.clearDisplay(pending) });
+window.certificateManager.start();
+rendererFeatures.mount('browser-data-settings', {
+  api: window.api, document, translate: (key) => t(key),
+  onClearState: pending => campusDataFeature?.clearDisplay(pending),
+});
 browserNewTabSettings = rendererFeatures.mount('browser-new-tab-settings', {
   api: window.api, document, translate: (key) => t(key),
   getSettings: () => settings, setSettings: (next) => { settings = next; },
