@@ -33,9 +33,11 @@ with missing entrypoints; final coverage adds fresh identity, suppression/read o
 bounded failure, exact-path removal, absence/denial, malformed declarations, real
 disposable file/sibling preservation, leaf-symlink non-following and unchanged owner
 failure handling. The native Main fixture seeds both disposable paths under its own
-temporary userData and observes retirement plus the unchanged login DTO. The Windows
-unit entrypoint adds these portable contracts; native Windows results are recorded
-separately, with the privileged symlink case explicitly skipped there.
+temporary userData and observes retirement plus the unchanged login DTO. The existing
+Windows platform-smoke entrypoint adds a native integration covering both disposable
+paths, sibling preservation, actual directory-unlink refusal and login suppression/
+read boundaries. Standalone portable unit cases run in the Desktop suite; Windows
+coverage is recorded separately. The leaf-symlink unit case remains skipped on Windows.
 
 Main falls 689 -> 674 lines with direct/effective/transitive metrics 20/35/170 and
 private-edge inventory/cap 101 unchanged. The downward line ratchet is enforced;
@@ -44,6 +46,6 @@ M3 completion: Main's locale/recovery-notice/resource-feed state still needs sem
 ownership review. Broader M1/M2/M5, governance and reporter outcomes remain separate.
 
 Rollback restores Main's two cleanup blocks/login projection, owner entrypoints,
-contracts, Windows test selection and the previous line ratchet together. No stored
+contracts, Windows integration case and the previous line ratchet together. No stored
 schema or upgrade migration changes. Native/synthetic/package checks do not establish
 an installed-app or live-school result; no release or system-network change is authorized.

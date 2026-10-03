@@ -18,6 +18,7 @@ const {
   ActiveContextSwitchJournalStore,
 } = require('../../../lib/switching/active-context/active-context-switch-store');
 const { createPrivateStorageEffects } = require('../../../lib/platform/storage/private-file');
+const { DesktopPersistenceRuntime } = require('../../../lib/persistence/runtime/desktop-persistence-runtime');
 const {
   commitActiveContextSwitch,
   createPreparedActiveContextSwitch,
@@ -60,6 +61,49 @@ function customConfirmation() {
   });
   return owner.consume({ confirmationHandle: view.confirmationHandle, activeContext });
 }
+
+test('real Windows credential adapters retire projections and preserve bounded login metadata', {
+  skip: process.platform !== 'win32',
+}, t => {
+  const root = privateRoot(t, 'hkustgz-windows-credential-adapters-');
+  const files = ['legacy-helper.json', 'selected-helper.json'].map(name => path.join(root, name));
+  const sibling = path.join(root, 'sibling.json');
+  for (const file of [...files, sibling]) fs.writeFileSync(file, 'synthetic-marker');
+  for (const file of files) {
+    assert.equal(DesktopPersistenceRuntime.discardStartupProxySidecar(file), true);
+    assert.equal(fs.existsSync(file), false);
+    assert.equal(DesktopPersistenceRuntime.discardStartupProxySidecar(file), true);
+  }
+  assert.equal(fs.readFileSync(sibling, 'utf8'), 'synthetic-marker');
+  assert.equal(DesktopPersistenceRuntime.discardStartupProxySidecar(root), false,
+    'native directory unlink refusal cannot be reported as confirmed removal');
+  assert.throws(() => DesktopPersistenceRuntime.discardStartupProxySidecar('relative-helper'), TypeError);
+
+  let persistent = false, engine = false, profile = 'fixture-profile-a', reads = 0;
+  const access = DesktopPersistenceRuntime.createVpnCredentialAccess({
+    persistence: { hasCredential: () => persistent,
+      openCredential: () => { throw new Error('metadata must not open a credential'); } },
+    getEngineActive: () => engine, getProfileId: () => profile, platform: 'win32',
+    safeStorage: { isEncryptionAvailable: () => { throw new Error('metadata must not probe storage'); } },
+  });
+  t.after(() => access.clear());
+  const readSettings = () => { reads++; return { username: 'fixture-visible-account',
+    get password() { throw new Error('metadata must not read a password'); } }; };
+  assert.deepEqual(access.loginAccount(readSettings), { ok: true, username: 'fixture-visible-account' });
+  persistent = true;
+  assert.deepEqual(access.loginAccount(readSettings), { ok: false, username: '' });
+  persistent = false;
+  access.stage({ profileId: profile, username: 'fixture-memory-account', password: 'fixture-memory-input' });
+  assert.deepEqual(access.loginAccount(readSettings), { ok: false, username: '' });
+  profile = 'fixture-profile-b';
+  engine = true;
+  assert.deepEqual(access.loginAccount(readSettings), { ok: false, username: '' });
+  engine = false;
+  assert.deepEqual(access.loginAccount(readSettings), { ok: true, username: 'fixture-visible-account' });
+  assert.equal(reads, 2);
+  assert.deepEqual(access.loginAccount(() => { throw new Error('synthetic settings unavailable'); }),
+    { ok: false, username: '' });
+});
 
 test('real Windows storage provisions and reopens one isolated custom school', {
   skip: process.platform !== 'win32',
