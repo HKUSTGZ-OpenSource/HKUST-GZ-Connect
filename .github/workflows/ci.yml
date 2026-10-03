@@ -81,7 +81,7 @@ jobs:
 
       - name: Build unpacked Linux application
         if: matrix.platform == 'linux'
-        run: node node_modules/electron-builder/out/cli/cli.js --linux dir --x64 --publish never
+        run: npx --no-install electron-builder --linux dir --x64 --publish never
       - name: Verify the exact Linux package
         if: matrix.platform == 'linux'
         run: node build/verify-package.js release/linux-unpacked/resources linux x64
@@ -92,7 +92,7 @@ jobs:
 
       - name: Build unpacked Windows application
         if: matrix.platform == 'windows'
-        run: node node_modules/electron-builder/out/cli/cli.js --win dir --x64 --publish never
+        run: npx --no-install electron-builder --win dir --x64 --publish never
       - name: Verify the exact Windows package
         if: matrix.platform == 'windows'
         run: node build/verify-package.js release/win-unpacked/resources win32 x64
@@ -119,7 +119,7 @@ jobs:
               exit 1
               ;;
           esac
-          node node_modules/electron-builder/out/cli/cli.js \
+          npx --no-install electron-builder \
             --mac dir "--${package_arch}" --publish never
           node build/verify-package.js \
             "release/${output_dir}/hkustgzconnect.app/Contents/Resources" darwin "${verifier_arch}"
