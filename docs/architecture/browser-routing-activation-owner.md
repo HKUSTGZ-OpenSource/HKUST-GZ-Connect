@@ -3,7 +3,7 @@
 - Status: Proposed bounded M2 extraction; not merged or full Browser ownership
 - Owner: Desktop Browser maintainers
 - Last verified: 2026-10-03
-- Applies to: candidate based on development `main@7e86a41451f0788e09e8a9e4f505885c59744119`; not published v2.0.3
+- Applies to: candidate based on development `main@a3785de9f56517451ab2cdcb325a3bdf7a1984f1`; not published v2.0.3
 
 ## Ownership
 
@@ -31,11 +31,17 @@ separate terminal authority. Browser method names and return values remain compa
 
 ## Acceptance
 
-Before movement, the existing Browser/Session regression subset passed 70 tests on local macOS.
+Historical initial seam: before movement, the existing Browser/Session subset passed 70 tests on local macOS.
 The new independent owner contract initially failed eight tests because the owner did not exist;
 after extraction all nine owner tests and the unchanged subset pass (79 total).
 They cover input capability validation, reuse/resume, same/different-port concurrency, rejected
 flights, direct/campus readiness, context retirement, superseding suspension and repeated reset.
+
+Convergence review found an inherited queued-follower race in both the actual main method and
+this candidate. Its independent behavior repair landed first in #208 / #207. This extraction
+preserves that corrected recheck loop; it does not bundle another behavior change. All six
+production-method regressions retain their assertions, with only the fake's injection/reset
+seam adapted to the extracted owner. The new direct-owner queued-follower regression remains.
 
 Full Node, architecture/governance, install-script, exact-tree syntax/secret, native Browser routing,
 MFA, strict proxy, retirement and performance/soak checks remain the local acceptance matrix.

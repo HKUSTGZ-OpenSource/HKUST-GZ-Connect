@@ -387,8 +387,8 @@ class BrowserRoutingActivationOwner {
     const value = Number(port);
     const ready = this.activeSessionForPort(value);
     if (ready) return ready;
-    const current = this.inFlight;
-    if (current) {
+    while (this.inFlight) {
+      const current = this.inFlight;
       await current.promise;
       const activated = this.activeSessionForPort(value);
       if (activated) return activated;
