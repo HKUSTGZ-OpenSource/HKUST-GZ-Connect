@@ -431,6 +431,8 @@ function createCampusBrowserWindowOwner(options) {
 }
 
 class CampusBrowserManager {
+  #openEpoch = 0;
+
   static createRequestSecurityBoundary(options) {
     return new BrowserRequestSecurityBoundary(options);
   }
@@ -588,6 +590,7 @@ class CampusBrowserManager {
   }
 
   async open(rawRequest) {
+    const epoch = this.#openEpoch;
     const translate = this.getTranslator();
     let request;
     try {
@@ -610,15 +613,22 @@ class CampusBrowserManager {
     // campus pages still establish the tunnel up front so an original
     // cross-origin SSO redirect is never replayed as a GET.
     if (request.url !== BLANK_CAMPUS_HOME && request.route === ROUTE_CAMPUS) {
-      const connection = await this.ensureConnected();
+      let connection;
+      try { connection = await this.ensureConnected(); }
+      catch (error) {
+        if (epoch !== this.#openEpoch) return { ok: false, stale: true };
+        throw error;
+      }
+      if (epoch !== this.#openEpoch) return { ok: false, stale: true };
       if (!connection?.ok) {
         const error = connection?.error || translate('error.connectTimeout');
         this.reportError(error);
         return { ok: false, error };
       }
     }
+    let browser;
     try {
-      const browser = this.getOrCreate();
+      browser = this.getOrCreate();
       if (request.displayName) {
         await browser.open(request.url, this.getSocksPort(), request.route, {
           displayName: request.displayName,
@@ -626,8 +636,12 @@ class CampusBrowserManager {
       } else {
         await browser.open(request.url, this.getSocksPort(), request.route);
       }
+      if (epoch !== this.#openEpoch || this.browser !== browser) return { ok: false, stale: true };
       return { ok: true, url: request.url, route: request.route };
     } catch (error) {
+      if (epoch !== this.#openEpoch || (browser && this.browser !== browser)) {
+        return { ok: false, stale: true };
+      }
       const message = error.code === 'SETTINGS_READ_FAILED'
         ? error.message
         : translate('error.browserStart', { message: error.message });
@@ -670,6 +684,7 @@ class CampusBrowserManager {
   }
 
   close() {
+    this.#openEpoch += 1;
     const browser = this.browser;
     browser?.downloadController?.retire();
     browser?.workspaceOwner?.retire();
@@ -701,6 +716,9 @@ class CampusBrowserManager {
   }
 
   async closeForContextSwitch() {
+    // Retire pending opens before the first await, even if no window exists yet.
+    // The Engine/Session retain their own lifetime; a later new open is allowed.
+    this.#openEpoch += 1;
     const browser = this.browser;
     if (!browser) { this.lastPortalSessionUrl = ''; return true; }
     if (typeof browser.closeForContextSwitch !== 'function') return false;
