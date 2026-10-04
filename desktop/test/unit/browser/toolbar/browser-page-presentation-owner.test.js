@@ -12,7 +12,7 @@ function fixture() {
     'fillSharedPortalCredential', 'markCredentialNavigation', 'updateTabRoute',
     'recordPortalSessionUrl', 'recordPageOpen', 'refreshWorkspaceHomes',
     'clearCredentialCandidate', 'stageCredentialCandidate', 'confirmCredentialPageState',
-    'cancelCertificatePrompts', 'handleKeyboard', 'reportError'].map(name => [name,
+    'cancelCertificatePrompts', 'handleKeyboard', 'reportError', 'retireCredentialCommands'].map(name => [name,
     (...args) => { effects.push([name, ...args]); return name === 'windowOpenResponse'
       ? { action: 'deny' } : Promise.resolve(false); }]));
   const owner = new BrowserPagePresentationOwner({
@@ -192,4 +192,17 @@ test('current crash feedback uses the live locale as the original Browser facade
   reject(new Error('synthetic current renderer failure')); await new Promise(setImmediate);
   assert.deepEqual(f.effects.filter(([name]) => name === 'reportError'),
     [['reportError', 'new-locale:errorPage.rendererCrash']]);
+});
+
+test('credential admission observes the owned page revision and navigation intent', () => {
+  const f = fixture(), tab = f.addTab(); f.owner.attach(tab);
+  const initial = f.owner.captureAdmission(tab);
+  assert.equal(f.owner.admissionCurrent(initial), true);
+  tab.navigationIntent = 1; assert.equal(f.owner.admissionCurrent(initial), false);
+  const changed = f.owner.captureAdmission(tab);
+  tab.view.webContents.emit('did-start-loading');
+  assert.equal(f.owner.admissionCurrent(changed), false);
+  assert.equal(f.effects.some(([name]) => name === 'retireCredentialCommands'), true);
+  const last = f.owner.captureAdmission(tab); f.owner.reset();
+  assert.equal(f.owner.admissionCurrent(last), false); assert.equal(f.owner.captureAdmission(tab), null);
 });

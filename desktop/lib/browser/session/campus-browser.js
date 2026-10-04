@@ -15,7 +15,7 @@ const { BrowserWorkspaceOwner, projectBrowserWorkspaceResources, MAX_WORKSPACE_H
   require('../workspace/campus-workspace-controller');
 const { CertificateController } = require('../certificates/certificate-controller');
 const { BrowserDownloadController } = require('../downloads/download-controller');
-const { CredentialController, ManagedCredentialPopupOwner } = require('../credentials/credential-controller');
+const { BrowserCredentialCommandOwner, CredentialController, ManagedCredentialPopupOwner } = require('../credentials/credential-controller');
 const {
   BrowserRoutingActivationOwner,
   BrowserSessionManager,
@@ -251,7 +251,8 @@ class CampusBrowser {
         onToolbarCommand: payload => this.handleToolbarCommand(payload),
         onResize: () => this.scheduleLayout(),
         onBeforeCreate: () => {
-          this.cancelScheduledUpdates(); this.pagePresentationOwner?.reset(); this.toolbarOwner?.reset();
+          this.cancelScheduledUpdates(); this.credentialCommands?.reset();
+          this.pagePresentationOwner?.reset(); this.toolbarOwner?.reset();
         },
         onClosed: () => this.handleWindowClosed(),
         onMissingWindow: () => this.close(),
@@ -278,7 +279,10 @@ class CampusBrowser {
         linkPopup: (reservation, tab) => this.credentialController.linkPopup(reservation, tab),
         closeTabState: tab => {
           try { this.pagePresentationOwner.detach(tab); }
-          finally { this.credentialController.closeTab(tab); }
+          finally {
+            try { this.credentialCommands.clearTab(tab); }
+            finally { this.credentialController.closeTab(tab); }
+          }
         },
         releasePopup: reservation => this.credentialController.releasePopup(reservation),
         attachPageEvents: tab => this.attachPageEvents(tab),
@@ -395,7 +399,16 @@ class CampusBrowser {
         cancelCertificatePrompts: () => this.certificateController.cancelAll(),
         handleKeyboard: (tab, event, input) => this.toolbarCommands.handleKeyboard(tab, event, input),
         reportError: message => this.onError?.(message),
+        retireCredentialCommands: tab => this.credentialCommands.clearTab(tab),
       },
+    });
+    this.credentialCommands = new BrowserCredentialCommandOwner({
+      getVault: () => this.credentialVault, getDialog: () => this.dialog,
+      getWindow: () => this.window, originForTab: tab => this.tabOrigin(tab),
+      captureAdmission: tab => this.pagePresentationOwner.captureAdmission(tab),
+      admissionCurrent: admission => this.pagePresentationOwner.admissionCurrent(admission),
+      getSharedPortalCredential: origin => this.getSharedPortalCredential(origin),
+      translate: (...args) => this.t(...args), reportError: message => this.onError?.(message),
     });
     this.toolbarOwner = new BrowserToolbarOwner({
       getWindow: () => this.window,
@@ -695,73 +708,11 @@ class CampusBrowser {
   }
 
   async manageCredential(tab) {
-    if (!this.credentialVault || !this.dialog) return;
-    const origin = this.tabOrigin(tab);
-    if (!origin) {
-      if (this.onError) this.onError(this.t('cred.httpsOnly'));
-      return;
-    }
-    try {
-      const credential = await this.credentialVault.get(origin);
-      if (!this.window || this.window.isDestroyed()) return;
-      if (!credential) {
-        await this.dialog.showMessageBox(this.window, {
-          type: 'info',
-          title: this.t('cred.title'),
-          message: this.t('cred.noneMessage', { host: new URL(origin).hostname }),
-          detail: this.t('cred.noneDetail'),
-          buttons: [this.t('cred.ok')],
-          noLink: true,
-        });
-        return;
-      }
-      const result = await this.dialog.showMessageBox(this.window, {
-        type: 'question',
-        title: this.t('cred.title'),
-        message: this.t('cred.hasMessage', { host: new URL(origin).hostname }),
-        detail: this.t('cred.hasDetail'),
-        buttons: [this.t('cred.fill'), this.t('cred.delete'), this.t('common.cancel')],
-        defaultId: 0,
-        cancelId: 2,
-        noLink: true,
-      });
-      if (result.response === 0 && !tab.view.webContents.isDestroyed()) {
-        tab.view.webContents.send('campus-credential-fill', credential);
-      } else if (result.response === 1) {
-        await this.credentialVault.remove(origin);
-      }
-    } catch {
-      if (this.onError) this.onError(this.t('cred.readFailed'));
-    }
+    await this.credentialCommands.manage(tab);
   }
 
   async fillSharedPortalCredential(tab) {
-    if (!tab?.view?.webContents || tab.view.webContents.isDestroyed?.()) return false;
-    const origin = this.tabOrigin(tab);
-    if (!origin || tab.sharedCredentialAttemptedOrigin === origin) return false;
-    let owner = null;
-    try { owner = await Promise.resolve(this.getSharedPortalCredential(origin)); }
-    catch { return false; }
-    if (!owner || typeof owner.withStrings !== 'function' || typeof owner.destroy !== 'function') {
-      owner?.destroy?.();
-      return false;
-    }
-    tab.sharedCredentialAttemptedOrigin = origin;
-    try {
-      return owner.withStrings((username, password) => {
-        if (tab.view.webContents.isDestroyed?.()) return false;
-        tab.view.webContents.send('campus-credential-fill', {
-          origin,
-          username,
-          password,
-          source: 'connection-credential',
-          autoSubmit: true,
-        });
-        return true;
-      }) === true;
-    } finally {
-      owner.destroy();
-    }
+    return this.credentialCommands.fillShared(tab);
   }
 
   createTab(rawUrl = null, route = null, options = {}) {
@@ -861,6 +812,7 @@ class CampusBrowser {
 
   handleWindowClosed() {
     this.cancelScheduledUpdates();
+    this.credentialCommands.reset();
     this.pagePresentationOwner.reset();
     this.certificateController.cancelAll();
     this.tabManager.closeViews();
@@ -919,6 +871,7 @@ class CampusBrowser {
 
   close() {
     this.cancelScheduledUpdates();
+    this.credentialCommands.reset();
     this.pagePresentationOwner.reset();
     this.certificateController.cancelAll();
     if (this.windowOwner?.requestClose() === true) return;

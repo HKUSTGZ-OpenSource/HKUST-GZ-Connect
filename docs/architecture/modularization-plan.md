@@ -182,6 +182,12 @@ It keeps routing and credential algorithms behind their original ports, lowering
 without a new production dependency node. Credential-command and remaining composition ownership
 still require separate M2 acceptance; a local source candidate is not a release or complete wave.
 
+The [credential command owner](browser-credential-command-owner.md) isolates saved-account
+commands and approved shared-login delivery, binding original page/window/origin before asynchronous
+effects and retiring temporary projections on page/tab/window changes. Its source candidate lowers
+Browser968->921 without a new production node; original credential/MFA controller bodies and vault
+schema are unchanged. Candidate-saving lifetime and remaining composition still need M2 review.
+
 ## Wave M3 — Desktop Main composition
 
 Completed source outcome, with every #81 criterion mapped to concrete owner/test/platform
