@@ -237,7 +237,12 @@ function moduleEdgeRatchetErrors(root, productionGraph) {
   const imports = [...productionGraph].flatMap(([from, targets]) =>
     targets.map(to => [relative(from), relative(to)]));
   const audit = moduleImportViolations(fs.readFileSync(moduleMap, 'utf8'), imports);
-  return audit.errors.length ? audit.errors : moduleEdgeDebtErrors(audit.violations, debt);
+  if (audit.errors.length) return audit.errors;
+  return [
+    ...audit.violations.filter(edge => edge.startsWith('desktop/main.js -> '))
+      .map(edge => `Main import boundary violation: ${edge}`),
+    ...moduleEdgeDebtErrors(audit.violations, debt),
+  ];
 }
 
 function graphFanMetrics(graph, root) {

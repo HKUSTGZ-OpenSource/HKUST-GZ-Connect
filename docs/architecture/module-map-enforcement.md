@@ -2,7 +2,7 @@
 
 - Status: Path-coverage contract plus static-JS edge ratchet for M5; full dependency enforcement remains incomplete
 - Owner: architecture and repository maintainers
-- Last verified: 2026-10-03 (`main@eb5a60743427286e5af5c6eafce48d4ddaa5b63d`)
+- Last verified: 2026-10-04 (Main entrypoint contract; exact acceptance recorded separately)
 - Applies to: `module-map.yml` schema 2, `desktop/scripts/module-map-coverage.js`,
   `desktop/scripts/check-architecture.js` and `desktop/scripts/module-edge-debt.json`
 - Scope: path coverage, ownership uniqueness, schema, public-entrypoint existence and
@@ -65,9 +65,9 @@ that file as Browser's certificate boundary. Main no longer imports the separate
 dispatch leaf or the private trust-store file; it constructs the unchanged store through the
 public class re-export. Its inventory/cap fell to 113 and Main's direct dependencies to 30.
 Later #210 credential access, #212 proxy composition and #215 App startup retire three,
-two and three additional private edges respectively. Current inventory/cap is 105 and Main's
-transitive graph is 170, not the older 169-module slice. Main has 24 direct / 39 effective
-dependencies; its hard line cap is 730 and App composition member cap is 16. Low-level trust
+two and three additional private edges respectively. At that checkpoint inventory/cap was 105;
+Main had 24 direct / 39 effective / 170 transitive dependencies, not the older 169-module slice.
+Its hard line cap was 730 and App composition member cap 16. Low-level trust
 persistence stays private; consent is unchanged.
 
 This is an explicit migration ratchet, not a claim that all current imports already respect the
@@ -77,6 +77,23 @@ Quoted specifiers and no-substitution template-literal specifiers are included i
 computed template substitutions remain outside this ratchet.
 The map keeps `dependencyEnforcement: inventory-only` until the old debt is eliminated and the
 dynamic Renderer and Rust visibility boundaries are separately covered.
+
+## Main zero-exception contract
+
+Main direct imports have a separate zero-private/undeclared-exception rule. The architecture
+checker reports each Main violation even if the exact edge is added to a matching legacy
+manifest. This is a stronger per-root contract, not full module-map enforcement. Current global
+static-JS debt and hard cap fall from 98 to 90: precisely eight Main exceptions retire, with no
+added exception or changed allowed dependency direction. Main remains 662 lines, 20 direct /
+35 effective / 170 transitive dependencies.
+
+The eight consumed service/adapter files are declared as file-level public entrypoints based on
+their actual API/lifecycle contracts, documented in the [Main boundary](desktop-main-composition-boundary.md).
+This adds no runtime export, permission, dependency or generic barrel. It does not enforce a
+symbol allowlist: other already-exported helpers in those files remain part of the file-level
+interface. Consumers still need an allowed direction. Registry, health, credential, startup,
+private-file and other implementation siblings remain private; negative tests cover these and
+declaration removal for each reviewed entrypoint.
 
 ## Corrected ownership gaps
 
@@ -94,19 +111,21 @@ visibility, feature and package gates.
 The Electron composition root is now the exact-path `desktop-main` owner. Reusable
 `desktop/lib/app/**` modules remain under `desktop-app`; only the root's inventory names IPC and
 diagnostics as allowed dependencies. This prevents the map from treating every App module as a
-composition root. It does not make Main's existing private IPC imports public or switch dependency
-enforcement on.
+composition root. It does not make private IPC implementation files public or switch full
+dependency enforcement on.
 
 ## What remains incomplete
 
 `dependencyEnforcement: inventory-only` is an explicit schema field. The path-coverage checker
 validates referenced module IDs, while the separate architecture ratchet rejects new resolved
-static-JS violations but still records 105 legacy exceptions in the verified current source.
+static-JS violations but still records 90 legacy exceptions in the current contract.
 It does not resolve computed
 `require()`/`import()` targets or Rust visibility and cannot prove full cross-module enforcement.
 Do not change the field to claim otherwise. The existing Renderer feature checks cover their
 separately documented subset; complete M5 enforcement remains outstanding, alongside M1/M2/M3.
-M4's process-composition outcome is closed; broader Rust visibility/config/tunnel boundaries
+The Main zero-exception subset is enforced independently; whole M3 semantic acceptance is a
+separate receipt, not inferred from this map. M4's process-composition outcome is closed;
+broader Rust visibility/config/tunnel boundaries
 are not silently treated as completed M5 enforcement.
 
 `requiredChecks` records module review requirements; this checker accepts only its closed reviewed
