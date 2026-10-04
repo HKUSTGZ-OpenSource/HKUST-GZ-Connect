@@ -29,7 +29,7 @@ function fixture(overrides = {}) {
       return { response: 0 };
     },
   };
-  const window = overrides.window || { isDestroyed: () => false };
+  let window = overrides.window || { isDestroyed: () => false };
   const controller = new CredentialController({
     vault,
     dialog,
@@ -37,6 +37,8 @@ function fixture(overrides = {}) {
     windowForPrompt: () => window,
     t: (key, vars) => vars?.host ? `${key}:${vars.host}` : key,
     onError: (message) => errors.push(message),
+    isContextCurrent: overrides.isContextCurrent || (() => true),
+    isTabCurrent: overrides.isTabCurrent || (() => true),
     setTimer: (callback, delay) => {
       const handle = { callback, delay, unref() { this.unrefCalled = true; } };
       timers.push(handle);
@@ -51,6 +53,7 @@ function fixture(overrides = {}) {
     prompts,
     saved,
     setCurrentOrigin(value) { currentOrigin = value; },
+    setWindow(value) { window = value; },
     timers,
   };
 }
@@ -63,6 +66,151 @@ function candidate(overrides = {}) {
     ...overrides,
   };
 }
+
+test('a pending save lookup cannot prompt in a replacement native window', async () => {
+  let finish;
+  const lookup = new Promise(resolve => { finish = resolve; });
+  const f = fixture({ vault: { get: () => lookup, save: async () => assert.fail('stale save') } });
+  const pending = f.controller.offer(candidate());
+  f.setWindow({ isDestroyed: () => false }); finish(null);
+  assert.equal(await pending, false);
+  assert.deepEqual(f.prompts, []);
+});
+
+test('a save confirmation cannot persist after its original native window closes', async () => {
+  let answer, shown; const saving = [];
+  const dialogAnswer = new Promise(resolve => { answer = resolve; });
+  const promptShown = new Promise(resolve => { shown = resolve; });
+  const window = { isDestroyed: () => false };
+  const f = fixture({ window,
+    vault: { get: async () => null, save: async (...values) => { saving.push(values); } },
+    dialog: { showMessageBox: () => { shown(); return dialogAnswer; } },
+  });
+  const value = candidate(), pending = f.controller.offer(value);
+  await promptShown; window.isDestroyed = () => true;
+  answer({ response: 0 }); await pending;
+  assert.deepEqual(saving, []); assert.equal(value.password, '');
+});
+
+test('save lookup results cannot survive retired tab/context or swapped vault/dialog', async () => {
+  for (const invalid of ['tab', 'context', 'vault', 'dialog', 'reset']) {
+    let resolve, current = true;
+    const result = new Promise(done => { resolve = done; });
+    const f = fixture({ vault: { get: () => result, save: async () => assert.fail('stale save') },
+      isContextCurrent: () => invalid !== 'context' || current,
+      isTabCurrent: () => invalid !== 'tab' || current });
+    const raw = candidate(), tab = {}, pending = f.controller.offer(raw, tab);
+    assert.equal(raw.password, '', 'input secret ownership transfers synchronously');
+    const acquired = candidate();
+    if (invalid === 'vault') f.controller.vault = {};
+    else if (invalid === 'dialog') f.controller.dialog = {};
+    else if (invalid === 'reset') f.controller.reset();
+    else current = false;
+    resolve(acquired); assert.equal(await pending, false);
+    assert.deepEqual(f.prompts, []); assert.equal(acquired.password, '');
+    assert.equal(f.controller.offers.size, 0); assert.equal(f.controller.prompts.size, 0);
+  }
+});
+
+test('tab clear/reset erase an acquired save secret before a dialog finishes', async () => {
+  for (const reset of [false, true]) {
+    let finish, shown;
+    const result = new Promise(resolve => { finish = resolve; });
+    const started = new Promise(resolve => { shown = resolve; });
+    const f = fixture({ dialog: { showMessageBox: () => { shown(); return result; } } });
+    const tab = {}, raw = candidate(), pending = f.controller.offer(raw, tab);
+    await started;
+    const offer = [...f.controller.offers.values()][0];
+    assert.equal(offer.password, 'local-secret');
+    if (reset) f.controller.reset(); else f.controller.clear(tab);
+    assert.equal(offer.password, ''); assert.equal(offer.active, false);
+    assert.equal(f.controller.prompts.size, 0);
+    finish({ response: 0 }); assert.equal(await pending, false); assert.deepEqual(f.saved, []);
+  }
+});
+
+test('an old offer completion cannot retire a replacement prompt for the same origin', async () => {
+  const answers = []; const shown = [];
+  const f = fixture({ dialog: { showMessageBox: () => {
+    return new Promise(resolve => { answers.push(resolve); shown.push(true); });
+  } } });
+  const tab = {}, first = f.controller.offer(candidate(), tab);
+  await new Promise(setImmediate); assert.equal(shown.length, 1);
+  f.controller.reset();
+  const second = f.controller.offer(candidate({ password: 'synthetic-replacement' }), tab);
+  await new Promise(setImmediate); assert.equal(shown.length, 2);
+  const replacement = [...f.controller.offers.values()][0];
+  answers[0]({ response: 0 }); assert.equal(await first, false);
+  assert.equal([...f.controller.offers.values()][0], replacement);
+  assert.equal(f.controller.prompts.size, 1);
+  answers[1]({ response: 1 }); assert.equal(await second, true);
+  assert.equal(f.controller.offers.size, 0); assert.deepEqual(f.saved, []);
+});
+
+test('reset clears staged candidates/timers and popup ownership but allows ordinary reuse', () => {
+  const f = fixture(), tab = {};
+  f.controller.stage(tab, candidate());
+  const pending = tab.pendingCredential, timer = tab.pendingCredentialTimer;
+  const reservation = f.controller.reservePopup(tab), popup = {};
+  assert.equal(f.controller.linkPopup(reservation, popup), true);
+  f.controller.reset(); f.controller.reset();
+  assert.equal(pending.password, ''); assert.equal(tab.pendingCredential, null);
+  assert.equal(tab.pendingCredentialTimer, null); assert.equal(f.clearedTimers.includes(timer), true);
+  assert.equal(f.controller.ownerTab(popup), popup); assert.equal(f.controller.stagedTabs.size, 0);
+  assert.equal(f.controller.stage(tab, candidate()), true);
+  f.controller.reset();
+});
+
+test('accepted save is origin-bound, but completion after reset cannot report current success', async () => {
+  let finish, started;
+  const committed = new Promise(resolve => { finish = resolve; });
+  const accepted = new Promise(resolve => { started = resolve; });
+  const saves = [];
+  const f = fixture({ vault: { get: async () => null, save: (...args) => {
+    saves.push(args); started(); return committed;
+  } } });
+  const pending = f.controller.offer(candidate()); await accepted;
+  f.controller.reset(); finish(); assert.equal(await pending, false);
+  assert.deepEqual(saves, [['https://sso.example.edu', 'student001', 'local-secret']]);
+  assert.equal(f.controller.prompts.size, 0);
+});
+
+test('retired save errors are quiet and staging fails closed for inactive context', async () => {
+  let reject, live = true;
+  const lookup = new Promise((_resolve, fail) => { reject = fail; });
+  const f = fixture({ isContextCurrent: () => live, vault: { get: () => lookup } });
+  const pending = f.controller.offer(candidate()); live = false;
+  reject(new Error('synthetic store error')); assert.equal(await pending, false);
+  assert.deepEqual(f.errors, []);
+  const raw = candidate(); assert.equal(f.controller.stage({}, raw), false);
+  assert.equal(raw.password, ''); assert.equal(f.controller.stagedTabs.size, 0);
+});
+
+test('a cancelled candidate timer cannot erase a replacement candidate', () => {
+  const f = fixture(), tab = {};
+  f.controller.stage(tab, candidate()); const old = f.timers[0];
+  f.controller.stage(tab, candidate({ password: 'synthetic-replacement' }));
+  const replacement = tab.pendingCredential;
+  old.callback(); assert.equal(tab.pendingCredential, replacement);
+  assert.equal(replacement.password, 'synthetic-replacement');
+  f.controller.reset();
+});
+
+test('timer cleanup failures still erase every staged secret and retain retry ownership', () => {
+  const f = fixture(), first = {}, second = {};
+  f.controller.stage(first, candidate()); f.controller.stage(second, candidate());
+  const firstSecret = first.pendingCredential, secondSecret = second.pendingCredential;
+  const oldClear = f.controller.clearTimer; let fail = true;
+  f.controller.clearTimer = value => {
+    if (fail && value === first.pendingCredentialTimer) throw new Error('synthetic timer cleanup failure');
+    oldClear(value);
+  };
+  assert.throws(() => f.controller.reset(), /cleanup is unconfirmed/);
+  assert.equal(firstSecret.password, ''); assert.equal(secondSecret.password, '');
+  assert.equal(first.pendingCredential, null); assert.equal(second.pendingCredential, null);
+  assert.equal(f.controller.stagedTabs.has(first), true); assert.equal(f.controller.stagedTabs.has(second), false);
+  fail = false; f.controller.reset(); assert.equal(f.controller.stagedTabs.size, 0);
+});
 
 test('staging accepts only the exact current HTTPS origin and bounded values', () => {
   const { controller, timers } = fixture();

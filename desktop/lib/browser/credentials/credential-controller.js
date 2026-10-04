@@ -11,6 +11,14 @@ function canonicalHttpsOrigin(value) {
   return value === origin ? origin : '';
 }
 
+function tabCredentialOrigin(tab) {
+  if (!tab || tab.view.webContents.isDestroyed()) return '';
+  try {
+    const parsed = new URL(tab.view.webContents.getURL());
+    return parsed.protocol === 'https:' ? parsed.origin : '';
+  } catch { return ''; }
+}
+
 // User-initiated vault commands and approved shared-login delivery have their
 // own window/document lifetime. They do not own login evidence or persistence.
 class BrowserCredentialCommandOwner {
@@ -172,6 +180,8 @@ class CredentialController {
     candidateTtlMs = CREDENTIAL_CANDIDATE_TTL_MS,
     setTimer = setTimeout,
     clearTimer = clearTimeout,
+    isContextCurrent = () => true,
+    isTabCurrent = () => true,
   } = {}) {
     this.vault = vault;
     this.dialog = dialog;
@@ -184,7 +194,15 @@ class CredentialController {
       : CREDENTIAL_CANDIDATE_TTL_MS;
     this.setTimer = setTimer;
     this.clearTimer = clearTimer;
+    if (typeof isContextCurrent !== 'function' || typeof isTabCurrent !== 'function') {
+      throw new TypeError('credential lifecycle dependencies are invalid');
+    }
+    this.isContextCurrent = isContextCurrent;
+    this.isTabCurrent = isTabCurrent;
     this.prompts = new Set();
+    this.offers = new Map();
+    this.stagedTabs = new Set();
+    this.generation = 0;
     // Popup tabs borrow only an opaque owner relationship. The staged password
     // remains on exactly one owner tab and is never copied into popup state.
     this.popupOwners = new WeakMap();
@@ -276,13 +294,18 @@ class CredentialController {
   clear(tab) {
     if (!tab) return;
     const owner = this.ownerTab(tab);
-    if (owner.pendingCredentialTimer) {
-      this.clearTimer(owner.pendingCredentialTimer);
-      owner.pendingCredentialTimer = null;
+    for (const offer of this.offers.values()) if (offer.tab === owner) this.retireOffer(offer);
+    try {
+      if (owner.pendingCredentialTimer) {
+        this.clearTimer(owner.pendingCredentialTimer);
+        owner.pendingCredentialTimer = null;
+      }
+    } finally {
+      if (owner.pendingCredential) owner.pendingCredential.password = '';
+      owner.pendingCredential = null;
+      this.detachFlow(owner);
+      if (!owner.pendingCredentialTimer) this.stagedTabs.delete(owner);
     }
-    if (owner.pendingCredential) owner.pendingCredential.password = '';
-    owner.pendingCredential = null;
-    this.detachFlow(owner);
   }
 
   take(tab) {
@@ -293,6 +316,7 @@ class CredentialController {
       owner.pendingCredentialTimer = null;
     }
     const candidate = owner.pendingCredential;
+    this.stagedTabs.delete(owner);
     owner.pendingCredential = null;
     this.detachFlow(owner);
     return candidate;
@@ -305,7 +329,7 @@ class CredentialController {
     // IPC gave the main process its own object copy. Retain the secret only in
     // the bounded controller record, not in both the event payload and record.
     try { candidate.password = ''; } catch {}
-    if (!this.vault || !tab) return false;
+    if (!this.vault || !tab || !this.isContextCurrent() || !this.isTabCurrent(tab)) return false;
     const currentOrigin = this.originForTab(tab);
     let origin;
     try {
@@ -331,7 +355,11 @@ class CredentialController {
       challengeObserved: false,
     };
     this.flowFor(tab, true);
-    tab.pendingCredentialTimer = this.setTimer(() => this.clear(tab), this.candidateTtlMs);
+    this.stagedTabs.add(tab);
+    const staged = tab.pendingCredential;
+    tab.pendingCredentialTimer = this.setTimer(() => {
+      if (tab.pendingCredential === staged) this.clear(tab);
+    }, this.candidateTtlMs);
     tab.pendingCredentialTimer?.unref?.();
     return true;
   }
@@ -425,17 +453,49 @@ class CredentialController {
 
     const candidate = this.take(tab);
     if (!candidate) return false;
-    await this.offer(candidate);
+    await this.offer(candidate, owner);
     return true;
   }
 
-  async offer(candidate) {
+  retireOffer(offer) {
+    offer.active = false;
+    offer.password = '';
+    if (offer.existing && typeof offer.existing === 'object') {
+      try { offer.existing.password = ''; } catch {}
+    }
+    offer.existing = null;
+    if (this.offers.get(offer.origin) === offer) {
+      this.offers.delete(offer.origin);
+      this.prompts.delete(offer.origin);
+    }
+  }
+
+  offerCurrent(offer) {
+    return offer.active && this.offers.get(offer.origin) === offer &&
+      this.generation === offer.generation && this.isContextCurrent() &&
+      (!offer.tab || this.isTabCurrent(offer.tab)) && this.vault === offer.vault &&
+      this.dialog === offer.dialog && this.windowForPrompt() === offer.parent &&
+      !!offer.parent && !offer.parent.isDestroyed?.();
+  }
+
+  reset() {
+    this.generation++;
+    for (const offer of [...this.offers.values()]) this.retireOffer(offer);
+    const failures = [];
+    for (const tab of [...this.stagedTabs]) {
+      try { this.clear(tab); } catch (error) { failures.push(error); }
+    }
+    if (failures.length) throw new AggregateError(failures, 'credential timer cleanup is unconfirmed');
+  }
+
+  async offer(candidate, tab = null) {
     if (!candidate || typeof candidate !== 'object') return false;
-    let origin = '';
     let password = String(candidate.password || '');
-    let ownsPrompt = false;
+    try { candidate.password = ''; } catch {}
+    let offer = null;
     try {
       if (!this.vault || !this.dialog?.showMessageBox) return false;
+      let origin = '';
       try {
         origin = canonicalHttpsOrigin(candidate.origin);
       } catch {
@@ -444,14 +504,17 @@ class CredentialController {
       const username = String(candidate.username || '');
       if (!origin || !password || username.length > MAX_USERNAME_LENGTH ||
           password.length > MAX_PASSWORD_LENGTH || this.prompts.has(origin)) return false;
-
+      offer = { origin, username, password, tab, parent: this.windowForPrompt(),
+        vault: this.vault, dialog: this.dialog, generation: this.generation,
+        active: true, existing: null };
+      password = '';
+      this.offers.set(origin, offer);
       this.prompts.add(origin);
-      ownsPrompt = true;
-      const existing = await this.vault.get(origin);
-      if (existing?.username === username && existing.password === password) return true;
-      const parent = this.windowForPrompt();
-      if (!parent || parent.isDestroyed?.()) return false;
-      const result = await this.dialog.showMessageBox(parent, {
+      if (!this.offerCurrent(offer)) return false;
+      const existing = offer.existing = await offer.vault.get(origin);
+      if (!this.offerCurrent(offer)) return false;
+      if (existing?.username === username && existing.password === offer.password) return true;
+      const result = await offer.dialog.showMessageBox(offer.parent, {
         type: 'question',
         title: this.t('cred.saveTitle'),
         message: this.t('cred.saveMessage', { host: new URL(origin).hostname }),
@@ -461,15 +524,19 @@ class CredentialController {
         cancelId: 1,
         noLink: true,
       });
-      if (result?.response === 0) await this.vault.save(origin, username, password);
-      return true;
+      if (!this.offerCurrent(offer)) return false;
+      if (result?.response === 0) {
+        const saving = offer.vault.save(origin, username, offer.password);
+        offer.password = '';
+        await saving;
+      }
+      return this.offerCurrent(offer);
     } catch {
-      if (this.onError) this.onError(this.t('cred.writeFailed'));
+      if (this.onError && offer && this.offerCurrent(offer)) this.onError(this.t('cred.writeFailed'));
       return false;
     } finally {
       password = '';
-      candidate.password = '';
-      if (ownsPrompt) this.prompts.delete(origin);
+      if (offer) this.retireOffer(offer);
     }
   }
 }
@@ -640,4 +707,5 @@ module.exports = {
   MAX_PASSWORD_LENGTH,
   MAX_USERNAME_LENGTH,
   canonicalHttpsOrigin,
+  tabCredentialOrigin,
 };
