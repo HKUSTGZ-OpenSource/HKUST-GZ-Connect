@@ -159,11 +159,12 @@ function selectPrereleaseUpdate(releases, currentVersion, releasesUrlPrefix) {
   };
 }
 
-function defaultFetchJson(url) {
+function defaultFetchJson(url, { signal } = {}) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, {
       headers: { 'User-Agent': USER_AGENT, Accept: 'application/vnd.github+json' },
       timeout: REQUEST_TIMEOUT_MS,
+      signal,
     }, (res) => {
       if (res.statusCode !== 200) {
         res.resume();
@@ -189,21 +190,27 @@ function defaultFetchJson(url) {
 // fetchJson is injectable so tests never touch the network. The release page
 // URL is only trusted when it stays inside the releases allowlist; anything
 // else falls back to the releases index.
-async function checkForUpdate(currentVersion, fetchJson = defaultFetchJson) {
+async function checkForUpdate(currentVersion, fetchJson = defaultFetchJson, { signal } = {}) {
   try {
+    if (signal?.aborted) return null;
+    const fetch = url => signal ? fetchJson(url, { signal }) : fetchJson(url);
     const current = parseVersion(currentVersion);
     if (!current) return null;
-    const endpoints = repositoryReleaseEndpoints(await fetchJson(REPOSITORY_API_URL));
+    const endpoints = repositoryReleaseEndpoints(await fetch(REPOSITORY_API_URL));
+    if (signal?.aborted) return null;
     if (!endpoints) return null;
     if (current.prerelease.length > 0) {
+      const releases = await fetch(endpoints.prereleasesApiUrl);
+      if (signal?.aborted) return null;
       return selectPrereleaseUpdate(
-        await fetchJson(endpoints.prereleasesApiUrl),
+        releases,
         current.normalized,
         endpoints.releasesUrlPrefix,
       );
     }
 
-    const release = await fetchJson(endpoints.latestApiUrl);
+    const release = await fetch(endpoints.latestApiUrl);
+    if (signal?.aborted) return null;
     if (!release || typeof release.tag_name !== 'string') return null;
     const latestVersion = release.tag_name.trim().replace(/^v/i, '');
     const comparison = compareVersions(latestVersion, currentVersion);
@@ -229,7 +236,10 @@ function shouldAutoCheck(lastCheckedAt, now = Date.now(), intervalMs = AUTO_CHEC
 }
 
 class UpdateNotificationRuntime {
-  constructor({ getVersion, check = checkForUpdate, readSettings, saveSettings, assertPersistence,
+  #disposed = false;
+  #checks = new Set();
+
+  constructor({ getVersion, check = (version, options) => checkForUpdate(version, undefined, options), readSettings, saveSettings, assertPersistence,
     runTransaction, onAvailable, openExternal, now = Date.now,
     setTimeoutFn = setTimeout, clearTimeoutFn = clearTimeout,
     setIntervalFn = setInterval, clearIntervalFn = clearInterval } = {}) {
@@ -248,37 +258,68 @@ class UpdateNotificationRuntime {
   }
 
   snapshot() { return this.latest; }
+  get inFlightCount() { return this.#checks.size; }
 
   async run(force = false) {
-    if (!force && !shouldAutoCheck(this.readSettings().updateCheckedAt, this.now())) return null;
-    const result = await this.check(this.getVersion());
-    if (result) {
-      // Keep the settings read inside the existing serialized context transaction:
-      // a preference changed during the request must not be overwritten.
-      await this.runTransaction(() => {
-        this.assertPersistence();
+    if (this.#disposed) return null;
+    const record = { controller: new AbortController() };
+    this.#checks.add(record);
+    try {
+      if (!force) {
         const settings = this.readSettings();
-        return {
-          commit: () => this.saveSettings({ ...settings, updateCheckedAt: this.now() }),
-          rollback: () => this.saveSettings(settings),
-        };
-      });
+        if (!this.#current(record)) return null;
+        if (!shouldAutoCheck(settings.updateCheckedAt, this.now())) return null;
+      }
+      if (!this.#current(record)) return null;
+      const version = this.getVersion();
+      if (!this.#current(record)) return null;
+      const result = await this.check(version, { signal: record.controller.signal });
+      if (!this.#current(record)) return null;
+      if (result) {
+        // Reads stay inside the original serialized factory; a queued factory
+        // or captured operation must not touch resources retired during quit.
+        await this.runTransaction(() => {
+          const inert = { commit() {}, rollback() {} };
+          if (!this.#current(record)) return inert;
+          this.assertPersistence();
+          if (!this.#current(record)) return inert;
+          const settings = this.readSettings();
+          if (!this.#current(record)) return inert;
+          return {
+            commit: () => {
+              if (!this.#current(record)) return;
+              const updated = { ...settings, updateCheckedAt: this.now() };
+              if (this.#current(record)) return this.saveSettings(updated);
+            },
+            rollback: () => { if (this.#current(record)) return this.saveSettings(settings); },
+          };
+        });
+      }
+      if (!this.#current(record)) return null;
+      if (result && result.updateAvailable) {
+        if (!this.#current(record)) return null;
+        this.latest = result;
+        this.onAvailable();
+      }
+      return this.#current(record) ? result : null;
+    } catch (error) {
+      if (!this.#current(record)) return null;
+      throw error;
+    } finally {
+      this.#checks.delete(record);
     }
-    if (result && result.updateAvailable) {
-      this.latest = result;
-      this.onAvailable();
-    }
-    return result;
   }
 
+  #current(record) { return !this.#disposed && this.#checks.has(record); }
+
   open(url) {
-    if (!isCurrentUpdateUrl(url, this.latest)) return { ok: false };
+    if (this.#disposed || !isCurrentUpdateUrl(url, this.latest)) return { ok: false };
     this.openExternal(url).catch(() => {});
     return { ok: true };
   }
 
   startAutomatic(packaged) {
-    if (!packaged || this.started) return false;
+    if (this.#disposed || !packaged || this.started) return false;
     this.started = true;
     const epoch = ++this.timerEpoch;
     const check = () => {
@@ -301,6 +342,15 @@ class UpdateNotificationRuntime {
     if (this.interval !== null) this.clearIntervalFn(this.interval);
     this.startupTimer = null;
     this.interval = null;
+  }
+
+  dispose() {
+    if (this.#disposed) return false;
+    this.#disposed = true;
+    this.latest = null;
+    try { this.stopAutomatic(); }
+    finally { for (const record of this.#checks) record.controller.abort(); }
+    return true;
   }
 }
 

@@ -22,6 +22,7 @@ const { createPrivateStorageEffects } = require('../../../lib/platform/storage/p
 const { DesktopPersistenceRuntime } = require('../../../lib/persistence/runtime/desktop-persistence-runtime');
 const { DomainRoutePolicyStore } = require('../../../lib/routing/policy/domain-route-policy');
 const { createStartupAutoConnectEligibility } = require('../../../lib/connection/telemetry/network-status-monitor');
+const { UpdateNotificationRuntime } = require('../../../lib/platform/update/update-check');
 const {
   commitActiveContextSwitch,
   createPreparedActiveContextSwitch,
@@ -64,6 +65,36 @@ function customConfirmation() {
   });
   return owner.consume({ confirmationHandle: view.confirmationHandle, activeContext });
 }
+
+test('native Main quit retires pending update ownership before resource disposal', async () => {
+  const source = fs.readFileSync(path.join(DESKTOP, 'main.js'), 'utf8');
+  const expression = source.match(/disposeLifecycle:\s*(\(\) => \{[\s\S]*?\}),\s*cleanupQuit:/u)?.[1];
+  assert.ok(expression);
+  let finish, signal, retired = false, io = 0;
+  const calls = [];
+  const owner = new UpdateNotificationRuntime({ getVersion: () => '2.0.3',
+    check: (_version, options) => { signal = options.signal;
+      signal.addEventListener('abort', () => calls.push('update'), { once: true });
+      return new Promise(resolve => { finish = resolve; }); },
+    readSettings: () => { io++; assert.equal(retired, false); return {}; },
+    saveSettings: () => { io++; assert.equal(retired, false); }, assertPersistence() {},
+    runTransaction: async build => build().commit(), onAvailable: () => { io++; }, openExternal: async () => { io++; },
+  });
+  const pending = owner.run(true);
+  const resource = name => ({ dispose: () => calls.push(name), cancel: () => calls.push(name) });
+  const quit = vm.runInNewContext(`(${expression})`, {
+    updateNotifications: owner, schoolProfileOnboarding: resource('school'), externalIntegrationRuntime: resource('integration'),
+    vpnCredentialAccess: { clear: () => calls.push('credential') }, networkStartupCoordinator: resource('startup'),
+    networkEnvironmentService: resource('environment'), connectionWaitRegistry: resource('waits'),
+    connectivityRecovery: resource('recovery'), networkStatusMonitor: resource('monitor'),
+  });
+  quit(); retired = true;
+  assert.equal(calls[0], 'update', 'actual Main must retire updates before any other disposable owner');
+  assert.equal(signal.aborted, true); assert.equal(owner.inFlightCount, 1);
+  finish({ updateAvailable: true, url: 'https://github.com/synthetic/project/releases/tag/v99.0.0' });
+  assert.equal(await pending, null); assert.equal(owner.inFlightCount, 0); assert.equal(io, 0);
+  assert.deepEqual(owner.open('https://github.com/synthetic/project/releases/tag/v99.0.0'), { ok: false });
+});
 
 test('native Main startup admission requires persistent presence and never opens staged memory credentials', t => {
   let persistent = false, presenceReads = 0;

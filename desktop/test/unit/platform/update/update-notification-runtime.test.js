@@ -3,6 +3,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { UpdateNotificationRuntime, AUTO_CHECK_INTERVAL_MS } = require('../../../../lib/platform/update/update-check');
+const { RoutingPolicyTransactionQueue } = require('../../../../lib/routing/rules/routing-policy-transaction');
+
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
 
 function fixture() {
   const state = { time: 1800000000000, settings: { updateCheckedAt: 0, language: 'zh' },
@@ -160,4 +167,98 @@ test('packaged startup and recurring callbacks use the same persisted throttle',
   await new Promise(setImmediate);
   assert.equal(state.calls.filter(([name]) => name === 'request').length, 2);
   runtime.stopAutomatic();
+});
+
+test('terminal disposal aborts all pending requests and retains ownership until each settles', async () => {
+  const f = fixture(), requests = [deferred(), deferred()], signals = [];
+  f.runtime.check = (_version, { signal } = {}) => { signals.push(signal); return requests[signals.length - 1].promise; };
+  const pending = [f.runtime.run(true), f.runtime.run(true)];
+  for (const promise of pending) promise.catch(() => {});
+  assert.equal(f.runtime.inFlightCount, 2);
+  assert.equal(f.runtime.dispose(), true); assert.equal(f.runtime.dispose(), false);
+  assert.equal(signals.every(signal => signal.aborted), true);
+  assert.equal(f.runtime.inFlightCount, 2, 'ignored cancellation is still tracked, not detached');
+  f.state.available = false;
+  requests[0].resolve(f.state.result); requests[1].reject(new Error('synthetic late failure'));
+  assert.deepEqual(await Promise.all(pending), [null, null]);
+  assert.equal(f.runtime.inFlightCount, 0); assert.deepEqual(f.state.calls, []);
+  assert.equal(f.runtime.snapshot(), null);
+});
+
+test('terminal disposal fences a factory queued behind a real mutation transaction', async () => {
+  const f = fixture(), blocked = deferred(), entered = deferred();
+  const queue = new RoutingPolicyTransactionQueue(), token = {};
+  const blocker = queue.run(token, { commit: () => { entered.resolve(); return blocked.promise; } });
+  await entered.promise;
+  f.runtime.runTransaction = build => queue.run(token, build);
+  const pending = f.runtime.run(true);
+  await new Promise(setImmediate);
+  f.runtime.dispose(); f.state.available = false; f.state.calls.length = 0;
+  blocked.resolve(); await blocker;
+  assert.equal(await pending, null); assert.deepEqual(f.state.calls, []);
+  assert.equal(f.runtime.inFlightCount, 0);
+});
+
+test('terminal disposal fences captured commit and rollback operations without touching retired settings', async () => {
+  const f = fixture(), captured = deferred(), release = deferred();
+  f.runtime.runTransaction = async build => {
+    const plan = build(); captured.resolve(); await release.promise;
+    await plan.commit(); await plan.rollback();
+  };
+  const pending = f.runtime.run(true); await captured.promise;
+  f.runtime.dispose(); f.state.available = false; f.state.calls.length = 0;
+  release.resolve(); assert.equal(await pending, null);
+  assert.deepEqual(f.state.calls, []); assert.equal(f.runtime.snapshot(), null);
+});
+
+test('retirement after a live transaction prevents late publication', async () => {
+  const f = fixture(), committed = deferred(), release = deferred();
+  f.runtime.runTransaction = async build => { await build().commit(); committed.resolve(); await release.promise; };
+  const pending = f.runtime.run(true); await committed.promise;
+  assert.equal(f.state.settings.updateCheckedAt, f.state.time, 'a prior live commit remains legitimate');
+  f.runtime.dispose(); f.state.calls.length = 0; release.resolve();
+  assert.equal(await pending, null); assert.deepEqual(f.state.calls, []); assert.equal(f.runtime.snapshot(), null);
+});
+
+test('disposed owners create no timers, requests, reads, or external openings', async () => {
+  const f = fixture(); await f.runtime.run(true);
+  f.runtime.startAutomatic(true); const callbacks = [...f.timers.values()].map(timer => timer.callback);
+  f.runtime.dispose(); f.state.calls.length = 0; f.state.available = false;
+  assert.equal(await f.runtime.run(), null); assert.equal(await f.runtime.run(true), null);
+  assert.equal(f.runtime.startAutomatic(true), false);
+  assert.deepEqual(f.runtime.open(f.state.result.url), { ok: false });
+  for (const callback of callbacks) callback();
+  await new Promise(setImmediate);
+  assert.equal(f.timers.size, 0); assert.deepEqual(f.state.calls, []);
+});
+
+test('stopping automatic scheduling remains reversible and does not retire a manual check', async () => {
+  const f = fixture(), reply = deferred(); f.state.check = () => reply.promise;
+  const pending = f.runtime.run(true); f.runtime.stopAutomatic();
+  reply.resolve(f.state.result); assert.equal(await pending, f.state.result);
+  assert.equal(f.runtime.snapshot(), f.state.result); assert.equal(f.runtime.startAutomatic(true), true);
+  f.runtime.dispose();
+});
+
+test('live request failures retain their original identity and settle tracked ownership', async () => {
+  const f = fixture(), failure = new Error('synthetic live failure');
+  f.state.check = async () => { throw failure; };
+  await assert.rejects(f.runtime.run(true), error => error === failure);
+  assert.equal(f.runtime.inFlightCount, 0); assert.equal(f.runtime.snapshot(), null);
+  f.runtime.dispose();
+});
+
+test('reentrant lifecycle effects cannot start requests, read after persistence admission, or write after the clock', async () => {
+  for (const stage of ['initial-read', 'version', 'persistence', 'clock']) {
+    const f = fixture();
+    if (stage === 'initial-read') f.runtime.readSettings = () => { f.runtime.dispose(); return f.state.settings; };
+    if (stage === 'version') f.runtime.getVersion = () => { f.runtime.dispose(); return '2.0.3'; };
+    if (stage === 'persistence') f.runtime.assertPersistence = () => { f.runtime.dispose(); };
+    if (stage === 'clock') f.runtime.now = () => { f.runtime.dispose(); return f.state.time; };
+    assert.equal(await f.runtime.run(stage !== 'initial-read'), null);
+    assert.equal(f.runtime.inFlightCount, 0);
+    assert.equal(f.state.calls.some(([name]) => name === 'save' || name === 'notify'), false);
+    if (stage === 'initial-read' || stage === 'version') assert.deepEqual(f.state.calls, []);
+    if (stage === 'persistence') assert.equal(f.state.calls.some(([name]) => name === 'read'), false);
+  }
 });

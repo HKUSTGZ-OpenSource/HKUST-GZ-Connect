@@ -2,11 +2,16 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const http = require('node:http');
+const net = require('node:net');
 const {
   AUTO_CHECK_INTERVAL_MS,
   REPOSITORY_API_URL,
   REPOSITORY_ID,
   REPOSITORY_NAME,
+  REQUEST_TIMEOUT_MS,
   checkForUpdate,
   compareVersions,
   isBetaFinalPromotion,
@@ -274,4 +279,72 @@ test('automatic checks are throttled to one per interval', () => {
   assert.equal(shouldAutoCheck(now - AUTO_CHECK_INTERVAL_MS + 1000, now), false, 'inside the window');
   assert.equal(shouldAutoCheck(now - AUTO_CHECK_INTERVAL_MS, now), true, 'window elapsed');
   assert.equal(shouldAutoCheck(now - 2 * AUTO_CHECK_INTERVAL_MS, now), true, 'long overdue');
+});
+
+test('cancelled release checks do not begin or continue identity/release requests', async () => {
+  const controller = new AbortController(), calls = [];
+  controller.abort();
+  assert.equal(await checkForUpdate('2.0.3', async url => { calls.push(url); }, { signal: controller.signal }), null);
+  assert.deepEqual(calls, []);
+  for (const current of ['2.0.3', '2.0.3-beta.1']) {
+    const active = new AbortController();
+    assert.equal(await checkForUpdate(current, async (url, options) => {
+      assert.equal(options.signal, active.signal); calls.push(url); active.abort(); return repositoryMetadata();
+    }, { signal: active.signal }), null);
+  }
+  assert.deepEqual(calls, [REPOSITORY_API_URL, REPOSITORY_API_URL]);
+});
+
+test('cancellation after a release reply prevents issuance of its otherwise valid URL', async () => {
+  const controller = new AbortController(); let reads = 0;
+  const result = await checkForUpdate('2.0.3', async (_url, options) => {
+    assert.equal(options.signal, controller.signal);
+    if (++reads === 1) return repositoryMetadata();
+    controller.abort(); return { tag_name: 'v99.0.0', html_url: `${RELEASES_URL_PREFIX}/tag/v99.0.0` };
+  }, { signal: controller.signal });
+  assert.equal(result, null); assert.equal(reads, 2);
+});
+
+test('default request adapter propagates cancellation and closes an isolated native loopback request', { timeout: REQUEST_TIMEOUT_MS }, async t => {
+  let received;
+  const requestArrived = new Promise(resolve => { received = resolve; });
+  const server = http.createServer((request) => received(request));
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const agent = new http.Agent({ keepAlive: false });
+  agent.createConnection = () => net.connect({ host: '127.0.0.1', port: server.address().port });
+  t.after(async () => { agent.destroy(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); });
+  const controller = new AbortController(); let client, requests = 0;
+  const module = { exports: {} };
+  const source = fs.readFileSync(require.resolve('../../../../lib/platform/update/update-check'), 'utf8');
+  vm.runInNewContext(source, {
+    module, setTimeout, clearTimeout, setInterval, clearInterval, AbortController,
+    require: name => {
+      assert.equal(name, 'https');
+      return { get: (url, options, callback) => {
+        requests++; assert.equal(url, REPOSITORY_API_URL);
+        assert.equal(options.signal, controller.signal);
+        // Test-only transport adapter: never contact the public API or an
+        // installed proxy; preserve the actual ClientRequest signal semantics.
+        client = http.get({ hostname: '127.0.0.1', port: server.address().port,
+          path: '/', agent, headers: options.headers, timeout: options.timeout,
+          signal: options.signal }, callback);
+        return client;
+      } };
+    },
+  });
+  const pending = module.exports.checkForUpdate('2.0.3', undefined, { signal: controller.signal });
+  const request = await requestArrived;
+  const closed = new Promise(resolve => request.once('close', resolve));
+  controller.abort();
+  assert.equal(await pending, null); await closed;
+  assert.equal(client.destroyed, true); assert.equal(requests, 1);
+});
+
+test('legacy injected fetchers retain the original single argument when no signal is supplied', async () => {
+  let calls = 0;
+  await checkForUpdate('2.0.3', function fetch(url) {
+    assert.equal(arguments.length, 1); calls++;
+    return Promise.resolve(url === REPOSITORY_API_URL ? repositoryMetadata() : { tag_name: 'v2.0.3' });
+  });
+  assert.equal(calls, 2);
 });
