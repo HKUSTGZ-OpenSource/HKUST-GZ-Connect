@@ -23,14 +23,105 @@ const {
   safePopupUrl,
   workspaceSearchQuery,
 } = require('../../../../lib/browser/session/campus-browser');
-const { createCampusBrowserWindowOwner } = require('../../../../lib/browser/session/campus-browser-manager');
+const { CampusBrowserManager, createCampusBrowserWindowOwner } = require('../../../../lib/browser/session/campus-browser-manager');
 const createWindowOwner = createCampusBrowserWindowOwner;
+
+function rootedEntryManager(overrides = {}) {
+  const state = { fixture: null, errors: [] }, noop = () => {};
+  const manager = new CampusBrowserManager({
+    BrowserWindow: function Window() {}, WebContentsView: function View() {},
+    session: {}, dialog: {}, safeStorage: {}, certificateTrust: {}, routingPolicy: {}, platform: 'darwin',
+    credentialFile: '/fixture/credentials.json', toolbarFile: '/fixture/toolbar.html',
+    toolbarPreload: '/fixture/toolbar.js', campusPreload: '/fixture/campus.js',
+    workspaceFile: '/fixture/workspace.html', workspacePreload: '/fixture/workspace.js',
+    browserPartition: 'persist:synthetic-entry', parentWindow: () => null,
+    ensureCampusReady: async () => true, ensureConnected: async () => ({ ok: true }),
+    resolveRoute: url => ({ route: url.endsWith('/campus') ? 'campus' : 'direct' }),
+    getSocksPort: () => 1080, getLocale: () => 'zh', getTranslator: () => (key, vars) => vars?.message || key,
+    getProfilePresentation: () => ({ schoolName: 'Example University', unverified: false }),
+    getWorkspaceResources: () => [], onOpenResource: noop, onWorkspaceMutation: noop,
+    showItemInFolder: noop, showRoutingRules: noop, showSettings: noop,
+    reportError: message => state.errors.push(message), CredentialVaultClass: class Vault {},
+    CampusBrowserClass: function Root({ onOpenRetired }) {
+      state.fixture = createFakeBrowser({ onOpenRetired });
+      return state.fixture.browser;
+    }, ...overrides,
+  });
+  return { manager, state };
+}
+
+for (const command of ['open', 'feedback', 'organize']) {
+  test(`a new explicit ${command} survives preparation of an unobserved destroyed Browser window`, async t => {
+    const { manager, state } = rootedEntryManager();
+    t.after(() => manager.close());
+    assert.equal((await manager.open('about:blank')).ok, true);
+    const browser = state.fixture.browser, original = browser.window;
+    original.destroyed = true; // Native destruction without delivering its closed observer.
+    state.errors.length = 0;
+    let focus = null;
+    browser.focusWorkspace = target => { focus = target; return true; };
+    const result = command === 'organize' ? await manager.openBookmarkManager()
+      : command === 'feedback' ? await manager.openWithFeedback('https://entry.example.invalid/direct')
+      : await manager.open('https://entry.example.invalid/direct');
+    assert.equal(result.ok, true, 'preparation retires old requests, not the explicit new request');
+    assert.equal(manager.browser, browser);
+    assert.notEqual(browser.window, original);
+    assert.equal(browser.window.isDestroyed(), false);
+    assert.equal(browser.tabs.length, 1, 'old views are retired before creating the new tab');
+    assert.deepEqual(state.errors, command === 'feedback' ? [null, null] : []);
+    if (command === 'organize') assert.equal(focus, 'manage');
+  });
+}
+
+test('preparing the old destroyed window still retires an earlier Manager connection wait', async t => {
+  const ready = deferred(), { manager, state } = rootedEntryManager({ ensureConnected: () => ready.promise });
+  t.after(() => manager.close());
+  await manager.open('about:blank');
+  const old = manager.open('https://entry.example.invalid/campus');
+  state.fixture.browser.window.destroyed = true;
+  const fresh = await manager.open('https://entry.example.invalid/direct');
+  ready.resolve({ ok: true });
+  assert.deepEqual(await old, { ok: false, stale: true });
+  assert.equal(fresh.ok, true);
+  assert.equal(state.fixture.browser.tabs.length, 1);
+});
+
+test('unconfirmed preparation retains its Browser ownership and never begins a new connection', async t => {
+  let connections = 0;
+  const { manager, state } = rootedEntryManager({ ensureConnected: async () => { connections++; return { ok: true }; } });
+  await manager.open('about:blank');
+  const browser = state.fixture.browser, window = browser.window, tab = browser.activeTab();
+  const reset = browser.pagePresentationOwner.reset;
+  t.after(() => { browser.pagePresentationOwner.reset = reset; browser.handleWindowClosed(); manager.close(); });
+  window.destroyed = true;
+  browser.pagePresentationOwner.reset = () => { throw new Error('synthetic unconfirmed preparation'); };
+  const result = await manager.openWithFeedback('https://entry.example.invalid/campus');
+  assert.equal(result.ok, false);
+  assert.match(result.error, /cleanup is unconfirmed/);
+  assert.equal(connections, 0, 'unsafe cleanup must fail before Engine admission');
+  assert.equal(manager.browser, browser);
+  assert.equal(browser.window, window);
+  assert.equal(browser.windowOwner.current.cleanupComplete, false);
+  assert.equal(browser.tabs.includes(tab), true);
+  assert.equal(state.fixture.browserWindows.length, 1);
+  assert.deepEqual(state.errors, [null, result.error]);
+});
 
 test('Campus Browser createWindow keeps its existing void-return contract', async t => {
   const { browser } = createFakeBrowser();
   t.after(() => browser.close());
   assert.equal(await browser.createWindow(), undefined);
   assert.ok(browser.window, 'the native window remains available through its owner');
+});
+
+test('native constructors and the Session factory remain bound directly to their resource owners', () => {
+  const Window = class Window {}, View = class View {}, factory = { fromPartition: () => null };
+  const { browser } = createFakeBrowser({ BrowserWindow: Window, WebContentsView: View, session: factory });
+  assert.equal(browser.windowOwner.BrowserWindow, Window);
+  assert.equal(browser.tabManager.WebContentsView, View);
+  assert.equal(browser.browserSessionManager.electronSession, factory);
+  for (const key of ['BrowserWindow', 'WebContentsView', 'session']) assert.equal(Object.hasOwn(browser, key), false);
+  browser.close();
 });
 
 test('Browser close attempts independent owners after credential cancellation failure', async () => {

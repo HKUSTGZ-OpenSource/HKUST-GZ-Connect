@@ -82,6 +82,61 @@ function createOwner(options = {}) {
   return { owner, windows, commands, resized, closed, missingWindowCleanup };
 }
 
+test('entry preparation does not construct, show, close or reload a missing or live window', async () => {
+  const f = createOwner();
+  assert.equal(f.owner.prepareOpen(), undefined); assert.deepEqual(f.windows, []);
+  const window = await f.owner.createWindow();
+  f.owner.prepareOpen(); f.owner.prepareOpen();
+  assert.equal(f.owner.window, window); assert.equal(window.loadCalls.length, 1);
+  assert.equal(window.showCalls, undefined); assert.equal(window.closeCalls, 0);
+  assert.deepEqual(f.closed, []);
+});
+
+test('entry preparation retires an unobserved destroyed window exactly once without creating another', async () => {
+  const f = createOwner(), window = await f.owner.createWindow();
+  window.destroyed = true;
+  f.owner.prepareOpen(); f.owner.prepareOpen();
+  assert.equal(f.owner.window, null); assert.equal(f.windows.length, 1);
+  assert.equal(f.closed.length, 1); assert.equal(f.closed[0].duringTeardown, window);
+});
+
+test('entry preparation preserves the exact unconfirmed cleanup error and retained record', async () => {
+  const failure = new Error('synthetic window cleanup failure');
+  const f = createOwner({ onClosed: () => { throw failure; } }), window = await f.owner.createWindow();
+  const record = f.owner.current; window.destroyed = true;
+  for (let i = 0; i < 2; i++) assert.throws(() => f.owner.prepareOpen(), error => error === failure);
+  assert.equal(f.owner.current, record); assert.equal(f.owner.window, window);
+  assert.equal(record.cleanupComplete, false); assert.equal(f.closed.length, 1);
+  assert.equal(f.windows.length, 1);
+});
+
+test('retired context cannot be prepared, even without a window', () => {
+  const f = createOwner(); f.owner.contextRetired = true;
+  assert.throws(() => f.owner.prepareOpen(), /context is retired/);
+  assert.deepEqual(f.windows, []); assert.deepEqual(f.closed, []);
+});
+
+test('failed live window preparation preserves its load cause without bypassing a vetoed close', async () => {
+  const failure = new Error('synthetic toolbar load failure');
+  const f = createOwner({ windowBehavior: { loadFile: async () => { throw failure; }, close: () => {} } });
+  await assert.rejects(f.owner.createWindow(), error => error === failure);
+  const record = f.owner.current;
+  assert.equal(record.window.isDestroyed(), false);
+  for (let i = 0; i < 2; i++) assert.throws(() => f.owner.prepareOpen(), error => error === failure);
+  assert.equal(f.owner.current, record); assert.equal(record.window.closeCalls, 1);
+  assert.equal(f.windows.length, 1);
+});
+
+test('preparation leaves shared loading intact but rejects unknown entry state', async () => {
+  const load = deferred(), f = createOwner({ windowBehavior: { loadFile: () => load.promise } });
+  const pending = f.owner.createWindow();
+  f.owner.prepareOpen(); assert.equal(f.windows.length, 1); assert.equal(f.owner.current.state, 'loading');
+  load.resolve(); await pending;
+  f.owner.current.state = 'synthetic-unknown';
+  assert.throws(() => f.owner.prepareOpen(), /cleanup is not confirmed/);
+  assert.equal(f.windows.length, 1); assert.equal(f.windows[0].closeCalls, 0);
+});
+
 test('window owner creates its configured toolbar and forwards only its command channel', async () => {
   const { owner, windows, commands, resized } = createOwner();
   const window = await owner.createWindow();

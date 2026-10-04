@@ -166,9 +166,6 @@ class CampusBrowser {
     onError,
     partition = NEUTRAL_CAMPUS_PARTITION,
   }) {
-    this.BrowserWindow = BrowserWindow;
-    this.WebContentsView = WebContentsView;
-    this.session = session;
     this.dialog = dialog;
     this.credentialVault = credentialVault;
     this.parentWindow = parentWindow;
@@ -482,7 +479,8 @@ class CampusBrowser {
       isContextCurrent: () => this.windowOwner?.contextRetired !== true,
       getPort: () => this.configuredPort, isRoutingSuspended: () => this.routingSuspended,
       configure: port => this.configure(port), getTabs: () => this.tabs,
-      prepareOpen: () => { if (this.window?.isDestroyed()) this.windowOwner.clear(); },
+      prepareOpen: () => { if (typeof this.windowOwner?.prepareOpen === 'function') return this.windowOwner.prepareOpen();
+        if (this.window?.isDestroyed()) this.windowOwner.clear(); },
       switchTab: id => this.switchTab(id), sendWorkspaceState: tab => this.workspaceController.sendState(tab.view.webContents),
       createTab: (...args) => this.createTab(...args), createWorkspaceTab: () => this.createWorkspaceTab(),
       translate: key => this.t(key), onRetired: onOpenRetired,
@@ -811,6 +809,8 @@ class CampusBrowser {
   async open(rawUrl, port, route = null, options = {}) {
     return this.openOwner.open(rawUrl, port, route, options);
   }
+
+  prepareOpen() { return this.openOwner.prepare(); }
 
   async openWorkspace(port) {
     return this.openOwner.openWorkspace(port);

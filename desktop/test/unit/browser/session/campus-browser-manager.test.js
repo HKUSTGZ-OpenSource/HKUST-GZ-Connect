@@ -88,6 +88,41 @@ function deferredOpen() {
   return { promise, resolve, reject };
 }
 
+test('preparation that retires or replaces the Manager context cannot admit a fresh entry', async () => {
+  for (const command of ['open', 'feedback', 'organize']) {
+    const f = fixture(), browser = f.manager.getOrCreate();
+    browser.prepareOpen = () => f.manager.close();
+    const result = command === 'open' ? await f.manager.open('about:blank')
+      : command === 'feedback' ? await f.manager.openWithFeedback('about:blank')
+      : await f.manager.openBookmarkManager();
+    assert.deepEqual(result, { ok: false, stale: true });
+    assert.deepEqual(browser.opens, []);
+    assert.deepEqual(f.errors, []);
+  }
+});
+
+test('current preparation errors retain command-specific feedback without opening or connecting', async () => {
+  for (const command of ['open', 'feedback', 'organize']) {
+    let connections = 0;
+    const f = fixture({ ensureConnected: async () => { connections++; return { ok: true }; } });
+    const browser = f.manager.getOrCreate(), failure = new Error('synthetic preparation failure');
+    browser.prepareOpen = () => { throw failure; };
+    const result = command === 'open' ? await f.manager.open('https://campus.example.invalid/')
+      : command === 'feedback' ? await f.manager.openWithFeedback('https://campus.example.invalid/')
+      : await f.manager.openBookmarkManager();
+    assert.deepEqual(result, { ok: false, error: 'error.browserStart:synthetic preparation failure' });
+    assert.equal(connections, 0); assert.deepEqual(browser.opens, []);
+    assert.deepEqual(f.errors, command === 'feedback' ? [null, result.error] : [result.error]);
+  }
+});
+
+test('a prepared retired context remains quiet and does not clear another lifetime feedback', async () => {
+  const f = fixture(), browser = f.manager.getOrCreate();
+  browser.prepareOpen = () => { throw Object.assign(new Error('synthetic retired entry'), { code: 'BROWSER_OPEN_RETIRED' }); };
+  assert.deepEqual(await f.manager.openWithFeedback('about:blank'), { ok: false, stale: true });
+  assert.deepEqual(browser.opens, []); assert.deepEqual(f.errors, []);
+});
+
 test('native Browser retirement invalidates Manager readiness and quiets its outer feedback', async () => {
   const ready = deferredOpen(), f = fixture({ ensureConnected: () => ready.promise });
   const browser = f.manager.getOrCreate();
