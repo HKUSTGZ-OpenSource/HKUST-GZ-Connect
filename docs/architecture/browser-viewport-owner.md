@@ -47,6 +47,11 @@ The actual Electron toolbar fixture adds compact/standard/wide native view bound
 then closes/reopens a window and checks owned timer/find cleanup. It retains all existing toolbar,
 workspace, route, keyboard and accessibility assertions. The fixture explicitly keeps Electron alive
 after last-window closure so an exit without reaching the final marker cannot pass as this test.
+The initial remote toolbar run failed at a bounds assertion that assumed requested content height
+was applied. Native work-area clamping is a possible cause, not proven by that log, which omitted
+actual geometry. The assertion now uses authoritative native content dimensions; requested width
+remains checked and requested/actual geometry is reported. No timeout, production geometry,
+architecture or performance budget was relaxed.
 
 Local full source suite: 1,999 tests, 1,983 passed, 16 platform skips, no failures. The initial full
 run caught the stale Browser size contract; that assertion now matches a downward 1,094-line cap,

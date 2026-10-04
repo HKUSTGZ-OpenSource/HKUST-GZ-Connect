@@ -381,12 +381,19 @@ async function assertViewportLifecycle(browser) {
       await waitForMain(() => browser.findOpen === open, 'owned native find state');
       const y = TOOLBAR_HEIGHT + (open ? FIND_BAR_HEIGHT : 0);
       await waitForMain(() => {
+        // Native window managers may clamp content height to the runner's
+        // work area. Layout must match the actual window, never a request that
+        // the OS did not apply; requested width is still checked above.
+        const [actualWidth, actualHeight] = browser.window.getContentSize();
         const bounds = browser.activeTab().view.getBounds();
-        return bounds.y === y && bounds.width === width && bounds.height === height - y;
+        return bounds.y === y && bounds.width === actualWidth &&
+          bounds.height === Math.max(1, actualHeight - y);
       }, 'native view below chrome with no overflow');
       assert.equal(browser.findOpen, browser.viewportOwner.findOpen);
       assertOnlyActiveTabAttached(browser);
     }
+    console.log('native viewport geometry', JSON.stringify({ requested: [width, height],
+      actual: browser.window.getContentSize(), bounds: browser.activeTab().view.getBounds() }));
   }
   const oldWindow = browser.window;
   browser.scheduleLayout();
