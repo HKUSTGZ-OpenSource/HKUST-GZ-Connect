@@ -1160,6 +1160,42 @@ function loadingState(scripts) {
   return { loading: state.loading, slow: state.slow };
 }
 
+test('delayed shared credential never reaches a later page document', async t => {
+  const lookup = deferred(); let destroyed = 0;
+  const { browser } = createFakeBrowser({ getSharedPortalCredential: () => lookup.promise });
+  t.after(() => browser.close());
+  await browser.open('https://first.example.invalid/login', 1080, ROUTE_DIRECT);
+  const tab = browser.activeTab(), contents = tab.view.webContents;
+  const filling = browser.fillSharedPortalCredential(tab);
+  await nextImmediate();
+  contents.url = 'https://second.example.invalid/login';
+  contents.emit('did-navigate', {}, contents.url, 200);
+  lookup.resolve({ withStrings: callback => callback('synthetic-user', 'synthetic-secret'),
+    destroy: () => { destroyed++; } });
+  assert.equal(await filling, false);
+  assert.equal((contents.sent || []).filter(([channel]) => channel === 'campus-credential-fill').length, 0);
+  assert.equal(destroyed, 1);
+});
+
+test('a stale vault lookup cannot open a credential dialog after page navigation', async t => {
+  const lookup = deferred(), prompts = [];
+  const { browser } = createFakeBrowser({
+    credentialVault: { get: () => lookup.promise, remove: async () => true },
+    dialog: { showMessageBox: async (_window, value) => { prompts.push(value); return { response: 0 }; } },
+  });
+  t.after(() => browser.close());
+  await browser.open('https://first.example.invalid/login', 1080, ROUTE_DIRECT);
+  const tab = browser.activeTab(), contents = tab.view.webContents;
+  const managing = browser.manageCredential(tab);
+  await nextImmediate();
+  contents.url = 'https://second.example.invalid/login';
+  contents.emit('did-navigate', {}, contents.url, 200);
+  lookup.resolve({ username: 'synthetic-user', password: 'synthetic-secret' });
+  await managing;
+  assert.deepEqual(prompts, []);
+  assert.equal((contents.sent || []).filter(([channel]) => channel === 'campus-credential-fill').length, 0);
+});
+
 test('the plus button opens a genuine blank tab on the non-network direct route', async () => {
   const { browser } = createFakeBrowser({
     homeUrl: 'about:blank',

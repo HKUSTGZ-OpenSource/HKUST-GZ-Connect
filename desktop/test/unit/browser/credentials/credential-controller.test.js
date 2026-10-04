@@ -408,7 +408,7 @@ test('CampusBrowser delegates candidate state and keeps all lifecycle clear call
   assert.notEqual(closeStart, -1);
   const owner = fs.readFileSync(path.join(desktopRoot, 'lib', 'browser', 'tabs', 'tab-manager.js'), 'utf8');
   assert.match(source.slice(closeStart, closeStart + 100), /this\.tabManager\.close\(id\)/);
-  assert.match(source, /closeTabState: tab => \{\s+try \{ this\.pagePresentationOwner\.detach\(tab\); \}\s+finally \{ this\.credentialController\.closeTab\(tab\); \}/);
+  assert.match(source, /closeTabState: tab => \{\s+try \{ this\.pagePresentationOwner\.detach\(tab\); \}\s+finally \{\s+try \{ this\.credentialCommands\.clearTab\(tab\); \}\s+finally \{ this\.credentialController\.closeTab\(tab\); \}/);
   assert.match(owner.slice(owner.indexOf('\n  close(id)'), owner.indexOf('\n  clearTransientState()')),
     /this\.effects\.closeTabState\(tab\)/,
     'closing a popup must unlink it without copying or prematurely consuming the owner secret');

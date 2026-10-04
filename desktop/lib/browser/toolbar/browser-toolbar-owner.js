@@ -59,7 +59,8 @@ class BrowserPagePresentationOwner {
     const names = ['scheduleToolbarUpdate', 'windowOpenResponse', 'fillSharedPortalCredential',
       'markCredentialNavigation', 'updateTabRoute', 'recordPortalSessionUrl', 'recordPageOpen',
       'refreshWorkspaceHomes', 'clearCredentialCandidate', 'stageCredentialCandidate',
-      'confirmCredentialPageState', 'cancelCertificatePrompts', 'handleKeyboard', 'reportError'];
+      'confirmCredentialPageState', 'cancelCertificatePrompts', 'handleKeyboard', 'reportError',
+      'retireCredentialCommands'];
     if (Object.values(ports).some(port => typeof port !== 'function') || !effects ||
         names.some(name => typeof effects[name] !== 'function') || typeof blankUrl !== 'string' ||
         !blankUrl || !Number.isSafeInteger(slowLoadingHintMs) || slowLoadingHintMs < 1 ||
@@ -85,12 +86,24 @@ class BrowserPagePresentationOwner {
     tab.slow = false;
   }
 
+  captureAdmission(tab) {
+    const record = this.records.get(tab);
+    return this.current(record) ? { record, revision: record.navigationRevision, intent: tab.navigationIntent } : null;
+  }
+
+  admissionCurrent(admission) {
+    return !!admission && this.current(admission.record) &&
+      admission.record.navigationRevision === admission.revision &&
+      admission.record.tab.navigationIntent === admission.intent;
+  }
+
   detach(tab) {
     const record = this.records.get(tab);
     if (!record) return false;
     record.active = false;
     const failures = [];
     const attempt = operation => { try { operation(); } catch (error) { failures.push(error); } };
+    attempt(() => this.effects.retireCredentialCommands(tab));
     attempt(() => this.clearSlowTimer(tab));
     for (const [event, listener] of record.listeners) {
       attempt(() => record.contents.removeListener(event, listener));
@@ -138,6 +151,7 @@ class BrowserPagePresentationOwner {
       on('will-redirect', rejectNonWebNavigation, true);
       on('did-start-loading', () => {
         record.navigationRevision++;
+        this.effects.retireCredentialCommands(tab);
         tab.loading = true;
         if (!tab.loadingLabel) {
           try { tab.loadingLabel = new URL(this.currentUrl(tab)).hostname; } catch { tab.loadingLabel = ''; }
@@ -167,6 +181,7 @@ class BrowserPagePresentationOwner {
       on('did-navigate', (_event, url, code = 0) => this.didNavigate(record, url, code));
       on('did-navigate-in-page', (_event, url) => {
         record.navigationRevision++;
+        this.effects.retireCredentialCommands(tab);
         this.recordPortalSessionUrl(url);
         this.effects.scheduleToolbarUpdate();
       });
@@ -199,6 +214,7 @@ class BrowserPagePresentationOwner {
   didNavigate(record, url, code) {
     const tab = record.tab;
     const revision = ++record.navigationRevision;
+    this.effects.retireCredentialCommands(tab);
     if (tab.kind === 'blank' && url !== this.blankUrl) delete tab.kind;
     this.effects.markCredentialNavigation(tab, url, code);
     if (!this.current(record)) return;

@@ -11,6 +11,156 @@ function canonicalHttpsOrigin(value) {
   return value === origin ? origin : '';
 }
 
+// User-initiated vault commands and approved shared-login delivery have their
+// own window/document lifetime. They do not own login evidence or persistence.
+class BrowserCredentialCommandOwner {
+  constructor({ getVault, getDialog, getWindow, originForTab, captureAdmission,
+    admissionCurrent, getSharedPortalCredential, translate, reportError } = {}) {
+    const ports = { getVault, getDialog, getWindow, originForTab, captureAdmission,
+      admissionCurrent, getSharedPortalCredential, translate, reportError };
+    if (Object.values(ports).some(port => typeof port !== 'function')) {
+      throw new TypeError('Browser credential command dependencies are incomplete');
+    }
+    Object.assign(this, ports);
+    this.manages = new Map();
+    this.fills = new Map();
+    this.generation = 0;
+  }
+
+  capture(tab) {
+    const admission = this.captureAdmission(tab);
+    const window = this.getWindow();
+    if (!admission || !window || window.isDestroyed()) return null;
+    let origin = '';
+    try { origin = canonicalHttpsOrigin(this.originForTab(tab)); } catch {}
+    return { tab, admission, window, origin, active: true,
+      vault: this.getVault(), dialog: this.getDialog(), generation: this.generation,
+      credential: null, owner: null };
+  }
+
+  current(flight, map) {
+    return flight.active && this.generation === flight.generation && map.get(flight.tab) === flight &&
+      this.admissionCurrent(flight.admission) && this.getWindow() === flight.window &&
+      !flight.window.isDestroyed() && this.originForTab(flight.tab) === flight.origin &&
+      this.getVault() === flight.vault && this.getDialog() === flight.dialog;
+  }
+
+  release(flight) {
+    const credential = flight.credential;
+    flight.credential = null;
+    if (credential && typeof credential === 'object') {
+      try { credential.password = ''; credential.username = ''; } catch {}
+    }
+    const owner = flight.owner;
+    if (typeof owner?.destroy === 'function') owner.destroy();
+    flight.owner = null;
+  }
+
+  clearTab(tab) {
+    const failures = [];
+    for (const map of [this.manages, this.fills]) {
+      const flight = map.get(tab);
+      if (!flight) continue;
+      flight.active = false;
+      try { this.release(flight); if (map.get(tab) === flight) map.delete(tab); }
+      catch (error) { failures.push(error); }
+    }
+    if (failures.length) throw new AggregateError(failures, 'Browser credential cleanup is unconfirmed');
+  }
+
+  reset() {
+    this.generation++;
+    const failures = [];
+    for (const tab of new Set([...this.manages.keys(), ...this.fills.keys()])) {
+      try { this.clearTab(tab); } catch (error) { failures.push(error); }
+    }
+    if (failures.length) throw new AggregateError(failures, 'Browser credential cleanup is unconfirmed');
+  }
+
+  manage(tab) {
+    const previous = this.manages.get(tab);
+    if (previous && this.current(previous, this.manages)) return previous.promise;
+    const flight = this.capture(tab);
+    if (!flight || !flight.vault || !flight.dialog) return Promise.resolve();
+    if (!flight.origin) { this.reportError(this.translate('cred.httpsOnly')); return Promise.resolve(); }
+    if (previous) {
+      previous.active = false;
+      this.release(previous);
+      if (this.manages.get(tab) === previous) this.manages.delete(tab);
+    }
+    this.manages.set(tab, flight);
+    flight.promise = Promise.resolve().then(() => this.runManage(flight));
+    return flight.promise;
+  }
+
+  async runManage(flight) {
+    try {
+      if (!this.current(flight, this.manages)) return;
+      const credential = flight.credential = await flight.vault.get(flight.origin);
+      if (!this.current(flight, this.manages)) return;
+      const t = (...args) => this.translate(...args);
+      const result = await flight.dialog.showMessageBox(flight.window, {
+        type: credential ? 'question' : 'info', title: t('cred.title'),
+        message: t(credential ? 'cred.hasMessage' : 'cred.noneMessage', { host: new URL(flight.origin).hostname }),
+        detail: t(credential ? 'cred.hasDetail' : 'cred.noneDetail'),
+        buttons: credential ? [t('cred.fill'), t('cred.delete'), t('common.cancel')] : [t('cred.ok')],
+        ...(credential ? { defaultId: 0, cancelId: 2 } : {}), noLink: true,
+      });
+      if (!credential || !this.current(flight, this.manages)) return;
+      if (result.response === 0) flight.tab.view.webContents.send('campus-credential-fill', { ...credential });
+      else if (result.response === 1) {
+        this.release(flight);
+        await flight.vault.remove(flight.origin);
+      }
+    } catch {
+      if (this.current(flight, this.manages)) this.reportError(this.translate('cred.readFailed'));
+    } finally {
+      flight.active = false;
+      this.release(flight);
+      if (this.manages.get(flight.tab) === flight) this.manages.delete(flight.tab);
+    }
+  }
+
+  fillShared(tab) {
+    const previous = this.fills.get(tab);
+    if (previous && this.current(previous, this.fills)) return previous.promise;
+    const flight = this.capture(tab);
+    if (!flight || !flight.origin || tab.sharedCredentialAttemptedOrigin === flight.origin) {
+      return Promise.resolve(false);
+    }
+    if (previous) {
+      previous.active = false;
+      this.release(previous);
+      if (this.fills.get(tab) === previous) this.fills.delete(tab);
+    }
+    this.fills.set(tab, flight);
+    flight.promise = Promise.resolve().then(() => this.runFill(flight));
+    return flight.promise;
+  }
+
+  async runFill(flight) {
+    try {
+      if (!this.current(flight, this.fills)) return false;
+      const owner = flight.owner = await this.getSharedPortalCredential(flight.origin);
+      if (!this.current(flight, this.fills) || typeof owner?.withStrings !== 'function' ||
+          typeof owner?.destroy !== 'function') return false;
+      flight.tab.sharedCredentialAttemptedOrigin = flight.origin;
+      return owner.withStrings((username, password) => {
+        if (!this.current(flight, this.fills)) return false;
+        flight.tab.view.webContents.send('campus-credential-fill', {
+          origin: flight.origin, username, password, source: 'connection-credential', autoSubmit: true,
+        });
+        return true;
+      }) === true;
+    } catch { return false; }
+    finally {
+      flight.active = false;
+      this.release(flight);
+      if (this.fills.get(flight.tab) === flight) this.fills.delete(flight.tab);
+    }
+  }
+}
+
 class CredentialController {
   constructor({
     vault,
@@ -483,6 +633,7 @@ class ManagedCredentialPopupOwner {
 }
 
 module.exports = {
+  BrowserCredentialCommandOwner,
   CREDENTIAL_CANDIDATE_TTL_MS,
   CredentialController,
   ManagedCredentialPopupOwner,

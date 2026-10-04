@@ -345,6 +345,49 @@ async function assertFindBar(browser) {
   assert.equal(browser.activeTab().view.getBounds().y, TOOLBAR_HEIGHT);
 }
 
+async function assertCredentialCommandAdmission(browser) {
+  const original = { shared: browser.getSharedPortalCredential,
+    vault: browser.credentialVault, dialog: browser.dialog };
+  let finishShared, finishDialog; let reads = 0, destroys = 0, lookups = 0;
+  const previousTabId = browser.activeTabId;
+  await browser.open(CONFIGURED_HOME, 11080, ROUTE_CAMPUS);
+  const tab = browser.activeTab();
+  await waitForMain(() => tab.view.webContents.getURL() === CONFIGURED_HOME &&
+    !tab.view.webContents.isLoading(), 'isolated HTTPS command page');
+  try {
+    browser.getSharedPortalCredential = () => {
+      lookups++; return new Promise(resolve => { finishShared = resolve; });
+    };
+    const first = browser.fillSharedPortalCredential(tab), duplicate = browser.fillSharedPortalCredential(tab);
+    await waitForMain(() => typeof finishShared === 'function', 'isolated shared lookup');
+    const admission = browser.pagePresentationOwner.captureAdmission(tab);
+    browser.navigate(CONFIGURED_HOME, tab);
+    await waitForMain(() => !browser.pagePresentationOwner.admissionCurrent(admission), 'actual native page revision');
+    finishShared({ withStrings: callback => { reads++; return callback('synthetic-user', 'synthetic-secret'); },
+      destroy: () => { destroys++; } });
+    assert.deepEqual(await Promise.all([first, duplicate]), [false, false]);
+    assert.equal(lookups, 1); assert.equal(reads, 0); assert.equal(destroys, 1);
+    const raw = { username: 'synthetic-user', password: 'synthetic-secret' };
+    browser.credentialVault = { get: async () => raw, remove: async () => { throw new Error('stale delete'); } };
+    browser.dialog = { showMessageBox: () => new Promise(resolve => { finishDialog = resolve; }) };
+    const managing = browser.manageCredential(tab);
+    await waitForMain(() => typeof finishDialog === 'function', 'isolated credential dialog');
+    const dialogAdmission = browser.pagePresentationOwner.captureAdmission(tab);
+    browser.navigate(CONFIGURED_NEXT, tab);
+    await waitForMain(() => !browser.pagePresentationOwner.admissionCurrent(dialogAdmission), 'native dialog retirement');
+    assert.equal(raw.password, '', 'page navigation clears the held projection before dialog completion');
+    finishDialog({ response: 0 }); await managing;
+    assert.equal(browser.credentialCommands.manages.size, 0);
+    assert.equal(browser.credentialCommands.fills.size, 0);
+    console.log('native Browser credential command page admission: PASS');
+  } finally {
+    browser.credentialCommands.reset();
+    browser.getSharedPortalCredential = original.shared;
+    browser.credentialVault = original.vault; browser.dialog = original.dialog;
+    browser.closeTab(tab.id); browser.switchTab(previousTabId);
+  }
+}
+
 async function assertWorkspaceHome(browser) {
   const contents = browser.activeTab().view.webContents;
   await waitForPage(contents,
@@ -569,6 +612,7 @@ async function main() {
     await runStage('blank new tab', () => assertBlankNewTab(browser));
     await runStage('configured home recovery', () =>
       assertConfiguredHomeAndSuspendedRecovery(browser, newTabPreference, committedUrls));
+    await runStage('credential command admission', () => assertCredentialCommandAdmission(browser));
     await runStage('settings button', () => assertSettingsButton(browser, settingsOpens));
     await runStage('workspace Command-K', async () => {
       const workspaceContents = browser.activeTab().view.webContents;
