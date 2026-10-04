@@ -15,7 +15,7 @@ const { BrowserWorkspaceOwner, projectBrowserWorkspaceResources, MAX_WORKSPACE_H
   require('../workspace/campus-workspace-controller');
 const { CertificateController } = require('../certificates/certificate-controller');
 const { BrowserDownloadController } = require('../downloads/download-controller');
-const { BrowserCredentialCommandOwner, CredentialController, ManagedCredentialPopupOwner } = require('../credentials/credential-controller');
+const { BrowserCredentialCommandOwner, CredentialController, ManagedCredentialPopupOwner, tabCredentialOrigin } = require('../credentials/credential-controller');
 const {
   BrowserRoutingActivationOwner,
   BrowserSessionManager,
@@ -231,6 +231,8 @@ class CampusBrowser {
       dialog,
       originForTab: (tab) => this.tabOrigin(tab),
       windowForPrompt: () => this.window,
+      isContextCurrent: () => this.windowOwner?.contextRetired !== true,
+      isTabCurrent: tab => this.tabManager?.contains(tab) === true,
       t: (key, vars) => this.t(key, vars),
       onError: (message) => this.onError?.(message),
     });
@@ -251,7 +253,7 @@ class CampusBrowser {
         onToolbarCommand: payload => this.handleToolbarCommand(payload),
         onResize: () => this.scheduleLayout(),
         onBeforeCreate: () => {
-          this.cancelScheduledUpdates(); this.credentialCommands?.reset();
+          this.cancelScheduledUpdates(); this.credentialController?.reset(); this.credentialCommands?.reset();
           this.pagePresentationOwner?.reset(); this.toolbarOwner?.reset();
         },
         onClosed: () => this.handleWindowClosed(),
@@ -670,13 +672,7 @@ class CampusBrowser {
   }
 
   tabOrigin(tab) {
-    if (!tab || tab.view.webContents.isDestroyed()) return '';
-    try {
-      const parsed = new URL(tab.view.webContents.getURL());
-      return parsed.protocol === 'https:' ? parsed.origin : '';
-    } catch {
-      return '';
-    }
+    return tabCredentialOrigin(tab);
   }
 
   recordPortalSessionUrl(rawUrl) {
@@ -812,6 +808,7 @@ class CampusBrowser {
 
   handleWindowClosed() {
     this.cancelScheduledUpdates();
+    this.credentialController.reset();
     this.credentialCommands.reset();
     this.pagePresentationOwner.reset();
     this.certificateController.cancelAll();
@@ -871,6 +868,7 @@ class CampusBrowser {
 
   close() {
     this.cancelScheduledUpdates();
+    this.credentialController.reset();
     this.credentialCommands.reset();
     this.pagePresentationOwner.reset();
     this.certificateController.cancelAll();

@@ -396,6 +396,50 @@ async function assertCredentialCommandAdmission(browser) {
   }
 }
 
+async function assertCredentialSaveRetirement(browser) {
+  const controller = browser.credentialController;
+  const original = { vault: controller.vault, dialog: controller.dialog };
+  const previousTabId = browser.activeTabId;
+  const openPage = async () => {
+    await browser.open(CONFIGURED_HOME, 11080, ROUTE_CAMPUS);
+    const tab = browser.activeTab();
+    await waitForMain(() => tab.view.webContents.getURL() === CONFIGURED_HOME &&
+      !tab.view.webContents.isLoading(), 'intercepted save-admission page');
+    return tab;
+  };
+  let tab = null;
+  try {
+    tab = await openPage();
+    let finishLookup, finishDialog; const saved = [], prompts = [];
+    controller.vault = { get: () => new Promise(resolve => { finishLookup = resolve; }),
+      save: async (...values) => saved.push(values) };
+    controller.dialog = { showMessageBox: async (_parent, value) => { prompts.push(value); return { response: 0 }; } };
+    const candidate = { origin: 'https://configured-home.test',
+      username: 'synthetic-user', password: 'synthetic-secret' };
+    const first = controller.offer({ ...candidate }, tab);
+    await waitForMain(() => typeof finishLookup === 'function', 'synthetic save lookup');
+    browser.closeTab(tab.id); tab = null;
+    finishLookup(null); assert.equal(await first, false);
+    assert.deepEqual(prompts, []); assert.deepEqual(saved, []);
+    tab = await openPage();
+    controller.vault = { get: async () => null, save: async (...values) => saved.push(values) };
+    controller.dialog = { showMessageBox: () => new Promise(resolve => { finishDialog = resolve; }) };
+    const second = controller.offer({ ...candidate }, tab);
+    await waitForMain(() => typeof finishDialog === 'function', 'synthetic save prompt');
+    const offer = [...controller.offers.values()][0];
+    browser.closeTab(tab.id); tab = null;
+    assert.equal(offer.password, ''); assert.equal(offer.active, false);
+    finishDialog({ response: 0 }); assert.equal(await second, false);
+    assert.deepEqual(saved, []); assert.equal(controller.offers.size, 0);
+    assert.equal(controller.prompts.size, 0); assert.equal(controller.stagedTabs.size, 0);
+    console.log('native Browser credential save lifetime: PASS');
+  } finally {
+    controller.reset(); controller.vault = original.vault; controller.dialog = original.dialog;
+    if (tab) browser.closeTab(tab.id);
+    browser.switchTab(previousTabId);
+  }
+}
+
 async function assertWorkspaceHome(browser) {
   const contents = browser.activeTab().view.webContents;
   await waitForPage(contents,
@@ -621,6 +665,7 @@ async function main() {
     await runStage('configured home recovery', () =>
       assertConfiguredHomeAndSuspendedRecovery(browser, newTabPreference, committedUrls));
     await runStage('credential command admission', () => assertCredentialCommandAdmission(browser));
+    await runStage('credential save retirement', () => assertCredentialSaveRetirement(browser));
     await runStage('settings button', () => assertSettingsButton(browser, settingsOpens));
     await runStage('workspace Command-K', async () => {
       const workspaceContents = browser.activeTab().view.webContents;

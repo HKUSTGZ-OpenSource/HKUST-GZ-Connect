@@ -188,6 +188,11 @@ effects and retiring temporary projections on page/tab/window changes. Its sourc
 Browser968->921 without a new production node; original credential/MFA controller bodies and vault
 schema are unchanged. Candidate-saving lifetime and remaining composition still need M2 review.
 
+The [credential save lifetime](browser-credential-save-lifetime.md) binds existing save approval
+to original window/tab/context and storage identity, retaining login/MFA evidence and explicit
+consent. Source candidate921->919 retires old approvals and candidate timers without a new node;
+native retirement and existing MFA gates remain required. Remaining Browser composition is still M2.
+
 ## Wave M3 — Desktop Main composition
 
 Completed source outcome, with every #81 criterion mapped to concrete owner/test/platform
