@@ -146,6 +146,12 @@ class BrowserOpenOwner {
     this.assertCurrent(epoch); throw error;
   }
 
+  prepare() {
+    this.assertCurrent(this.epoch);
+    this.prepareOpen();
+    this.assertCurrent(this.epoch);
+  }
+
   async perform(url, epoch, resolution = null, options = {}) {
     this.assertCurrent(epoch);
     await this.showReadyWindow();
@@ -170,7 +176,7 @@ class BrowserOpenOwner {
     let epoch = this.epoch;
     try {
       this.assertCurrent(epoch);
-      this.prepareOpen(); epoch = this.epoch;
+      this.prepare(); epoch = this.epoch;
       const url = this.normalizeUrl(rawUrl), resolution = this.resolveRoute(url, null, route);
       this.assertCurrent(epoch);
       const ready = await this.ensureRoutingReady(resolution, port, () => this.current(epoch));
@@ -185,7 +191,7 @@ class BrowserOpenOwner {
     let epoch = this.epoch;
     try {
       this.assertCurrent(epoch);
-      this.prepareOpen(); epoch = this.epoch;
+      this.prepare(); epoch = this.epoch;
       if (!this.getPort() && !this.isRoutingSuspended()) await this.configure(port);
       this.assertCurrent(epoch);
       return await this.perform(this.blankUrl, epoch);

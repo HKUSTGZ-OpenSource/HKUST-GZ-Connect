@@ -351,6 +351,16 @@ class CampusBrowserWindowOwner {
     return this.retire(record);
   }
 
+  prepareOpen() {
+    this.assertContextCurrent();
+    if (this.current?.window.isDestroyed()) this.clear();
+    const record = this.current;
+    if (record && !['loading', 'ready'].includes(record.state)) {
+      throw record.closeObserverFailure || record.closeConfirmationFailure ||
+      record.cleanupFailure || record.failure || new Error('Campus Browser window cleanup is not confirmed');
+    }
+  }
+
   closeForContextSwitch({ timeoutMs = 5_000, setTimeoutFn = setTimeout,
     clearTimeoutFn = clearTimeout } = {}) {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 30_000 ||
@@ -593,11 +603,29 @@ class CampusBrowserManager {
   // Control/tray commands include presentation feedback. Keep it under the
   // same Manager epoch as opening, including the outer await continuation.
   // Resource-library opens retain their original lower-level open contract.
+  #beginOpen() {
+    const browser = this.browser;
+    let error = null;
+    try { browser?.prepareOpen?.(); } catch (cause) { error = cause; }
+    return { epoch: this.#openEpoch, error,
+      stale: this.browser !== browser || error?.code === 'BROWSER_OPEN_RETIRED' };
+  }
+
+  #openFailure(error, translate = this.getTranslator()) {
+    const message = error.code === 'SETTINGS_READ_FAILED'
+      ? error.message
+      : translate('error.browserStart', { message: error.message });
+    this.reportError(message);
+    return { ok: false, error: message };
+  }
+
   async openWithFeedback(rawRequest) {
-    const epoch = this.#openEpoch;
+    const admission = this.#beginOpen(), epoch = admission.epoch;
     try {
+      if (admission.stale) return { ok: false, stale: true };
       this.reportError(null);
       if (epoch !== this.#openEpoch) return { ok: false, stale: true };
+      if (admission.error) return this.#openFailure(admission.error);
       const result = await this.open(rawRequest);
       if (epoch !== this.#openEpoch) return { ok: false, stale: true };
       if (result?.ok) this.reportError(null);
@@ -609,7 +637,9 @@ class CampusBrowserManager {
   }
 
   async open(rawRequest) {
-    const epoch = this.#openEpoch;
+    const admission = this.#beginOpen(), epoch = admission.epoch;
+    if (admission.stale) return { ok: false, stale: true };
+    if (admission.error) return this.#openFailure(admission.error);
     const translate = this.getTranslator();
     let request;
     try {
@@ -661,18 +691,16 @@ class CampusBrowserManager {
       if (epoch !== this.#openEpoch || error.code === 'BROWSER_OPEN_RETIRED' || (browser && this.browser !== browser)) {
         return { ok: false, stale: true };
       }
-      const message = error.code === 'SETTINGS_READ_FAILED'
-        ? error.message
-        : translate('error.browserStart', { message: error.message });
-      this.reportError(message);
-      return { ok: false, error: message };
+      return this.#openFailure(error, translate);
     }
   }
 
   async openBookmarkManager() {
-    const epoch = this.#openEpoch;
+    const admission = this.#beginOpen(), epoch = admission.epoch;
     let browser;
     try {
+      if (admission.stale) return { ok: false, stale: true };
+      if (admission.error) throw admission.error;
       browser = this.getOrCreate();
       await browser.openWorkspace(this.getSocksPort());
       if (epoch !== this.#openEpoch || this.browser !== browser) return { ok: false, stale: true };

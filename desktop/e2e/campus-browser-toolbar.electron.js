@@ -14,7 +14,7 @@ const {
   FIND_BAR_HEIGHT,
   TOOLBAR_HEIGHT,
 } = require('../lib/browser/session/campus-browser');
-const { createCampusBrowserWindowOwner } = require('../lib/browser/session/campus-browser-manager');
+const { CampusBrowserManager, createCampusBrowserWindowOwner } = require('../lib/browser/session/campus-browser-manager');
 const { CampusWorkspaceController } = require('../lib/browser/workspace/campus-workspace-controller');
 const { createDefaultCardBoardLayout } = require('../lib/card-board/runtime/card-board-migration');
 const { applyCardBoardOperations } = require('../lib/card-board/runtime/card-board-runtime');
@@ -235,6 +235,58 @@ async function assertOpenRequestRetirement(browser) {
   assert.ok(browser.window&&!browser.window.isDestroyed());
   assert.notEqual(browser.window,oldWindow,'a later explicit open remains allowed');
   process.stdout.write('native Browser open request retirement: PASS\n');
+}
+
+async function assertManagerEntryPreparation(browser) {
+  const originalRetired = browser.openOwner.onRetired, messages = [];
+  let managedBrowser;
+  const noop = () => {};
+  const manager = new CampusBrowserManager({
+    BrowserWindow, WebContentsView, session, dialog: {}, safeStorage: {},
+    certificateTrust: {}, routingPolicy: browser.routingPolicy, platform: process.platform,
+    credentialFile: path.join(profile, 'synthetic-unused-vault.json'),
+    toolbarFile: browser.toolbarFile, toolbarPreload: browser.toolbarPreload,
+    campusPreload: browser.campusPreload, workspaceFile: '/synthetic/unused-workspace.html',
+    workspacePreload: '/synthetic/unused-workspace.js', browserPartition: CAMPUS_PARTITION,
+    parentWindow: () => null, ensureCampusReady: async () => true,
+    ensureConnected: () => { throw new Error('Direct native entry must not start Engine'); },
+    resolveRoute: () => ({ route: ROUTE_DIRECT }), getSocksPort: () => 11080,
+    getLocale: () => 'zh', getTranslator: () => (key, vars) => vars?.message || key,
+    getProfilePresentation: () => browser.profilePresentation, getWorkspaceResources: () => [],
+    onOpenResource: noop, onWorkspaceMutation: noop, showItemInFolder: noop,
+    showRoutingRules: noop, showSettings: noop, reportError: message => messages.push(message),
+    CredentialVaultClass: class SyntheticVault {},
+    CampusBrowserClass: function FixtureRoot({ onOpenRetired }) {
+      browser.openOwner.onRetired = onOpenRetired;
+      return managedBrowser = browser;
+    },
+  });
+  try {
+    manager.getOrCreate();
+    const ownedSession = browser.campusSession;
+    for (const command of ['open', 'feedback', 'organize']) {
+      const record = browser.windowOwner.current, oldWindow = record.window;
+      oldWindow.removeListener('closed', record.closedListener);
+      oldWindow.close();
+      await waitForMain(() => oldWindow.isDestroyed(), 'native destruction before its close observer');
+      assert.equal(browser.windowOwner.current, record);
+      assert.equal(record.retired, false, 'the preparation path must actually be needed');
+      messages.length = 0;
+      const result = command === 'open' ? await manager.open(CONFIGURED_HOME)
+        : command === 'feedback' ? await manager.openWithFeedback(CONFIGURED_HOME)
+        : await manager.openBookmarkManager();
+      assert.equal(result.ok, true, 'a new explicit command must not retire itself');
+      assert.equal(manager.browser, managedBrowser);
+      assert.notEqual(browser.window, oldWindow);
+      assert.equal(browser.window.isDestroyed(), false);
+      assert.equal(browser.tabs.length, 1);
+      assert.equal(browser.campusSession, ownedSession);
+      assert.deepEqual(messages, command === 'feedback' ? [null, null] : []);
+    }
+  } finally {
+    browser.openOwner.onRetired = originalRetired;
+  }
+  process.stdout.write('native Browser Manager entry preparation: PASS\n');
 }
 
 function assertOnlyActiveTabAttached(browser) {
@@ -809,6 +861,7 @@ async function main() {
     await runStage('viewport lifecycle', () => assertViewportLifecycle(browser));
     await runStage('browser screenshots', () => captureBrowserChrome(browser));
     await runStage('open request retirement', () => assertOpenRequestRetirement(browser));
+    await runStage('Manager entry preparation', () => assertManagerEntryPreparation(browser));
     await runStage('teardown failure isolation', () => assertTeardownFailureIsolation(browser));
     assert.deepEqual(errors, [], `unexpected campus browser errors: ${errors.join('; ')}`);
     process.stdout.write('campus browser toolbar: PASS\n');

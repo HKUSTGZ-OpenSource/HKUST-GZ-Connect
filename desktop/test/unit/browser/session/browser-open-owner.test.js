@@ -69,6 +69,14 @@ test('unobserved destroyed window is prepared before a new explicit epoch is adm
   const f=fixture();f.owner.prepareOpen=()=>f.owner.reset();
   await f.owner.openWorkspace(6180);assert.ok(f.calls.includes('workspace'));
 });
+test('explicit preparation is idempotent for a live entry and fails closed on reentrant context retirement',()=>{
+  const f=fixture();f.owner.prepareOpen=()=>f.calls.push('prepare');
+  f.owner.prepare();f.owner.prepare();assert.equal(f.owner.epoch,0);assert.deepEqual(f.calls,['prepare','prepare']);
+  f.state.current=false;assert.throws(()=>f.owner.prepare(),{code:'BROWSER_OPEN_RETIRED'});
+  assert.deepEqual(f.calls,['prepare','prepare']);
+  const g=fixture();g.owner.prepareOpen=()=>{g.state.current=false;};
+  assert.throws(()=>g.owner.prepare(),{code:'BROWSER_OPEN_RETIRED'});
+});
 test('reentrant workspace selection cannot publish after retirement',async()=>{
   const f=fixture();f.state.tabs=[{id:1,kind:'workspace'}];f.state.port=6180;
   f.owner.switchTab=()=>f.owner.reset();

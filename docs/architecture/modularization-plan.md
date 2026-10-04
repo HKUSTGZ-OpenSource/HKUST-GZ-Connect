@@ -211,6 +211,12 @@ reopen, shared creation, current load failure and independently owned Session/En
 feedback uses its existing private epoch. Browser871->855 without a new production node.
 Remaining creation/composition and full M2 acceptance remain separate from this entry repair.
 
+The [entry preparation contract](browser-entry-preparation.md) makes Manager capture follow
+owned destroyed-window cleanup, preserving a fresh explicit command while retiring older waits.
+Unconfirmed native cleanup fails before a new connection is admitted. Existing resource owners
+and Session identity remain unchanged; Browser855/class697 and all growth budgets stay unchanged.
+This is a fault/lifetime repair, not completion of the remaining creation/composition outcome.
+
 ## Wave M3 — Desktop Main composition
 
 Completed source outcome, with every #81 criterion mapped to concrete owner/test/platform
