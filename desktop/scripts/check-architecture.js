@@ -27,7 +27,7 @@ const BASELINE = Object.freeze({
   // Main only binds the existing menu/Browser/status presentation effects.
   mainLines: 662,
   rendererLines: 562,
-  campusBrowserLines: 897,
+  campusBrowserLines: 871,
   browserTabOwnerLines: 600,
   // Production-only fan-in. Test, E2E, build and maintenance imports are
   // reported separately and must not make the runtime graph look denser.

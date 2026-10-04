@@ -898,6 +898,57 @@ test('a transactional routing policy owns the live Session update exactly once',
     'the main-process transaction already activated or safely suspended the Session');
 });
 
+test('route readiness cannot submit a rule after its original tab closes', async () => {
+  const readiness = deferred(), mutations = [];
+  const f = createFakeBrowser();
+  await f.browser.open('https://route.example.invalid/', 1080, 'direct');
+  const tab = f.browser.activeTab();
+  f.browser.ensureCampusReady = () => readiness.promise;
+  const upsert = f.browser.routingPolicy.upsert.bind(f.browser.routingPolicy);
+  f.browser.routingPolicy.upsert = payload => { mutations.push(payload); return upsert(payload); };
+  const pending = f.browser.setTabRoute(tab.id, 'campus');
+  f.browser.closeTab(tab.id);
+  readiness.resolve(true);
+  assert.equal(await pending, false);
+  assert.deepEqual(mutations, []);
+  f.browser.close();
+});
+
+test('accepted route write finishing after close cannot configure a replacement Browser window', async () => {
+  const writing = deferred(), f = createFakeBrowser({ emitWindowClosedOnClose: true });
+  await f.browser.open('https://route.example.invalid/', 1080, 'direct');
+  const tab = f.browser.activeTab(), original = f.browser.window;
+  const upsert = f.browser.routingPolicy.upsert.bind(f.browser.routingPolicy);
+  f.browser.routingPolicy.upsert = payload => { upsert(payload); return writing.promise; };
+  const pending = f.browser.setTabRoute(tab.id, 'direct');
+  f.browser.close();
+  await f.browser.openWorkspace(1080);
+  assert.notEqual(f.browser.window, original);
+  let configurations = 0;
+  const configure = f.browser.configure.bind(f.browser);
+  f.browser.configure = (...args) => { configurations++; return configure(...args); };
+  writing.resolve();
+  assert.equal(await pending, true, 'the original store already accepted the write; no rollback is invented');
+  assert.equal(configurations, 0, 'retired command cannot start another Session configuration');
+  f.browser.close();
+});
+
+test('readiness rejection after context retirement is quiet but current failure preserves its cause', async () => {
+  for (const retire of [false, true]) {
+    const readiness = deferred(), f = createFakeBrowser({ emitWindowClosedOnClose: true });
+    await f.browser.open('https://route.example.invalid/', 1080, 'direct');
+    f.browser.ensureCampusReady = () => readiness.promise;
+    const pending = f.browser.setTabRoute(f.browser.activeTabId, 'campus');
+    const result = pending.then(value => ({ value }), error => ({ error }));
+    if (retire) assert.equal(await f.browser.closeForContextSwitch(), true);
+    const failure = new Error('synthetic route readiness failure');
+    readiness.reject(failure);
+    if (retire) assert.deepEqual(await result, { value: false });
+    else assert.deepEqual(await result, { error: failure });
+    f.browser.close();
+  }
+});
+
 test('following rules removes only the exact personal override and recomputes the route', async () => {
   let fixed = null;
   const mutations = [];

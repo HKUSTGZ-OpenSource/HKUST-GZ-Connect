@@ -551,7 +551,11 @@ test('CampusBrowser delegates candidate state and keeps all lifecycle clear call
     /this\.pagePresentationOwner\.handleRendererCrash\(tab, details\)/);
   const routeStart = source.indexOf('\n  async setTabRoute');
   assert.notEqual(routeStart, -1);
-  assert.match(source.slice(routeStart, routeStart + 1800), /clearCredentialCandidate\(tab\)/);
+  assert.match(source.slice(routeStart, routeStart + 110), /this\.routeCommands\.set\(id, route\)/);
+  const routeOwner = fs.readFileSync(path.join(desktopRoot, 'lib', 'browser', 'session', 'browser-session-manager.js'), 'utf8');
+  const routeCommand = routeOwner.slice(routeOwner.indexOf('class BrowserRouteCommandOwner'), routeOwner.indexOf('\nfunction calendarWeekQuery'));
+  assert.match(routeCommand, /this\.clearCredentialCandidate\(tab\)/,
+    'the actual route-command owner still invalidates staged login evidence before awaiting readiness');
   const closeStart = source.indexOf('\n  closeTab(id)');
   assert.notEqual(closeStart, -1);
   const owner = fs.readFileSync(path.join(desktopRoot, 'lib', 'browser', 'tabs', 'tab-manager.js'), 'utf8');

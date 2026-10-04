@@ -8,7 +8,6 @@ const {
   ROUTE_CAMPUS,
   ROUTE_DIRECT,
 } = require('../../routing/policy/campus-route');
-const { normalizeRuleHost } = require('../../routing/rules/routing-rule-store');
 const { BrowserPagePresentationOwner, BrowserToolbarCommandOwner, BrowserToolbarOwner,
   BrowserViewportOwner, errorPage, redactedFailedUrl } = require('../toolbar/browser-toolbar-owner');
 const { BrowserWorkspaceOwner, projectBrowserWorkspaceResources, MAX_WORKSPACE_HOME_RESOURCES } =
@@ -18,6 +17,7 @@ const { BrowserDownloadController } = require('../downloads/download-controller'
 const { BrowserCredentialCommandOwner, CredentialController, ManagedCredentialPopupOwner, tabCredentialOrigin } = require('../credentials/credential-controller');
 const {
   BrowserRoutingActivationOwner,
+  BrowserRouteCommandOwner,
   BrowserSessionManager,
   BrowserTeardownOwner,
   applyCampusSessionPolicy,
@@ -457,6 +457,20 @@ class CampusBrowser {
       routing: this.routingActivationOwner, viewport: this.viewportOwner, toolbar: this.toolbarOwner,
       clearViewReferences: () => { this.view = null; this.attachedView = null; },
     });
+    this.routeCommands = new BrowserRouteCommandOwner({
+      findTab: id => this.tabManager.find(id),
+      beginNavigationIntent: tab => this.beginNavigationIntent(tab),
+      navigationIntentCurrent: (tab, intent) => this.navigationIntentCurrent(tab, intent),
+      captureAdmission: tab => this.pagePresentationOwner.captureAdmission(tab),
+      admissionCurrent: admission => this.pagePresentationOwner.admissionCurrent(admission),
+      pageCurrent: admission => !!admission && this.pagePresentationOwner.current(admission.record),
+      getPolicy: () => this.routingPolicy, clearCredentialCandidate: tab => this.clearCredentialCandidate(tab),
+      currentUrl: tab => this.currentUrl(tab), getHomeUrl: () => this.homeUrl,
+      getPort: () => this.configuredPort, ensureCampusReady: () => this.ensureCampusReady(),
+      configure: (port, options) => this.configure(port, options), clearSlowTimer: tab => this.clearSlowTimer(tab),
+      updateAllTabRoutes: () => this.updateAllTabRoutes(), updateTabRoute: (tab, url) => this.updateTabRoute(tab, url),
+      navigate: (url, tab) => this.navigate(url, tab), scheduleToolbarUpdate: () => this.scheduleToolbarUpdate(),
+    });
   }
 
   // Keep the existing CampusBrowser diagnostics/test surface while all state
@@ -752,47 +766,7 @@ class CampusBrowser {
   }
 
   async setTabRoute(id, route) {
-    if (!['auto', ROUTE_CAMPUS, ROUTE_DIRECT].includes(route)) return false;
-    const tab = this.tabManager.find(id);
-    if (!tab || tab.kind === 'workspace' || !this.window || this.window.isDestroyed()) return false;
-    const navigationIntent = this.beginNavigationIntent(tab);
-    // A route-switch request invalidates the in-flight page regardless of
-    // whether reconnecting/configuring the requested route later succeeds.
-    this.clearCredentialCandidate(tab);
-    const url = tab.failedUrl || this.currentUrl(tab) || this.homeUrl;
-    let host;
-    try {
-      host = normalizeRuleHost(new URL(url).hostname);
-    } catch {
-      return false;
-    }
-    if (route === ROUTE_CAMPUS && !await this.ensureCampusReady()) return false;
-    if (route === 'auto') {
-      if (typeof this.routingPolicy.remove !== 'function') return false;
-      await this.routingPolicy.remove({ host, includeSubdomains: false });
-    } else {
-      await this.routingPolicy.upsert({ host, includeSubdomains: false, route });
-    }
-    if (this.routingPolicy.appliesLiveSession !== true) {
-      await this.configure(this.configuredPort || 1080, { force: true });
-    }
-    if (!this.navigationIntentCurrent(tab, navigationIntent)) return true;
-    this.clearSlowTimer(tab);
-    this.updateAllTabRoutes();
-    const resolution = this.updateTabRoute(tab, url);
-    if (resolution?.route === ROUTE_CAMPUS && !await this.ensureCampusReady()) return false;
-    if (!this.navigationIntentCurrent(tab, navigationIntent)) return true;
-    if (tab.failedUrl || tab.renderingError) {
-      this.navigate(url, tab);
-    } else if (!tab.view.webContents.isDestroyed()) {
-      if (typeof tab.view.webContents.reloadIgnoringCache === 'function') {
-        tab.view.webContents.reloadIgnoringCache();
-      } else {
-        tab.view.webContents.reload();
-      }
-    }
-    this.scheduleToolbarUpdate();
-    return true;
+    return this.routeCommands.set(id, route);
   }
 
   switchTab(id) { return this.tabManager.activate(id); }

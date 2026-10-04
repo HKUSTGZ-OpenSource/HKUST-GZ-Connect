@@ -21,7 +21,6 @@
     "desktop/lib/browser/resources/campus-resource-store.js -> desktop/lib/routing/policy/host-safety.js [private-entrypoint]",
     "desktop/lib/browser/session/browser-session-manager.js -> desktop/lib/routing/policy/host-safety.js [private-entrypoint]",
     "desktop/lib/browser/session/browser-session-manager.js -> desktop/lib/routing/rules/routing-rule-store.js [private-entrypoint]",
-    "desktop/lib/browser/session/campus-browser.js -> desktop/lib/routing/rules/routing-rule-store.js [private-entrypoint]",
     "desktop/lib/browser/workspace/campus-workspace-controller.js -> desktop/lib/resources/schema/campus-resource-contract.js [private-entrypoint]",
     "desktop/lib/card-board/runtime/card-board-store.js -> desktop/lib/platform/storage/atomic-private-file.js [private-entrypoint]",
     "desktop/lib/card-board/runtime/card-board-store.js -> desktop/lib/platform/storage/windows-private-file.js [private-entrypoint]",
