@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { ConnectionStateMachine } = require('../../../../lib/connection/state/connection-state-machine');
+const { ConnectionStateMachine, ConnectionOperationCoordinator } = require('../../../../lib/connection/state/connection-state-machine');
 const {
   DEFAULT_NETWORK_POLL_MS,
   NetworkStartupCoordinator,
@@ -456,6 +456,59 @@ test('startup-only and ordinary online transitions use distinct recovery callbac
     system.startup.dispose();
     system.monitor.dispose();
   }
+});
+
+test('queued online startup revalidates cancellation quit and settings before connecting', async () => {
+  for (const retirement of ['live', 'cancel', 'dispose', 'quit', 'ineligible', 'truthy', 'read-failure']) {
+    const timers = new FakeTimers();
+    let connects = 0, quitting = false, eligible = true, readFailure = false;
+    const startup = new NetworkStartupCoordinator({
+      monitor: { start: async () => true, snapshot: () => ({ baseline: true }) },
+      shouldAutoConnect: () => {
+        if (readFailure) throw new Error('synthetic eligibility read failure');
+        return eligible;
+      },
+      pauseOffline() {}, resumeOffline() {},
+      connect: () => { connects++; }, isQuitting: () => quitting,
+      setTimeout: timers.setTimeout.bind(timers), clearTimeout: timers.clearTimeout.bind(timers),
+    });
+    assert.equal(await startup.start(), true);
+    const queued = timers.callback(timers.ids()[0])();
+    assert.equal(connects, 0, 'timer execution queues rather than starts connect');
+    if (retirement === 'cancel') startup.cancel();
+    if (retirement === 'dispose') startup.dispose();
+    if (retirement === 'quit') quitting = true;
+    if (retirement === 'ineligible') eligible = false;
+    if (retirement === 'truthy') eligible = 'synthetic truthy';
+    if (retirement === 'read-failure') readFailure = true;
+    await queued;
+    assert.equal(connects, retirement === 'live' ? 1 : 0, retirement);
+    assert.equal(startup.snapshot().timerScheduled, false);
+    startup.dispose();
+  }
+});
+
+test('queued startup cancellation preserves the actual operation owner user stop intent', async () => {
+  const timers = new FakeTimers(), connectionState = new ConnectionStateMachine();
+  let launches = 0;
+  const operation = new ConnectionOperationCoordinator({ connectionState,
+    engineSupervisor: { hasActive: false }, isQuitting: () => false,
+    cancelRecovery() {}, runAttempt: async () => { launches++; return { ok: true }; } });
+  const startup = new NetworkStartupCoordinator({
+    monitor: { start: async () => true, snapshot: () => ({ baseline: true }) },
+    shouldAutoConnect: () => true, pauseOffline() {}, resumeOffline() {},
+    connect: () => operation.connect(), isQuitting: () => false,
+    setTimeout: timers.setTimeout.bind(timers), clearTimeout: timers.clearTimeout.bind(timers),
+  });
+  await startup.start();
+  const queued = timers.callback(timers.ids()[0])();
+  startup.cancel(); const stoppedIntent = connectionState.beginStop(false);
+  await queued;
+  assert.equal(launches, 0);
+  assert.equal(connectionState.snapshot().desiredConnected, false);
+  assert.equal(connectionState.snapshot().intent, stoppedIntent);
+  assert.equal(operation.connectInFlight, null);
+  startup.dispose();
 });
 
 test('unknown initial network samples wait for one bounded valid baseline', async () => {
