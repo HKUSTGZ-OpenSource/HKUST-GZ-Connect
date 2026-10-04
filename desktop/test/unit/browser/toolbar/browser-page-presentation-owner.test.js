@@ -181,3 +181,15 @@ test('cleanup failures stay owned and inert, attempt other records, and can be r
   f.owner.reset(); assert.equal(f.owner.records.size, 0);
   assert.equal(contents.listenerCount('did-start-loading'), 0);
 });
+
+test('current crash feedback uses the live locale as the original Browser facade did', async () => {
+  const f = fixture(), tab = f.addTab();
+  let reject;
+  tab.view.webContents.loadURL = () => new Promise((_resolve, rejectPromise) => { reject = rejectPromise; });
+  f.owner.getTranslator = () => key => 'old-locale:' + key;
+  f.owner.attach(tab); f.owner.handleRendererCrash(tab, { reason: 'crashed' });
+  f.owner.getTranslator = () => key => 'new-locale:' + key;
+  reject(new Error('synthetic current renderer failure')); await new Promise(setImmediate);
+  assert.deepEqual(f.effects.filter(([name]) => name === 'reportError'),
+    [['reportError', 'new-locale:errorPage.rendererCrash']]);
+});

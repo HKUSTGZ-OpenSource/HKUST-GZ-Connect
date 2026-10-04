@@ -8,14 +8,14 @@
 
 ## Ownership and placement
 
-This distinct 212-line owner sits beside the existing chrome/toolbar/viewport owners in
+This distinct 213-line owner sits beside the existing chrome/toolbar/viewport owners in
 `desktop/lib/browser/toolbar/browser-toolbar-owner.js`. Native page loading, title, crash and local
 failure presentation feed that same Browser chrome. It owns a bounded record per existing page:
 the exact native window, WebContents, tab membership, listeners and observation revisions.
 It does not own native windows, tab allocation, navigation intent, routes, authentication, vault
 transactions, cookies, workspace resources or browser Sessions. Those remain injected narrow ports.
 
-The file has 606 lines across separate owners (page212, viewport80, toolbar112, command143) plus
+The file has 607 lines across separate owners (page213, viewport80, toolbar112, command143) plus
 existing pure presentation helpers; this is not falsely described as a sub-600-line file. The M2
 ceiling applies to actual owners. No new production dependency node, generic utility layer,
 barrel, IPC channel, Renderer/window export, schema, dependency or permission is added. Main stays
@@ -49,14 +49,15 @@ locale behavior, motion preferences, URL safety and routing/login algorithms are
 
 ## Source and native validation
 
-Eight direct owner contracts cover subscription identity/foreign listeners, slow-handle replacement,
+Nine direct owner contracts cover subscription identity/foreign listeners, slow-handle replacement,
 background and retired admission, asynchronous recent-open fencing, failure/crash cleanup, URL/
-portal policy, destruction and retryable cleanup failure. The initial seven owner cases were red
-before implementation. Existing Browser/toolbar/viewport contracts are retained (81 selected pass).
+portal policy, destruction, retryable cleanup failure and live-locale crash feedback. The initial
+seven owner cases were red before implementation; a later red locale case caught and corrected
+an extraction regression before publication. Existing Browser/toolbar/viewport contracts are retained.
 Credential lifecycle source checks now follow the actual owner and original controller ports rather
 than assuming the moved handlers still live in the Browser root; clearing assertions remain.
 
-Full local source suite: 2,007 cases, 1,991 passed, 16 platform skips, zero failures. Local native
+Full local source suite: 2,008 cases, 1,992 passed, 16 platform skips, zero failures. Local native
 toolbar/viewport now additionally proves real page-listener removal and late callback inertness
 across close/reopen. It preserves compact/standard/wide geometry, keyboard and only-active-view
 accessibility assertions. A first new native assertion mistakenly assumed no legitimate new-window

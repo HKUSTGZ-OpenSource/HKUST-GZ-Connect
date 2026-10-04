@@ -228,7 +228,7 @@ class BrowserPagePresentationOwner {
     } catch { return false; }
   }
 
-  renderFailure(record, url, description, crash = false) {
+  renderFailure(record, url, description, crash = false, feedback = () => description) {
     if (!this.current(record)) return;
     const tab = record.tab;
     const revision = ++record.failureRevision;
@@ -241,7 +241,7 @@ class BrowserPagePresentationOwner {
     if (!this.current(record)) return;
     const rejected = () => {
       if (crash && this.current(record) && record.failureRevision === revision &&
-          tab.crashed && tab.renderingError) this.effects.reportError(description);
+          tab.crashed && tab.renderingError) this.effects.reportError(feedback());
     };
     try {
       Promise.resolve(record.contents.loadURL(errorPage(url, description, this.getTranslator(), tab.route)))
@@ -258,7 +258,8 @@ class BrowserPagePresentationOwner {
     const failedUrl = this.currentUrl(tab) || this.getHomeUrl();
     const reason = String(details.reason || 'crashed').slice(0, 80);
     this.renderFailure(record, this.safePopupUrl(failedUrl) ? failedUrl : this.getHomeUrl(),
-      this.getTranslator()('errorPage.rendererCrash', { reason }), true);
+      this.getTranslator()('errorPage.rendererCrash', { reason }), true,
+      () => this.getTranslator()('errorPage.rendererCrash', { reason }));
   }
 }
 
