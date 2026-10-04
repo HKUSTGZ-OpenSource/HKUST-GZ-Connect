@@ -660,9 +660,10 @@ class ManagedCredentialPopupOwner {
     let cleaned = false;
     popup.cleanup = () => {
       if (cleaned) return;
+      this.credentialController.closeTab(popup);
+      popup.cleanupFailure = null;
       cleaned = true;
       this.popups.delete(popup);
-      this.credentialController.closeTab(popup);
     };
     const rejectNonWebNavigation = (event, url) => {
       if (!this.safePopupUrl(url)) event?.preventDefault?.();
@@ -686,16 +687,23 @@ class ManagedCredentialPopupOwner {
       if (details.reason !== 'clean-exit') this.credentialController.clear(popup);
       try { if (!popupWindow.isDestroyed()) popupWindow.close(); } catch {}
     });
-    contents.once('destroyed', popup.cleanup);
-    popupWindow.once('closed', popup.cleanup);
+    const cleanupObserved = () => {
+      try { popup.cleanup(); } catch (error) { popup.cleanupFailure = error; }
+    };
+    contents.once('destroyed', cleanupObserved);
+    popupWindow.once('closed', cleanupObserved);
   }
 
   closeAll() {
+    const failures = [];
     for (const popup of [...this.popups]) {
-      popup.cleanup?.();
-      try { if (!popup.window.isDestroyed()) popup.window.close(); } catch {}
+      try {
+        if (!popup.window.isDestroyed()) popup.window.close();
+        if (!popup.window.isDestroyed()) throw new Error('Browser popup close is unconfirmed');
+        popup.cleanup?.();
+      } catch (error) { failures.push(error); }
     }
-    this.popups.clear();
+    if (failures.length) throw new AggregateError(failures, 'Browser popup cleanup is unconfirmed');
   }
 }
 

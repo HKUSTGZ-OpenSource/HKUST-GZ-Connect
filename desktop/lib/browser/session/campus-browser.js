@@ -19,6 +19,7 @@ const { BrowserCredentialCommandOwner, CredentialController, ManagedCredentialPo
 const {
   BrowserRoutingActivationOwner,
   BrowserSessionManager,
+  BrowserTeardownOwner,
   applyCampusSessionPolicy,
   campusProxyConfig,
   createMemoryRoutingPolicy,
@@ -252,10 +253,7 @@ class CampusBrowser {
         windowChrome: campusWindowChrome,
         onToolbarCommand: payload => this.handleToolbarCommand(payload),
         onResize: () => this.scheduleLayout(),
-        onBeforeCreate: () => {
-          this.cancelScheduledUpdates(); this.credentialController?.reset(); this.credentialCommands?.reset();
-          this.pagePresentationOwner?.reset(); this.toolbarOwner?.reset();
-        },
+        onBeforeCreate: () => this.teardownOwner.beforeCreate(),
         onClosed: () => this.handleWindowClosed(),
         onMissingWindow: () => this.close(),
       })
@@ -452,6 +450,13 @@ class CampusBrowser {
         tabAt: (index) => this.tabManager.at(index),
       },
     });
+    this.teardownOwner = new BrowserTeardownOwner({
+      windowOwner: this.windowOwner, tabs: this.tabManager, credentials: this.credentialController,
+      commands: this.credentialCommands, pages: this.pagePresentationOwner,
+      certificates: this.certificateController, popups: this.popupOwner,
+      routing: this.routingActivationOwner, viewport: this.viewportOwner, toolbar: this.toolbarOwner,
+      clearViewReferences: () => { this.view = null; this.attachedView = null; },
+    });
   }
 
   // Keep the existing CampusBrowser diagnostics/test surface while all state
@@ -629,8 +634,7 @@ class CampusBrowser {
   }
 
   cancelScheduledUpdates() {
-    this.cancelScheduledLayout();
-    this.cancelScheduledToolbarUpdate();
+    this.teardownOwner.cancel();
   }
 
   sendToolbarState() {
@@ -807,19 +811,7 @@ class CampusBrowser {
   }
 
   handleWindowClosed() {
-    this.cancelScheduledUpdates();
-    this.credentialController.reset();
-    this.credentialCommands.reset();
-    this.pagePresentationOwner.reset();
-    this.certificateController.cancelAll();
-    this.tabManager.closeViews();
-    this.popupOwner.closeAll();
-    this.tabManager.clear();
-    this.view = null;
-    this.attachedView = null;
-    this.routingActivationOwner.reset();
-    this.viewportOwner.reset();
-    this.toolbarOwner.reset();
+    this.teardownOwner.closed();
   }
 
   navigate(rawUrl, tab = this.activeTab(), requestedRoute = null) {
@@ -867,21 +859,7 @@ class CampusBrowser {
   }
 
   close() {
-    this.cancelScheduledUpdates();
-    this.credentialController.reset();
-    this.credentialCommands.reset();
-    this.pagePresentationOwner.reset();
-    this.certificateController.cancelAll();
-    if (this.windowOwner?.requestClose() === true) return;
-    const retired = this.windowOwner?.clear();
-    if (retired === true || this.windowOwner?.window) return;
-    this.tabManager.clearTransientState();
-    this.view = null;
-    this.attachedView = null;
-    this.routingActivationOwner.reset();
-    this.tabManager.clear();
-    this.viewportOwner.reset();
-    this.toolbarOwner.reset();
+    this.teardownOwner.close();
   }
 
   closeForContextSwitch(options = {}) {

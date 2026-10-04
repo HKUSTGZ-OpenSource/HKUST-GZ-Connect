@@ -18,6 +18,88 @@ const requestBoundaryGates = new WeakMap();
 const DAY_MS = 86_400_000;
 const CAMPUS_OFFSET_MS = 28_800_000;
 
+// Cross-owner shutdown belongs to Browser Session lifetime, not the chrome
+// composition root. A failure is evidence to retain ownership, never permission
+// to skip another independent cleanup or to discard an unconfirmed resource.
+class BrowserTeardownOwner {
+  constructor({ windowOwner, tabs, credentials, commands, pages, certificates,
+    popups, routing, viewport, toolbar, clearViewReferences } = {}) {
+    const owners = { tabs, credentials, commands, pages, certificates,
+      popups, routing, viewport, toolbar };
+    const methods = { tabs: ['closeViews', 'clearTransientState', 'clear'],
+      credentials: ['reset'], commands: ['reset'], pages: ['reset'],
+      certificates: ['cancelAll'], popups: ['closeAll'], routing: ['reset'],
+      viewport: ['cancelScheduledLayout', 'reset'], toolbar: ['cancel', 'reset'] };
+    if (typeof clearViewReferences !== 'function' ||
+        Object.entries(methods).some(([key, names]) => names.some(name => typeof owners[key]?.[name] !== 'function')) ||
+        (windowOwner && ['requestClose', 'clear'].some(name => typeof windowOwner[name] !== 'function'))) {
+      throw new TypeError('Browser teardown dependencies are incomplete');
+    }
+    Object.assign(this, { windowOwner, ...owners, clearViewReferences });
+  }
+
+  attempt(operations, failures = []) {
+    for (const operation of operations) {
+      try { operation(); } catch (error) { failures.push(error); }
+    }
+    return failures;
+  }
+
+  finish(failures) {
+    if (failures.length) throw new AggregateError(failures, 'Browser cleanup is unconfirmed');
+  }
+
+  cancel() {
+    this.finish(this.attempt([() => this.viewport.cancelScheduledLayout(), () => this.toolbar.cancel()]));
+  }
+
+  presentation(failures) {
+    this.attempt([() => this.viewport.cancelScheduledLayout(), () => this.toolbar.cancel(),
+      () => this.credentials.reset(), () => this.commands.reset(), () => this.pages.reset()], failures);
+  }
+
+  beforeCreate() {
+    const failures = [];
+    this.presentation(failures);
+    this.attempt([() => this.toolbar.reset()], failures);
+    this.finish(failures);
+  }
+
+  releaseReferences(failures) {
+    if (failures.length) return;
+    // Native/page/popup release and transient cleanup must precede this commit.
+    this.attempt([() => this.tabs.clear()], failures);
+    if (!failures.length) this.attempt([() => this.clearViewReferences()], failures);
+  }
+
+  closed() {
+    const failures = [];
+    this.presentation(failures);
+    this.attempt([() => this.certificates.cancelAll(), () => this.tabs.closeViews(),
+      () => this.popups.closeAll(), () => this.routing.reset(),
+      () => this.viewport.reset(), () => this.toolbar.reset()], failures);
+    this.releaseReferences(failures);
+    this.finish(failures);
+  }
+
+  close() {
+    const failures = [];
+    this.presentation(failures);
+    this.attempt([() => this.certificates.cancelAll()], failures);
+    let requested = false, retired = false;
+    this.attempt([() => { requested = this.windowOwner?.requestClose() === true; }], failures);
+    if (!requested) {
+      this.attempt([() => { retired = this.windowOwner?.clear() === true; }], failures);
+      if (!retired && !this.windowOwner?.window) {
+        this.attempt([() => this.tabs.clearTransientState(), () => this.routing.reset(),
+          () => this.viewport.reset(), () => this.toolbar.reset()], failures);
+        this.releaseReferences(failures);
+      }
+    }
+    this.finish(failures);
+  }
+}
+
 function calendarWeekQuery(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
       Object.keys(value).some(key => !['date', 'force'].includes(key)) ||
@@ -1052,6 +1134,7 @@ class MyPortalDataRuntime {
 }
 
 module.exports = {
+  BrowserTeardownOwner,
   BrowserRoutingActivationOwner,
   BrowserSessionManager,
   CAMPUS_REQUEST_FILTER,

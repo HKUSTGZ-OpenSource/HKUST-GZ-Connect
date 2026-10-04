@@ -33,6 +33,64 @@ test('Campus Browser createWindow keeps its existing void-return contract', asyn
   assert.ok(browser.window, 'the native window remains available through its owner');
 });
 
+test('Browser close attempts independent owners after credential cancellation failure', async () => {
+  const f = createFakeBrowser({ emitWindowClosedOnClose: true, credentialVault: { get: async () => null } });
+  await f.browser.open('https://cleanup.example.invalid/login', 1080, 'direct');
+  const browser = f.browser, tab = browser.activeTab(), window = browser.window;
+  const candidate = { origin: 'https://cleanup.example.invalid', username: 'synthetic-user', password: 'synthetic-secret' };
+  browser.credentialController.setTimer = () => ({ unref() {} });
+  browser.credentialController.clearTimer = () => { throw new Error('synthetic credential cancellation failure'); };
+  browser.stageCredentialCandidate(tab, candidate);
+  assert.ok(tab.pendingCredential, 'the original HTTPS candidate was actually admitted');
+  const attempted = [];
+  for (const [owner, method, label] of [[browser.credentialCommands, 'reset', 'commands'],
+    [browser.pagePresentationOwner, 'reset', 'pages'], [browser.certificateController, 'cancelAll', 'certificates'],
+    [browser.popupOwner, 'closeAll', 'popups'], [browser.routingActivationOwner, 'reset', 'routing'],
+    [browser.viewportOwner, 'reset', 'viewport'], [browser.toolbarOwner, 'reset', 'toolbar']]) {
+    const original = owner[method].bind(owner);
+    owner[method] = () => { attempted.push(label); return original(); };
+  }
+  let viewCloses = 0;
+  tab.view.webContents.close = () => { viewCloses++; };
+  assert.throws(() => browser.close(), /cleanup is unconfirmed/);
+  assert.equal(tab.pendingCredential, null, 'failed cancellation still retires the held secret');
+  for (const label of ['commands', 'pages', 'certificates', 'popups', 'routing', 'viewport', 'toolbar']) {
+    assert.ok(attempted.includes(label), `independent ${label} cleanup was attempted`);
+  }
+  assert.equal(window.closeCalls, 1, 'local cleanup failure cannot suppress the native close request');
+  assert.ok(viewCloses > 0, 'credential cancellation cannot prevent owned page close');
+  assert.equal(browser.tabs.includes(tab), true, 'unconfirmed cleanup retains exact resource ownership');
+  assert.equal(browser.windowOwner.current.cleanupComplete, false);
+  await assert.rejects(browser.createWindow(), /cleanup is unconfirmed/);
+  assert.equal(await browser.closeForContextSwitch(), false, 'failure is not successful Profile retirement');
+  browser.credentialController.clearTimer = () => {};
+  browser.handleWindowClosed();
+  assert.equal(browser.tabs.length, 0);
+});
+
+test('Browser native-close cleanup attempts all owners but retains failed page ownership', async () => {
+  const f = createFakeBrowser({ emitWindowClosedOnClose: true });
+  await f.browser.open('https://cleanup.example.invalid/', 1080, 'direct');
+  const browser = f.browser, tab = browser.activeTab(), window = browser.window;
+  const original = browser.pagePresentationOwner.reset.bind(browser.pagePresentationOwner);
+  browser.pagePresentationOwner.reset = () => { throw new Error('synthetic page cleanup failure'); };
+  let popups = 0, routing = 0, viewCloses = 0;
+  browser.popupOwner.closeAll = () => { popups++; };
+  browser.routingActivationOwner.reset = () => { routing++; };
+  tab.view.webContents.close = () => { viewCloses++; };
+  window.close();
+  assert.equal(popups, 1);
+  assert.equal(routing, 1);
+  assert.equal(viewCloses, 1);
+  assert.equal(browser.tabs.includes(tab), true);
+  assert.equal(browser.view, tab.view);
+  assert.ok(browser.windowOwner.current.cleanupFailure);
+  browser.pagePresentationOwner.reset = original;
+  browser.handleWindowClosed();
+  assert.equal(browser.tabs.length, 0);
+  assert.equal(browser.view, null);
+});
+
 test('concurrent Browser and Workspace opens wait for one shared toolbar load', async (t) => {
   const loading = deferred();
   const fixture = createFakeBrowser({

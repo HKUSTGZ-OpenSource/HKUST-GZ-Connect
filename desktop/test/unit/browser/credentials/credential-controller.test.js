@@ -571,13 +571,16 @@ test('CampusBrowser delegates candidate state and keeps all lifecycle clear call
   assert.match(source, /onClosed: \(\) => this\.handleWindowClosed\(\)/);
   const browserClose = source.indexOf('\n  handleWindowClosed()');
   assert.notEqual(browserClose, -1);
-  assert.match(source.slice(browserClose, browserClose + 350), /this\.tabManager\.closeViews\(\)/);
+  assert.match(source.slice(browserClose, browserClose + 120), /this\.teardownOwner\.closed\(\)/);
+  const teardown = fs.readFileSync(path.join(desktopRoot, 'lib', 'browser', 'session', 'browser-session-manager.js'), 'utf8');
+  assert.match(teardown.slice(teardown.indexOf('\n  closed()'), teardown.indexOf('\n  close()')),
+    /this\.tabs\.closeViews\(\)/);
   assert.match(source, /clearCredentialCandidate: tab => this\.clearCredentialCandidate\(tab\)/);
-  for (const method of ['clearTransientState', 'closeViews']) {
-    const start = owner.indexOf(`\n  ${method}()`);
-    assert.notEqual(start, -1);
-    assert.match(owner.slice(start, start + 350), /this\.effects\.clearCredentialCandidate\(tab\)/);
-  }
+  assert.match(owner.slice(owner.indexOf('\n  clearTransientState()'), owner.indexOf('\n  closeViews(')), /this\.closeViews\(false\)/);
+  assert.match(owner.slice(owner.indexOf('\n  closeViews('), owner.indexOf('\nclass BrowserNavigationOwner')),
+    /this\.effects\.clearCredentialCandidate\(tab\)/);
   const noWindowClose = source.indexOf('\n  close()');
-  assert.match(source.slice(noWindowClose, noWindowClose + 500), /this\.tabManager\.clearTransientState\(\)/);
+  assert.match(source.slice(noWindowClose, noWindowClose + 100), /this\.teardownOwner\.close\(\)/);
+  assert.match(teardown.slice(teardown.indexOf('\n  close()'), teardown.indexOf('\nfunction calendarWeekQuery')),
+    /this\.tabs\.clearTransientState\(\)/);
 });
