@@ -206,6 +206,37 @@ async function assertRouteCommandRetirement(browser) {
   process.stdout.write('native Browser route command retirement: PASS\n');
 }
 
+async function assertOpenRequestRetirement(browser) {
+  await browser.open(CONFIGURED_HOME,11080,ROUTE_DIRECT);
+  await waitForPage(browser.activeTab().view.webContents,'location.href === '+JSON.stringify(CONFIGURED_HOME),'owned open-retirement page');
+  const oldWindow=browser.window,oldSession=browser.campusSession,policy=browser.routingPolicy;
+  const originalReady=browser.ensureCampusReady,originalResolve=policy.resolve,
+    originalActivate=browser.routingActivationOwner.activate;
+  let finish,pending,activations=0;
+  try {
+    policy.resolve=()=>({route:ROUTE_CAMPUS,source:'default',matchedRule:null});
+    browser.ensureCampusReady=()=>new Promise(resolve=>{finish=resolve;});
+    browser.routingActivationOwner.activate=function(...args){activations++;return originalActivate.apply(this,args);};
+    pending=browser.open(CONFIGURED_NEXT,11080,ROUTE_CAMPUS).then(value=>({value}),error=>({error}));
+    assert.equal(typeof finish,'function','readiness must actually be pending');
+    oldWindow.close();
+    await waitForMain(()=>oldWindow.isDestroyed()&&browser.window===null,'owned native user close');
+    finish(true);assert.equal((await pending).error?.code,'BROWSER_OPEN_RETIRED');
+    assert.equal(activations,0,'retired readiness cannot activate another Session');
+    assert.equal(browser.window,null,'no implicit replacement window is created');
+    assert.equal(browser.tabs.length,0);
+    assert.equal(browser.campusSession,oldSession,'Session cookies and Engine remain independently owned');
+  } finally {
+    finish?.(true);if(pending)await pending;
+    policy.resolve=originalResolve;browser.ensureCampusReady=originalReady;
+    browser.routingActivationOwner.activate=originalActivate;
+  }
+  await browser.openWorkspace(11080);
+  assert.ok(browser.window&&!browser.window.isDestroyed());
+  assert.notEqual(browser.window,oldWindow,'a later explicit open remains allowed');
+  process.stdout.write('native Browser open request retirement: PASS\n');
+}
+
 function assertOnlyActiveTabAttached(browser) {
   const tabViews = browser.window.contentView.children.filter((child) => (
     browser.tabs.some((tab) => tab.view === child)
@@ -777,6 +808,7 @@ async function main() {
     await runStage('find bar', () => assertFindBar(browser));
     await runStage('viewport lifecycle', () => assertViewportLifecycle(browser));
     await runStage('browser screenshots', () => captureBrowserChrome(browser));
+    await runStage('open request retirement', () => assertOpenRequestRetirement(browser));
     await runStage('teardown failure isolation', () => assertTeardownFailureIsolation(browser));
     assert.deepEqual(errors, [], `unexpected campus browser errors: ${errors.join('; ')}`);
     process.stdout.write('campus browser toolbar: PASS\n');

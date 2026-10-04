@@ -40,6 +40,14 @@ test('timer cancellation attempts both independent handles and retains all cause
   assert.deepEqual(f.calls, ['layout.cancel', 'toolbar.cancel']);
 });
 
+test('open-retirement notification failure cannot skip independent cleanup or native close',()=>{
+  const f=fixture();let closes=0;
+  const owner=new BrowserTeardownOwner({...f.options,retireOpenRequests:()=>{throw new Error('synthetic retirement failure');},
+    windowOwner:{requestClose:()=>{closes++;return true;},clear:()=>false,window:{}}});
+  assert.throws(()=>owner.close(),/cleanup is unconfirmed/);assert.equal(closes,1);
+  assert.ok(f.calls.includes('credentials')&&f.calls.includes('pages'));
+});
+
 test('closed cleanup attempts every owner but only commits references when all confirm', () => {
   const f = fixture(); f.failing.add('pages'); f.failing.add('popups');
   assert.throws(() => f.owner.closed(), /cleanup is unconfirmed/);

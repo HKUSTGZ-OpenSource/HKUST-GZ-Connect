@@ -573,6 +573,7 @@ class CampusBrowserManager {
       onTogglePageFavorite: (candidate) => this.onTogglePageFavorite(candidate),
       workspaceController,
       onRecordPageOpen: (url) => this.onRecordPageOpen(url),
+      onOpenRetired: () => { if (this.browser === browser) this.#openEpoch++; },
       getSharedPortalCredential: (origin) => this.getSharedPortalCredential(origin),
       onPortalSessionUrl: (url) => this.capturePortalSessionUrl(url),
       showItemInFolder: this.showItemInFolder,
@@ -657,7 +658,7 @@ class CampusBrowserManager {
       if (epoch !== this.#openEpoch || this.browser !== browser) return { ok: false, stale: true };
       return { ok: true, url: request.url, route: request.route };
     } catch (error) {
-      if (epoch !== this.#openEpoch || (browser && this.browser !== browser)) {
+      if (epoch !== this.#openEpoch || error.code === 'BROWSER_OPEN_RETIRED' || (browser && this.browser !== browser)) {
         return { ok: false, stale: true };
       }
       const message = error.code === 'SETTINGS_READ_FAILED'
@@ -669,15 +670,16 @@ class CampusBrowserManager {
   }
 
   async openBookmarkManager() {
+    const epoch = this.#openEpoch;
     let browser;
     try {
       browser = this.getOrCreate();
       await browser.openWorkspace(this.getSocksPort());
-      if (this.browser !== browser) return { ok: false, stale: true };
+      if (epoch !== this.#openEpoch || this.browser !== browser) return { ok: false, stale: true };
       browser.focusWorkspace('manage');
       return { ok: true, url: BLANK_CAMPUS_HOME, route: ROUTE_DIRECT };
     } catch (error) {
-      if (browser && this.browser !== browser) return { ok: false, stale: true };
+      if (epoch !== this.#openEpoch || error.code === 'BROWSER_OPEN_RETIRED' || (browser && this.browser !== browser)) return { ok: false, stale: true };
       const message = this.getTranslator()('error.browserStart', { message: error.message });
       this.reportError(message);
       return { ok: false, error: message };
