@@ -58,6 +58,10 @@ dialogs: actual page navigation invalidates both commands, duplicate shared look
 stale strings are never materialized, acquired owner destruction is once, and held plaintext clears
 before the old dialog completes. The initial fixture accidentally selected a local blank tab; it
 was corrected to its own intercepted HTTPS tab without raising deadlines or changing production.
+The first remote native run exposed a second fixture assumption: replacement-page dom-ready may
+legitimately start a fresh lookup. The deferred provider now belongs only to the captured old
+document; replacement lookups return null, the original duplicate check happens before navigation,
+and bounded replacement work drains before the zero-residue assertion. Production source is unchanged.
 The first static credential source check was updated to retain nested finally-cleanup requirements.
 
 Local native toolbar, popup/password MFA, strict proxy, tab retirement, routing restart, Main

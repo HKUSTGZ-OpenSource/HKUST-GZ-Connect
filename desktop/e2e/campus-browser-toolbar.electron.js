@@ -356,17 +356,23 @@ async function assertCredentialCommandAdmission(browser) {
     !tab.view.webContents.isLoading(), 'isolated HTTPS command page');
   try {
     browser.getSharedPortalCredential = () => {
-      lookups++; return new Promise(resolve => { finishShared = resolve; });
+      // Only the captured old document gets a deferred owner. A real dom-ready
+      // on its replacement may legitimately query again; keep that new lookup
+      // bounded and inert instead of creating an unowned fixture promise.
+      if (++lookups !== 1) return null;
+      return new Promise(resolve => { finishShared = resolve; });
     };
     const first = browser.fillSharedPortalCredential(tab), duplicate = browser.fillSharedPortalCredential(tab);
     await waitForMain(() => typeof finishShared === 'function', 'isolated shared lookup');
+    assert.equal(lookups, 1, 'duplicate actions join the original document lookup');
     const admission = browser.pagePresentationOwner.captureAdmission(tab);
     browser.navigate(CONFIGURED_HOME, tab);
     await waitForMain(() => !browser.pagePresentationOwner.admissionCurrent(admission), 'actual native page revision');
     finishShared({ withStrings: callback => { reads++; return callback('synthetic-user', 'synthetic-secret'); },
       destroy: () => { destroys++; } });
     assert.deepEqual(await Promise.all([first, duplicate]), [false, false]);
-    assert.equal(lookups, 1); assert.equal(reads, 0); assert.equal(destroys, 1);
+    assert.equal(reads, 0); assert.equal(destroys, 1);
+    browser.getSharedPortalCredential = original.shared;
     const raw = { username: 'synthetic-user', password: 'synthetic-secret' };
     browser.credentialVault = { get: async () => raw, remove: async () => { throw new Error('stale delete'); } };
     browser.dialog = { showMessageBox: () => new Promise(resolve => { finishDialog = resolve; }) };
@@ -378,6 +384,8 @@ async function assertCredentialCommandAdmission(browser) {
     assert.equal(raw.password, '', 'page navigation clears the held projection before dialog completion');
     finishDialog({ response: 0 }); await managing;
     assert.equal(browser.credentialCommands.manages.size, 0);
+    await waitForMain(() => browser.credentialCommands.fills.size === 0,
+      'legitimate replacement-page lookup to finish');
     assert.equal(browser.credentialCommands.fills.size, 0);
     console.log('native Browser credential command page admission: PASS');
   } finally {
