@@ -327,6 +327,27 @@ class ConnectionOperationCoordinator {
     this.reconnectInFlight = null;
   }
 
+  isCurrentEngineContext(generation, token) {
+    return this.engineSupervisor.isCurrent(generation) && this.contextLease.isCurrent(token, {
+      connectionIntent: this.connectionState.snapshot().intent, engineGeneration: generation,
+    });
+  }
+
+  canResumeBrowser() {
+    return this.connectionState.isConnected() && this.engineSupervisor.hasActive;
+  }
+
+  reconnectCurrentEngineContext(generation, token) {
+    return this.isCurrentEngineContext(generation, token)
+      ? this.reconnect(generation) : Promise.resolve({ ok: false, stale: true });
+  }
+
+  pauseInitialOffline() {
+    this.connectivityRecovery.cancel();
+    const intent = this.connectionState.beginConnectIntent();
+    return this.connectivityRecovery.networkOffline(intent) ? intent : null;
+  }
+
   currentRecoveryIntent() {
     return this.connectionState.currentRecoveryIntent({ isQuitting: this.isQuitting() === true });
   }

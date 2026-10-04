@@ -6,6 +6,8 @@ const test = require('node:test');
 const { ConnectionOperationCoordinator, ConnectionStateMachine } =
   require('../../../../lib/connection/state/connection-state-machine');
 const { stopEngineAfterBrowserSuspend } = require('../../../../lib/switching/effects/browser-engine-barrier');
+const { desktopRuntimeComposition: { ActiveContextLease } } = require('../../../../lib/app/desktop-runtime-composition');
+const { ConnectivityRecovery } = require('../../../../lib/connection/recovery/connectivity-recovery');
 
 function deferred() {
   let resolve;
@@ -58,6 +60,115 @@ function fixture() {
   });
   return f;
 }
+
+function contextFixture() {
+  const f = fixture();
+  f.lease = new ActiveContextLease({ profileId: 'hkustgz', profileRevision: 1,
+    accountHandle: `account-${'a'.repeat(36)}`, activeContextEpoch: 1 });
+  f.owner.contextLease = f.lease;
+  f.intent = f.fsm.beginConnectIntent();
+  f.fsm.bindEngineGeneration(f.generation);
+  f.token = f.lease.capture({ connectionIntent: f.intent, engineGeneration: f.generation });
+  return f;
+}
+
+test('owned Engine admission binds the actual opaque context intent and generation', () => {
+  for (const retirement of ['live', 'generation', 'intent', 'context', 'foreign-token', 'context-only']) {
+    const f = contextFixture(); let token = f.token;
+    if (retirement === 'generation') f.generation++;
+    if (retirement === 'intent') f.fsm.beginConnectIntent();
+    if (retirement === 'context') f.lease.invalidate();
+    if (retirement === 'foreign-token') token = {};
+    if (retirement === 'context-only') token = f.lease.captureContext();
+    assert.equal(f.owner.isCurrentEngineContext(1, token), retirement === 'live', retirement);
+  }
+});
+
+test('owned Engine admission preserves generation-first short circuit and observer failures', () => {
+  const calls = [], token = {};
+  let current = 0, fail = false;
+  const error = new Error('synthetic witness failure');
+  const owner = new ConnectionOperationCoordinator({
+    engineSupervisor: { isCurrent: generation => { calls.push(['generation', generation]); return current; } },
+    connectionState: { snapshot: () => { calls.push('intent'); if (fail) throw error; return { intent: 7 }; } },
+    contextLease: { isCurrent: (observed, lifecycle) => {
+      assert.equal(observed, token); calls.push(lifecycle); return 'synthetic raw admission';
+    } },
+  });
+  assert.equal(owner.isCurrentEngineContext(9, token), 0);
+  assert.deepEqual(calls.splice(0), [['generation', 9]]);
+  current = true;
+  assert.equal(owner.isCurrentEngineContext(9, token), 'synthetic raw admission');
+  assert.deepEqual(calls.splice(0), [['generation', 9], 'intent', { connectionIntent: 7, engineGeneration: 9 }]);
+  fail = true;
+  assert.throws(() => owner.isCurrentEngineContext(9, token), error);
+});
+
+test('owned Browser resume admission preserves connected-first raw observation without quit policy', () => {
+  let connected = false, active = true, activeReads = 0;
+  const owner = new ConnectionOperationCoordinator({
+    connectionState: { isConnected: () => connected },
+    engineSupervisor: { get hasActive() { activeReads++; return active; } },
+    isQuitting: () => { throw new Error('resume admission must not invent a quit policy'); },
+  });
+  assert.equal(owner.canResumeBrowser(), false); assert.equal(activeReads, 0);
+  connected = true;
+  assert.equal(owner.canResumeBrowser(), true); assert.equal(activeReads, 1);
+  active = 'synthetic raw active'; assert.equal(owner.canResumeBrowser(), active);
+});
+
+test('owned telemetry reconnect delegates only for its current Engine context and keeps failures', async () => {
+  const f = contextFixture(); const calls = [], result = Promise.resolve({ ok: true });
+  f.owner.reconnect = generation => { calls.push(generation); return result; };
+  assert.equal(f.owner.reconnectCurrentEngineContext(1, f.token), result);
+  assert.deepEqual(await f.owner.reconnectCurrentEngineContext(2, f.token), { ok: false, stale: true });
+  assert.deepEqual(calls, [1]);
+  const error = new Error('synthetic reconnect failure');
+  f.owner.reconnect = () => Promise.reject(error);
+  await assert.rejects(f.owner.reconnectCurrentEngineContext(1, f.token), error);
+  f.lease.invalidate();
+  assert.deepEqual(await f.owner.reconnectCurrentEngineContext(1, f.token), { ok: false, stale: true });
+});
+
+test('owned initial offline pause retains real recovery intent without cancelling startup itself', async () => {
+  const f = fixture(); let startupCancels = 0;
+  f.owner.cancelRecovery = () => { startupCancels++; };
+  const recovery = new ConnectivityRecovery({
+    invalidate: (reason, intent) => f.owner.invalidateForConnectivity(reason, intent),
+    getLifecycleIntent: () => f.owner.currentRecoveryIntent(), shouldReconnect: () => false, reconnect() {},
+  });
+  f.owner.connectivityRecovery = recovery;
+  try {
+    const intent = f.owner.pauseInitialOffline();
+    assert.equal(intent, f.fsm.snapshot().intent);
+    assert.equal(f.fsm.snapshot().phase, 'connectivity-paused');
+    assert.equal(f.fsm.snapshot().desiredConnected, true);
+    assert.equal(recovery.snapshot().pendingIntent, intent);
+    assert.equal(startupCancels, 0); assert.equal(f.launches, 0);
+    await f.owner.disconnectInFlight;
+  } finally { recovery.dispose(); }
+});
+
+test('owned initial offline pause preserves cancel begin pause order raw acceptance and failures', () => {
+  const calls = []; let accepted = false, fail = '';
+  const error = new Error('synthetic pause failure');
+  const observe = name => { calls.push(name); if (fail === name) throw error; };
+  const owner = new ConnectionOperationCoordinator({
+    connectionState: { beginConnectIntent: () => { observe('begin'); return 7; } },
+    connectivityRecovery: { cancel: () => observe('cancel'), networkOffline: intent => {
+      assert.equal(intent, 7); observe('pause'); return accepted;
+    } },
+  });
+  assert.deepEqual(calls, [], 'construction must not evaluate injected effects');
+  for (accepted of [false, 0, undefined, true, 'synthetic accepted']) {
+    assert.equal(owner.pauseInitialOffline(), accepted ? 7 : null);
+    assert.deepEqual(calls.splice(0), ['cancel', 'begin', 'pause']);
+  }
+  for (fail of ['cancel', 'begin', 'pause']) {
+    assert.throws(() => owner.pauseInitialOffline(), error);
+    assert.deepEqual(calls.splice(0), ['cancel', 'begin', 'pause'].slice(0, ['cancel', 'begin', 'pause'].indexOf(fail) + 1));
+  }
+});
 
 test('Boolean Browser readiness preserves connected and failed-connect admission', async () => {
   const f = fixture();

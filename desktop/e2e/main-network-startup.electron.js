@@ -103,6 +103,13 @@ async function run() {
   // Fixture-only capture of Main's actual public eligibility factory. Keep
   // construction effect-free and ordinary coordinator evaluation authoritative.
   const network = require('../lib/connection/telemetry/network-status-monitor');
+  const connection = require('../lib/connection/state/connection-state-machine');
+  const OriginalOperation = connection.ConnectionOperationCoordinator;
+  const operationCalls = { pause: 0, current: 0 };
+  connection.ConnectionOperationCoordinator = class FixtureOperation extends OriginalOperation {
+    pauseInitialOffline() { operationCalls.pause++; return super.pauseInitialOffline(); }
+    isCurrentEngineContext(...args) { operationCalls.current++; return super.isCurrentEngineContext(...args); }
+  };
   const originalEligibility = network.createStartupAutoConnectEligibility;
   const originalSystem = network.createNetworkStartupSystem;
   let mainStartupEffects;
@@ -121,12 +128,14 @@ async function run() {
     return predicate;
   };
   require('../main');
+  connection.ConnectionOperationCoordinator = OriginalOperation;
   network.createStartupAutoConnectEligibility = originalEligibility;
   network.createNetworkStartupSystem = originalSystem;
   const control = await controlWindow();
   await waitFor(async () => (await invoke(control, 'window.api.getState()')).phase ===
     'connectivity-paused', 'initial offline pause');
   assert.equal(attemptCount(), 0, 'initial offline startup must not spawn an Engine');
+  assert.equal(operationCalls.pause, 1, 'initial offline intent belongs to the actual Connection owner');
   assert.equal(factoryUsed, true);
   assert.ok(eligibilityReads > 0, 'ordinary startup must evaluate the current settings');
 
@@ -135,6 +144,7 @@ async function run() {
     const state = await invoke(control, 'window.api.getState()');
     return state.connected && attemptCount() === 1;
   }, 'single online Engine generation');
+  assert.ok(operationCalls.current > 0, 'actual Engine serving must use the owned context admission');
 
   fs.writeFileSync(networkStateFile, 'offline\n', { mode: 0o600 });
   await waitFor(async () => {
