@@ -100,6 +100,84 @@ class BrowserTeardownOwner {
   }
 }
 
+// A route command uses the existing rule transaction and page/navigation
+// authorities. Only admission is owned here: no second rule store or PAC state.
+class BrowserRouteCommandOwner {
+  constructor({ findTab, beginNavigationIntent, navigationIntentCurrent,
+    captureAdmission, admissionCurrent, pageCurrent, getPolicy, clearCredentialCandidate,
+    currentUrl, getHomeUrl, getPort, ensureCampusReady, configure, clearSlowTimer,
+    updateAllTabRoutes, updateTabRoute, navigate, scheduleToolbarUpdate } = {}) {
+    const ports = { findTab, beginNavigationIntent, navigationIntentCurrent,
+      captureAdmission, admissionCurrent, pageCurrent, getPolicy, clearCredentialCandidate,
+      currentUrl, getHomeUrl, getPort, ensureCampusReady, configure, clearSlowTimer,
+      updateAllTabRoutes, updateTabRoute, navigate, scheduleToolbarUpdate };
+    if (Object.values(ports).some(port => typeof port !== 'function')) {
+      throw new TypeError('Browser route command dependencies are incomplete');
+    }
+    Object.assign(this, ports);
+  }
+
+  current(scope) {
+    return this.getPolicy() === scope.policy && this.pageCurrent(scope.admission) &&
+      this.navigationIntentCurrent(scope.tab, scope.intent);
+  }
+
+  async set(id, route) {
+    if (!['auto', ROUTE_CAMPUS, ROUTE_DIRECT].includes(route)) return false;
+    const tab = this.findTab(id);
+    if (!tab || tab.kind === 'workspace') return false;
+    const initial = this.captureAdmission(tab);
+    if (!initial || !this.pageCurrent(initial)) return false;
+    const intent = this.beginNavigationIntent(tab);
+    const scope = { tab, intent, admission: this.captureAdmission(tab), policy: this.getPolicy() };
+    if (!this.current(scope)) return false;
+    try {
+      // Request admission invalidates staged login evidence even if readiness fails.
+      this.clearCredentialCandidate(tab);
+      if (!this.current(scope)) return false;
+      const url = tab.failedUrl || this.currentUrl(tab) || this.getHomeUrl();
+      let host;
+      try { host = normalizeRuleHost(new URL(url).hostname); } catch { return false; }
+      if (route === ROUTE_CAMPUS && !await this.ensureCampusReady()) return false;
+      // No rule has been submitted yet. A changed page/intent/window/context may
+      // retire the command while readiness is pending; do not start storage IO.
+      if (!this.current(scope) || !this.admissionCurrent(scope.admission)) return false;
+      if (route === 'auto') {
+        if (typeof scope.policy.remove !== 'function') return false;
+        await scope.policy.remove({ host, includeSubdomains: false });
+      } else {
+        await scope.policy.upsert({ host, includeSubdomains: false, route });
+      }
+      // IO already accepted by the original store is not cancelled or rolled back.
+      // Only further Browser/PAC/page effects are fenced by the original lifetime.
+      if (!this.current(scope)) return true;
+      if (scope.policy.appliesLiveSession !== true) {
+        await this.configure(this.getPort() || 1080, { force: true });
+        if (!this.current(scope)) return true;
+      }
+      this.clearSlowTimer(tab);
+      if (!this.current(scope)) return true;
+      this.updateAllTabRoutes();
+      if (!this.current(scope)) return true;
+      const resolution = this.updateTabRoute(tab, url);
+      if (!this.current(scope)) return true;
+      if (resolution?.route === ROUTE_CAMPUS && !await this.ensureCampusReady()) return false;
+      if (!this.current(scope)) return true;
+      const contents = scope.admission.record.contents;
+      if (tab.failedUrl || tab.renderingError) this.navigate(url, tab);
+      else if (!contents.isDestroyed()) {
+        if (typeof contents.reloadIgnoringCache === 'function') contents.reloadIgnoringCache();
+        else contents.reload();
+      }
+      if (this.current(scope)) this.scheduleToolbarUpdate();
+      return true;
+    } catch (error) {
+      if (!this.current(scope)) return false;
+      throw error;
+    }
+  }
+}
+
 function calendarWeekQuery(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
       Object.keys(value).some(key => !['date', 'force'].includes(key)) ||
@@ -1134,6 +1212,7 @@ class MyPortalDataRuntime {
 }
 
 module.exports = {
+  BrowserRouteCommandOwner,
   BrowserTeardownOwner,
   BrowserRoutingActivationOwner,
   BrowserSessionManager,

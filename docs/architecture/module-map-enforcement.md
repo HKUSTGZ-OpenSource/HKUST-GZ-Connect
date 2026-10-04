@@ -118,7 +118,11 @@ dependency enforcement on.
 
 `dependencyEnforcement: inventory-only` is an explicit schema field. The path-coverage checker
 validates referenced module IDs, while the separate architecture ratchet rejects new resolved
-static-JS violations but still records 90 legacy exceptions in the current contract.
+static-JS violations but still records 89 legacy exceptions in the current contract.
+The Browser route-command admission follow-on retires exactly one Browser-root private
+rule-store edge through the existing Session entrypoint; its remaining Session-to-rule-store
+exception is not hidden or declared public. The inventory and hard cap fall from90 to89,
+without changing the inventory-only enforcement field or claiming complete M5.
 It does not resolve computed
 `require()`/`import()` targets or Rust visibility and cannot prove full cross-module enforcement.
 Do not change the field to claim otherwise. The existing Renderer feature checks cover their

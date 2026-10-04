@@ -27,7 +27,7 @@ accepts its source outcome; M4/#82 is closed through #148. M1/M2/M5 remain open.
 Counts are debt evidence, not a substitute for ownership/lifecycle gates.
 Per-wave size counts below are historical extraction receipts, not competing current totals.
 All three M3 numerical stages and semantic/platform criteria are met at the receipt checkpoint.
-Current static-JS debt inventory/cap is 90 and the frozen legacy Renderer list has 24 files.
+Current static-JS debt inventory/cap is 89 (90 at the M3 checkpoint above), and the frozen legacy Renderer list has 24 files.
 
 Primary concurrency hot spots:
 
@@ -198,6 +198,12 @@ through the existing Session entrypoint. Native close is attempted after another
 unconfirmed tab/popup/window ownership is retained, and retry uses captured native contents.
 Source candidate919->897 adds no production graph node or schema; full M2 route/open/composition
 acceptance remains separate from this bounded partial-cleanup repair.
+
+The [route-command lifetime](browser-route-command-lifetime.md) gives the existing per-tab rule
+command an original page/navigation/policy admission. Retired readiness cannot submit IO, and
+accepted IO cannot reconfigure/present in another lifetime; rule semantics stay unchanged.
+Browser897->871 and exactly one private root rule-store edge/cap90->89 retire without a new
+production node. Creation/open/composition and full M2 acceptance remain separate.
 
 ## Wave M3 — Desktop Main composition
 

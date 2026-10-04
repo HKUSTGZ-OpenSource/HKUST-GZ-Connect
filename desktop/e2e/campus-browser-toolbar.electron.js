@@ -159,6 +159,53 @@ async function assertTeardownFailureIsolation(browser) {
   process.stdout.write('native Browser teardown failure isolation: PASS\n');
 }
 
+async function assertRouteCommandRetirement(browser) {
+  const originalTabId = browser.activeTabId, policy = browser.routingPolicy;
+  const originalReady = browser.ensureCampusReady, originalUpsert = policy.upsert,
+    originalConfigure = browser.configure;
+  let finishReadiness, finishWrite, pending;
+  try {
+    await browser.open(CONFIGURED_HOME, 11080, ROUTE_DIRECT);
+    let tab = browser.activeTab();
+    await waitForPage(tab.view.webContents, 'location.href === ' + JSON.stringify(CONFIGURED_HOME), 'owned route readiness page');
+    let mutations = 0;
+    policy.upsert = payload => { mutations++; return originalUpsert.call(policy, payload); };
+    browser.ensureCampusReady = () => new Promise(resolve => { finishReadiness = resolve; });
+    pending = browser.setTabRoute(tab.id, ROUTE_CAMPUS);
+    assert.equal(typeof finishReadiness, 'function');
+    browser.closeTab(tab.id);
+    finishReadiness(true);
+    assert.equal(await pending, false);
+    assert.equal(mutations, 0, 'closed native tab cannot admit a delayed personal rule');
+
+    browser.ensureCampusReady = originalReady;
+    await browser.open(CONFIGURED_HOME, 11080, ROUTE_DIRECT);
+    tab = browser.activeTab();
+    await waitForPage(tab.view.webContents, 'location.href === ' + JSON.stringify(CONFIGURED_HOME), 'owned route write page');
+    let accepted = 0;
+    const writing = new Promise(resolve => { finishWrite = resolve; });
+    policy.upsert = payload => {
+      accepted++; const result = originalUpsert.call(policy, payload);
+      return writing.then(() => result);
+    };
+    let configurations = 0;
+    browser.configure = (...args) => { configurations++; return originalConfigure.apply(browser, args); };
+    pending = browser.setTabRoute(tab.id, ROUTE_DIRECT);
+    assert.equal(accepted, 1, 'the original in-memory rule store admitted the write');
+    browser.closeTab(tab.id);
+    finishWrite();
+    assert.equal(await pending, true);
+    assert.equal(configurations, 0, 'retired native page cannot reconfigure the Browser Session');
+  } finally {
+    finishReadiness?.(true); finishWrite?.();
+    if (pending) await pending;
+    browser.ensureCampusReady = originalReady; policy.upsert = originalUpsert;
+    browser.configure = originalConfigure;
+    if (browser.tabs.some(tab => tab.id === originalTabId)) browser.switchTab(originalTabId);
+  }
+  process.stdout.write('native Browser route command retirement: PASS\n');
+}
+
 function assertOnlyActiveTabAttached(browser) {
   const tabViews = browser.window.contentView.children.filter((child) => (
     browser.tabs.some((tab) => tab.view === child)
@@ -726,6 +773,7 @@ async function main() {
 
     await runStage('drag regions', () => assertDragRegions(browser));
     await runStage('route switch', () => assertRouteSwitch(browser));
+    await runStage('route command retirement', () => assertRouteCommandRetirement(browser));
     await runStage('find bar', () => assertFindBar(browser));
     await runStage('viewport lifecycle', () => assertViewportLifecycle(browser));
     await runStage('browser screenshots', () => captureBrowserChrome(browser));
