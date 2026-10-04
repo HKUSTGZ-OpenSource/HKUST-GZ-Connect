@@ -176,6 +176,12 @@ Page/document and credential command ownership remain open, so this slice is not
 
 Exit target: no Browser owner exceeds 600 lines and lifecycle tests cover every extracted teardown.
 
+The [page presentation owner](browser-page-presentation-owner.md) isolates page listeners,
+slow-load/failure/crash presentation and late observation effects beside the existing chrome owners.
+It keeps routing and credential algorithms behind their original ports, lowering Browser1094->968
+without a new production dependency node. Credential-command and remaining composition ownership
+still require separate M2 acceptance; a local source candidate is not a release or complete wave.
+
 ## Wave M3 — Desktop Main composition
 
 Completed source outcome, with every #81 criterion mapped to concrete owner/test/platform

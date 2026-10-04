@@ -9,7 +9,8 @@ const {
   ROUTE_DIRECT,
 } = require('../../routing/policy/campus-route');
 const { normalizeRuleHost } = require('../../routing/rules/routing-rule-store');
-const { BrowserToolbarCommandOwner, BrowserToolbarOwner, BrowserViewportOwner } = require('../toolbar/browser-toolbar-owner');
+const { BrowserPagePresentationOwner, BrowserToolbarCommandOwner, BrowserToolbarOwner,
+  BrowserViewportOwner, errorPage, redactedFailedUrl } = require('../toolbar/browser-toolbar-owner');
 const { BrowserWorkspaceOwner, projectBrowserWorkspaceResources, MAX_WORKSPACE_HOME_RESOURCES } =
   require('../workspace/campus-workspace-controller');
 const { CertificateController } = require('../certificates/certificate-controller');
@@ -122,48 +123,6 @@ function navigationForContents(contents) {
   };
 }
 
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (character) => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  }[character]));
-}
-
-// Failure URLs frequently carry SAML assertions, OAuth codes, and other
-// one-time credentials in their query or path.  Keep the exact URL on the tab
-// for retry, but only render its origin into the user-visible error document so
-// screenshots and copied diagnostics cannot disclose those secrets.
-function redactedFailedUrl(value, fallback) {
-  try {
-    const parsed = new URL(String(value || ''));
-    if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname) return fallback;
-    return parsed.origin;
-  } catch {
-    return fallback;
-  }
-}
-
-function errorPage(failedUrl, description, t = createT('zh'), route = ROUTE_CAMPUS) {
-  const url = escapeHtml(redactedFailedUrl(failedUrl, t('errorPage.unknownUrl')));
-  const reason = escapeHtml(description || t('errorPage.networkFailed'));
-  const html = `<!doctype html><meta charset="utf-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
-    <meta name="color-scheme" content="light">
-    <title>${escapeHtml(t('errorPage.title'))}</title>
-    <style>
-      body{margin:0;background:#f7f9fc;color:#1b2536;font-family:-apple-system,"PingFang SC","Segoe UI",sans-serif}
-      main{max-width:560px;margin:12vh auto;padding:36px;background:#fff;border:1px solid #e8edf5;border-radius:18px;box-shadow:0 12px 30px rgba(13,30,66,.08)}
-      h1{margin:0 0 14px;color:#0b2a5b;font-size:23px}p{line-height:1.7;color:#667085}
-      code{display:block;margin-top:16px;padding:12px;background:#f4f7fb;border-radius:10px;word-break:break-all;color:#344054}
-    </style>
-    <main><h1>${escapeHtml(t('errorPage.heading'))}</h1>
-    <p>${escapeHtml(t(route === ROUTE_DIRECT ? 'errorPage.bodyDirect' : 'errorPage.bodyCampus'))}</p>
-    <code>${url}</code><p>${reason}</p></main>`;
-  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
-}
 
 function workspaceHomeResources(value, t = createT('zh')) {
   return projectBrowserWorkspaceResources(value,
@@ -291,7 +250,9 @@ class CampusBrowser {
         windowChrome: campusWindowChrome,
         onToolbarCommand: payload => this.handleToolbarCommand(payload),
         onResize: () => this.scheduleLayout(),
-        onBeforeCreate: () => { this.cancelScheduledUpdates(); this.toolbarOwner?.reset(); },
+        onBeforeCreate: () => {
+          this.cancelScheduledUpdates(); this.pagePresentationOwner?.reset(); this.toolbarOwner?.reset();
+        },
         onClosed: () => this.handleWindowClosed(),
         onMissingWindow: () => this.close(),
       })
@@ -315,7 +276,10 @@ class CampusBrowser {
       getWorkspace: () => this.workspaceController,
       effects: {
         linkPopup: (reservation, tab) => this.credentialController.linkPopup(reservation, tab),
-        closeTabState: tab => this.credentialController.closeTab(tab),
+        closeTabState: tab => {
+          try { this.pagePresentationOwner.detach(tab); }
+          finally { this.credentialController.closeTab(tab); }
+        },
         releasePopup: reservation => this.credentialController.releasePopup(reservation),
         attachPageEvents: tab => this.attachPageEvents(tab),
         navigate: (url, tab, route) => this.navigate(url, tab, route),
@@ -409,6 +373,29 @@ class CampusBrowser {
       isContextCurrent: () => this.windowOwner?.contextRetired !== true,
       updateToolbar: () => this.updateToolbar(),
       toolbarHeight: TOOLBAR_HEIGHT, findBarHeight: FIND_BAR_HEIGHT,
+    });
+    this.pagePresentationOwner = new BrowserPagePresentationOwner({
+      getWindow: () => this.window, containsTab: tab => this.tabManager.contains(tab),
+      isContextCurrent: () => this.windowOwner?.contextRetired !== true,
+      currentUrl: tab => this.currentUrl(tab), getHomeUrl: () => this.homeUrl,
+      getTranslator: () => this.t, safePopupUrl, blankUrl: BLANK_CAMPUS_HOME,
+      slowLoadingHintMs: SLOW_LOADING_HINT_MS,
+      effects: {
+        scheduleToolbarUpdate: () => this.scheduleToolbarUpdate(),
+        windowOpenResponse: (tab, url) => this.windowOpenResponse(tab, url),
+        fillSharedPortalCredential: tab => this.fillSharedPortalCredential(tab),
+        markCredentialNavigation: (tab, url, code) => this.markCredentialNavigation(tab, url, code),
+        updateTabRoute: (tab, url) => this.updateTabRoute(tab, url),
+        recordPortalSessionUrl: url => this.onPortalSessionUrl(url),
+        recordPageOpen: url => this.onRecordPageOpen ? this.onRecordPageOpen(url) : false,
+        refreshWorkspaceHomes: () => this.refreshWorkspaceHomes(),
+        clearCredentialCandidate: tab => this.clearCredentialCandidate(tab),
+        stageCredentialCandidate: (tab, candidate) => this.credentialController.stage(tab, candidate),
+        confirmCredentialPageState: (tab, state) => this.credentialController.confirmPageState(tab, state),
+        cancelCertificatePrompts: () => this.certificateController.cancelAll(),
+        handleKeyboard: (tab, event, input) => this.toolbarCommands.handleKeyboard(tab, event, input),
+        reportError: message => this.onError?.(message),
+      },
     });
     this.toolbarOwner = new BrowserToolbarOwner({
       getWindow: () => this.window,
@@ -650,11 +637,7 @@ class CampusBrowser {
   }
 
   clearSlowTimer(tab) {
-    if (tab.slowTimer) {
-      clearTimeout(tab.slowTimer);
-      tab.slowTimer = null;
-    }
-    tab.slow = false;
+    this.pagePresentationOwner.clearSlowTimer(tab);
   }
 
   windowOpenResponse(tab, url) {
@@ -670,92 +653,7 @@ class CampusBrowser {
   }
 
   attachPageEvents(tab) {
-    const contents = tab.view.webContents;
-    contents.setWindowOpenHandler(({ url }) => this.windowOpenResponse(tab, url));
-    const rejectNonWebNavigation = (event, url) => {
-      if (!safePopupUrl(url)) event?.preventDefault?.();
-    };
-    // A compromised campus page cannot turn this isolated WebContents into a
-    // file/custom-protocol reader. Cover both script/user navigations and HTTP
-    // redirects; regular HTTP(S), fragment, and history navigation remain.
-    contents.on('will-navigate', rejectNonWebNavigation);
-    contents.on('will-redirect', rejectNonWebNavigation);
-    contents.on('did-start-loading', () => {
-      tab.loading = true;
-      if (!tab.loadingLabel) {
-        try { tab.loadingLabel = new URL(this.currentUrl(tab)).hostname; } catch { tab.loadingLabel = ''; }
-      }
-      if (!tab.renderingError) tab.failedUrl = '';
-      this.clearSlowTimer(tab);
-      tab.slowTimer = setTimeout(() => {
-        tab.slowTimer = null;
-        tab.slow = true;
-        this.scheduleToolbarUpdate();
-      }, SLOW_LOADING_HINT_MS);
-      tab.slowTimer.unref?.();
-      this.scheduleToolbarUpdate();
-    });
-    contents.on('did-stop-loading', () => {
-      tab.loading = false;
-      tab.loadingLabel = '';
-      tab.renderingError = false;
-      this.clearSlowTimer(tab);
-      this.scheduleToolbarUpdate();
-    });
-    contents.on('dom-ready', () => {
-      this.fillSharedPortalCredential(tab).catch(() => {});
-    });
-    contents.on('did-navigate', (_event, url, httpResponseCode = 0) => {
-      if (tab.kind === 'blank' && url !== BLANK_CAMPUS_HOME) delete tab.kind;
-      this.markCredentialNavigation(tab, url, httpResponseCode);
-      this.updateTabRoute(tab, url);
-      this.recordPortalSessionUrl(url);
-      try {
-        if (new URL(url).origin === new URL(this.homeUrl).origin) {
-          tab.sharedCredentialAttemptedOrigin = '';
-        }
-      } catch {}
-      if (this.onRecordPageOpen) {
-        Promise.resolve(this.onRecordPageOpen(url)).then((changed) => {
-          if (changed) this.refreshWorkspaceHomes();
-        }).catch(() => {});
-      }
-      this.scheduleToolbarUpdate();
-    });
-    contents.on('did-navigate-in-page', (_event, url) => {
-      this.recordPortalSessionUrl(url);
-      this.scheduleToolbarUpdate();
-    });
-    contents.on('page-title-updated', () => this.scheduleToolbarUpdate());
-    // Provisional failures (DNS, reset, timeout before the page commits) do not
-    // fire did-fail-load; without this handler the tab stayed blank and the
-    // failed URL was lost, so a route switch silently fell back to the school
-    // home page instead of retrying the site the user asked for.
-    const handleLoadFailure = (_event, code, description, failedUrl, isMainFrame) => {
-      if (!isMainFrame || code === -3 || !safePopupUrl(failedUrl)) return;
-      tab.loading = false;
-      tab.failedUrl = failedUrl;
-      tab.renderingError = true;
-      this.clearCredentialCandidate(tab);
-      this.clearSlowTimer(tab);
-      contents.loadURL(errorPage(failedUrl, description, this.t, tab.route)).catch(() => {});
-      this.scheduleToolbarUpdate();
-    };
-    contents.on('did-fail-load', handleLoadFailure);
-    contents.on('did-fail-provisional-load', handleLoadFailure);
-    contents.on('ipc-message', (_event, channel, candidate) => {
-      if (channel === 'campus-credential-candidate') {
-        this.credentialController.stage(tab, candidate);
-      } else if (channel === 'campus-credential-page-state') {
-        this.credentialController.confirmPageState(tab, candidate).catch(() => {});
-      }
-    });
-    contents.on('render-process-gone', (_event, details) => {
-      this.handleRendererCrash(tab, details);
-    });
-    contents.on('before-input-event', (event, input) => {
-      this.toolbarCommands.handleKeyboard(tab, event, input);
-    });
+    if (!this.pagePresentationOwner.attach(tab)) throw new Error('Campus Browser page is retired');
   }
 
   tabOrigin(tab) {
@@ -769,13 +667,7 @@ class CampusBrowser {
   }
 
   recordPortalSessionUrl(rawUrl) {
-    try {
-      const value = new URL(rawUrl);
-      const portal = new URL(this.homeUrl);
-      if (value.protocol !== 'https:' || value.origin !== portal.origin ||
-          value.username || value.password || value.href.length > 2_048) return false;
-      return this.onPortalSessionUrl(value.href) === true;
-    } catch { return false; }
+    return this.pagePresentationOwner.recordPortalSessionUrl(rawUrl);
   }
 
   clearCredentialCandidate(tab) {
@@ -799,27 +691,7 @@ class CampusBrowser {
   }
 
   handleRendererCrash(tab, details = {}) {
-    if (!tab || !this.tabManager.contains(tab) || tab.view.webContents.isDestroyed() ||
-        details.reason === 'clean-exit') return;
-    this.certificateController.cancelAll();
-    const contents = tab.view.webContents;
-    const failedUrl = this.currentUrl(tab) || this.homeUrl;
-    const reason = String(details.reason || 'crashed').slice(0, 80);
-    tab.loading = false;
-    tab.failedUrl = safePopupUrl(failedUrl) ? failedUrl : this.homeUrl;
-    tab.renderingError = true;
-    tab.crashed = true;
-    this.clearCredentialCandidate(tab);
-    this.clearSlowTimer(tab);
-    contents.loadURL(errorPage(
-      tab.failedUrl,
-      this.t('errorPage.rendererCrash', { reason }),
-      this.t,
-      tab.route,
-    )).catch(() => {
-      if (this.onError) this.onError(this.t('errorPage.rendererCrash', { reason }));
-    });
-    this.scheduleToolbarUpdate();
+    this.pagePresentationOwner.handleRendererCrash(tab, details);
   }
 
   async manageCredential(tab) {
@@ -989,6 +861,7 @@ class CampusBrowser {
 
   handleWindowClosed() {
     this.cancelScheduledUpdates();
+    this.pagePresentationOwner.reset();
     this.certificateController.cancelAll();
     this.tabManager.closeViews();
     this.popupOwner.closeAll();
@@ -1046,6 +919,7 @@ class CampusBrowser {
 
   close() {
     this.cancelScheduledUpdates();
+    this.pagePresentationOwner.reset();
     this.certificateController.cancelAll();
     if (this.windowOwner?.requestClose() === true) return;
     const retired = this.windowOwner?.clear();
