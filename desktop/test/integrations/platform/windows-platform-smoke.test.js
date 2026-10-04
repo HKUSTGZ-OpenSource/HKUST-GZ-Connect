@@ -24,6 +24,8 @@ const { DomainRoutePolicyStore } = require('../../../lib/routing/policy/domain-r
 const { createStartupAutoConnectEligibility } = require('../../../lib/connection/telemetry/network-status-monitor');
 const { UpdateNotificationRuntime } = require('../../../lib/platform/update/update-check');
 const { createSharedPortalCredentialProvider } = require('../../../lib/profiles/runtime/school-profile-controller');
+const { DiagnosticLogAccessRuntime } = require('../../../lib/diagnostics/logging/log-writer');
+const { desktopRuntimeComposition: { ActiveContextLease } } = require('../../../lib/app/desktop-runtime-composition');
 const {
   commitActiveContextSwitch,
   createPreparedActiveContextSwitch,
@@ -66,6 +68,33 @@ function customConfirmation() {
   });
   return owner.consume({ confirmationHandle: view.confirmationHandle, activeContext });
 }
+
+test('native Main diagnostic wiring preserves live tail and rejects an invalidated real context lease', async t => {
+  const root = privateRoot(t, 'hkustgz-native-diagnostic-context-');
+  const file = path.join(root, 'engine.log');
+  fs.writeFileSync(file, 'synthetic scoped log\n', { mode: 0o600 });
+  const lease = new ActiveContextLease({ profileId: 'hkustgz', profileRevision: 1,
+    accountHandle: `account-${'a'.repeat(36)}`, activeContextEpoch: 1 });
+  let release, blocked = false, opened = 0, errors = 0;
+  const pendingFlush = new Promise(resolve => { release = resolve; });
+  const writer = { closed: false, flush: () => blocked ? pendingFlush : Promise.resolve() };
+  const source = fs.readFileSync(path.join(DESKTOP, 'main.js'), 'utf8');
+  const options = source.match(/new DiagnosticLogAccessRuntime\((\{[\s\S]*?\})\);/u)?.[1];
+  assert.ok(options);
+  const owner = vm.runInNewContext(`new DiagnosticLogAccessRuntime(${options})`, {
+    DiagnosticLogAccessRuntime, LOG: file, logWriter: writer, activeContextLease: lease,
+    desktopShell: { isQuitting: false }, reportLogFailure: () => { errors++; },
+    shell: { openPath: async () => { opened++; } },
+  });
+  assert.equal(await owner.read(), 'synthetic scoped log\n');
+  blocked = true;
+  const pending = Promise.all([owner.read(), owner.open()]);
+  lease.invalidate(); release();
+  assert.deepEqual(await pending, ['', undefined]);
+  assert.equal(opened, 0); assert.equal(errors, 0);
+  assert.equal(await owner.read(), '');
+  assert.equal(fs.readFileSync(file, 'utf8'), 'synthetic scoped log\n');
+});
 
 test('native Main shared-portal selection preserves exact rejection and disposable-owner identity', t => {
   const source = fs.readFileSync(path.join(DESKTOP, 'main.js'), 'utf8');

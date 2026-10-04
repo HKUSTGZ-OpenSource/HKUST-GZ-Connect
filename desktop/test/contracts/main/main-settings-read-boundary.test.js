@@ -88,6 +88,15 @@ test('Main retires update work before other shutdown resources and forwards its 
   assert.doesNotMatch(source, /updateNotifications\?\.stopAutomatic\(\)/u);
 });
 
+test('Main delegates async diagnostic IO to the context-bound public owner', () => {
+  assert.match(source, /new DiagnosticLogAccessRuntime\(\{/u);
+  assert.match(source, /captureContext: \(\) => activeContextLease\.captureContext\(\), isContextCurrent: token => activeContextLease\.isContextCurrent\(token\)/u);
+  assert.match(source, /isQuitting: \(\) => desktopShell\?\.isQuitting === true/u);
+  assert.match(source, /getLogs: \(\) => diagnosticLogAccess\.read\(\)/u);
+  assert.match(source, /openLog: \(\) => diagnosticLogAccess\.open\(\)/u);
+  assert.doesNotMatch(source, /getLogs: async|openLog: async|readLogTail\(LOG\)/u);
+});
+
 test('a startup PAC failure does not hide an earlier recovery error', () => {
   const startup = startupOwner.slice(startupOwner.indexOf('async #initialize()'));
   assert.match(startup, /const pacError =/);

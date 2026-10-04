@@ -343,26 +343,31 @@ class BufferedLogWriter {
   }
 }
 
-async function readLogTail(file, { maxBytes = DEFAULT_TAIL_BYTES, maxLines = 300 } = {}) {
+async function readLogTail(file, { maxBytes = DEFAULT_TAIL_BYTES, maxLines = 300, contextCurrent = () => true } = {}) {
   let opened;
   try {
+    if (typeof contextCurrent !== 'function' || contextCurrent() !== true) return '';
     opened = await openVerifiedRegular(file, fs.constants.O_RDONLY);
+    if (contextCurrent() !== true) return '';
     const boundedBytes = boundedInteger(maxBytes, DEFAULT_TAIL_BYTES, 1024, DEFAULT_MAX_BYTES);
     const boundedLines = boundedInteger(maxLines, 300, 1, MAX_TAIL_LINES);
     const length = Math.min(opened.stat.size, boundedBytes);
     const buffer = Buffer.alloc(length);
     let total = 0;
     while (total < length) {
+      if (contextCurrent() !== true) return '';
       const { bytesRead } = await opened.handle.read(
         buffer,
         total,
         length - total,
         opened.stat.size - length + total,
       );
+      if (contextCurrent() !== true) return '';
       if (bytesRead <= 0) break;
       total += bytesRead;
     }
     await recheckOpenPath(file, opened.handle, opened.stat);
+    if (contextCurrent() !== true) return '';
 
     let text = buffer.subarray(0, total).toString('utf8');
     if (opened.stat.size > total) {
@@ -378,7 +383,62 @@ async function readLogTail(file, { maxBytes = DEFAULT_TAIL_BYTES, maxLines = 300
   }
 }
 
+class DiagnosticLogAccessRuntime {
+  #effects;
+
+  constructor({ file, getWriter, captureContext, isContextCurrent, isQuitting,
+    onFlushFailure, openPath, readTail = readLogTail } = {}) {
+    if (typeof file !== 'string' || !file ||
+        [getWriter, captureContext, isContextCurrent, isQuitting, onFlushFailure, openPath, readTail]
+          .some(effect => typeof effect !== 'function')) {
+      throw new TypeError('diagnostic access dependencies are invalid');
+    }
+    this.#effects = Object.freeze({ file, getWriter, captureContext, isContextCurrent,
+      isQuitting, onFlushFailure, openPath, readTail });
+  }
+
+  #current(snapshot) {
+    try {
+      return !this.#effects.isQuitting() && this.#effects.getWriter() === snapshot.writer &&
+        snapshot.writer?.closed !== true && this.#effects.isContextCurrent(snapshot.context) === true;
+    } catch { return false; }
+  }
+
+  async #flushed() {
+    let snapshot;
+    try {
+      if (this.#effects.isQuitting()) return null;
+      snapshot = { writer: this.#effects.getWriter(), context: this.#effects.captureContext() };
+      if (!snapshot.writer || typeof snapshot.writer.flush !== 'function' || !this.#current(snapshot)) return null;
+    } catch { return null; }
+    await snapshot.writer.flush().catch(error => {
+      if (this.#current(snapshot)) this.#effects.onFlushFailure(error);
+    });
+    return this.#current(snapshot) ? snapshot : null;
+  }
+
+  async read() {
+    const snapshot = await this.#flushed();
+    if (!snapshot || !this.#current(snapshot)) return '';
+    try {
+      const result = await this.#effects.readTail(this.#effects.file, {
+        contextCurrent: () => this.#current(snapshot),
+      });
+      return this.#current(snapshot) ? result : '';
+    } catch (error) {
+      if (!this.#current(snapshot)) return '';
+      throw error;
+    }
+  }
+
+  async open() {
+    const snapshot = await this.#flushed();
+    if (snapshot && this.#current(snapshot)) await this.#effects.openPath(this.#effects.file).catch(() => {});
+  }
+}
+
 module.exports = {
+  DiagnosticLogAccessRuntime,
   BufferedLogWriter,
   DEFAULT_MAX_BYTES,
   DEFAULT_RETENTION_MS,

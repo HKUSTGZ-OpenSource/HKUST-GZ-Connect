@@ -387,3 +387,22 @@ test('log I/O notifications are throttled per failure episode and clear after pr
   assertTargetUnchanged(snapshot);
   await writer.close();
 });
+
+test('bounded tail reads stop at lifecycle boundaries and close their owned descriptor', async t => {
+  const file = temporaryLog(t);
+  fs.writeFileSync(file, 'synthetic line\n'.repeat(1000), { mode: 0o600 });
+  assert.equal(await readLogTail(file, { contextCurrent: () => false }), '');
+  assert.equal(await readLogTail(file, { contextCurrent: null }), '');
+  const originalOpen = fs.promises.open;
+  const handles = [];
+  fs.promises.open = async (...args) => { const handle = await originalOpen.apply(fs.promises, args);
+    if (args[0] === file) handles.push(handle); return handle; };
+  t.after(() => { fs.promises.open = originalOpen; });
+  let checks = 0;
+  assert.equal(await readLogTail(file, { contextCurrent: () => ++checks < 4 }), '',
+    'retirement during content read cannot return old-context bytes');
+  assert.equal(handles.length, 1);
+  assert.equal(handles[0].fd, -1, 'retirement must still finish descriptor cleanup');
+  fs.promises.open = originalOpen;
+  assert.ok((await readLogTail(file)).includes('synthetic line'));
+});
