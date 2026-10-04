@@ -64,6 +64,13 @@ test('Main credential-origin policy debt is zero and only public Profile/persist
     'this selector must not acquire a new memory-credential entitlement');
 });
 
+test('Main deployment-ID policy debt is zero and campus data source selection belongs to Profile', () => {
+  assert.equal((main.match(/['"]hkustgz['"]/gu) || []).length, 0,
+    'the final primary-Profile data selector must not return to Main');
+  assert.match(main, /getSources: \(\) => activeSchoolProfile\.portalDataSources\(hkustMyPortalSources\)/u);
+  assert.doesNotMatch(main, /getSources:.*activeContextBinding\(\)\.profileId/u);
+});
+
 test('reviewed profile and config binding is validated before credential decryption', () => {
   const connect = attempt;
   assert.match(main, /engineAttempts\.run\(isRetry, intent\)/u);

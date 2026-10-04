@@ -305,6 +305,11 @@ test('reviewed anchor and custom index form one restart-safe candidate directory
   assert.equal(JSON.parse(customController.verifyEngineLaunchBinding().stdinFrame).profileId,
     custom.profileId);
   assert.equal(customController.createPresentation({ locale: 'en' }).schoolProfile.unverified, true);
+  const portalSources = Object.freeze({ schedule: { read() { throw new Error('must not fetch portal data'); } } });
+  const emptySources = customController.portalDataSources(portalSources);
+  assert.deepEqual(emptySources, {});
+  assert.notEqual(customController.portalDataSources(portalSources), emptySources,
+    'unsupported Profile results must retain the original fresh empty-map semantics');
 
   const reviewedController = createSchoolProfileControllerFromCandidate({
     directory: candidates,
@@ -316,6 +321,8 @@ test('reviewed anchor and custom index form one restart-safe candidate directory
   assert.equal(reviewedController.serviceDesk.applications.length >= 12, true);
   assert.equal(reviewedController.serviceDesk.serviceItems.length >= 12, true);
   assert.equal(customController.serviceDesk, null);
+  assert.equal(reviewedController.portalDataSources(portalSources), portalSources,
+    'candidate-backed reviewed primary must preserve the exact maintained source map');
 
   const restarted = directory(userData);
   assert.deepEqual(restarted.listViews({ locale: 'en' }).map((view) => view.profileId),

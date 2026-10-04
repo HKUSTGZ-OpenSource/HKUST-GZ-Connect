@@ -12,6 +12,12 @@ const { createLegacyRuntimeStoragePaths } = require('../lib/persistence/paths/ru
 const { DesktopPersistenceRuntime } = require('../lib/persistence/runtime/desktop-persistence-runtime');
 const { createT } = require('../lib/platform/i18n/i18n');
 const diagnostics = require('../lib/diagnostics/logging/log-writer');
+const portalRuntime = require('../lib/browser/session/browser-session-manager');
+const OriginalPortalRuntime = portalRuntime.MyPortalDataRuntime;
+let portalDataSources;
+portalRuntime.MyPortalDataRuntime = class FixturePortalRuntime extends OriginalPortalRuntime {
+  constructor(effects) { super(effects); portalDataSources = effects.getSources; }
+};
 const connectionOwners = require('../lib/connection/state/connection-state-machine');
 const telemetryOwners = require('../lib/connection/telemetry/connection-telemetry-coordinator');
 const OriginalOperation = connectionOwners.ConnectionOperationCoordinator;
@@ -150,6 +156,7 @@ const startupProjections = [...new Set([
 for (const file of startupProjections) fs.writeFileSync(file, 'synthetic-startup-projection', { mode: 0o600 });
 
 require('../main');
+portalRuntime.MyPortalDataRuntime = OriginalPortalRuntime;
 connectionOwners.ConnectionOperationCoordinator = OriginalOperation;
 telemetryOwners.ConnectionTelemetryCoordinator = OriginalTelemetry;
 diagnostics.DiagnosticLogAccessRuntime = OriginalDiagnosticAccess;
@@ -223,6 +230,8 @@ async function run() {
   const control = await waitForControlWindow();
 
   const initial = await invoke(control, 'window.api.getState()');
+  assert.equal(portalDataSources(), portalRuntime.hkustMyPortalSources,
+    'actual Main primary Profile must select the exact maintained source map without reading it');
   assert.ok(operationOwner && telemetryEffects, 'actual Main must compose the public Connection owners');
   const contextToken = operationOwner.contextLease.captureContext();
   assert.equal(telemetryEffects.isEngineCurrent(1, contextToken), false);

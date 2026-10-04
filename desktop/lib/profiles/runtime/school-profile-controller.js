@@ -216,6 +216,9 @@ function createController(context, options) {
     browserPartition: context.browserPartition,
     builtInResourceCount: builtInResources.length,
     serviceDesk: context.serviceDesk || null,
+    portalDataSources(sources) {
+      return profile.profileId === 'hkustgz' ? sources : {};
+    },
     activeContextBinding: () => Object.freeze({
       profileId: profile.profileId,
       profileRevision: profile.profileRevision,

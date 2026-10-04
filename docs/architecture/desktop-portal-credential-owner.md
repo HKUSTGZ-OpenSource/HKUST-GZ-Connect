@@ -43,3 +43,32 @@ network or installed-app change. Rollback factory/Main/contracts/fixtures togeth
 needs no migration and restores the same admission predicate to Main. Published
 2.0.3 is unchanged. Final Main semantic/public-entrypoint review and full M1/M2/M5/
 governance/report outcomes still need independent acceptance before goal closure.
+
+## Follow-on: reviewed portal data availability
+
+The same existing Profile controller exposes `portalDataSources(sources)` for
+the maintained campus-data adapters injected by Main. It selects by the exact
+normalized Profile ID already owned by this controller: reviewed primary returns
+the supplied source map unchanged; other Profiles receive a fresh empty object
+on every call. It neither inspects/fetches adapters nor opens credentials, sessions
+or storage. No new Profile field, service discovery or custom-school capability
+is added. The Browser data runtime still owns all request/cache/context lifecycle.
+
+Main now delegates its data getter to this public Profile capability rather than
+comparing the deployment ID itself. The one remaining literal primary-ID gate in
+Main falls to zero, frozen by a source contract. Current Main is 662 lines with
+20 direct/35 effective/170 transitive dependencies and private-edge cap98;
+none of these numeric budgets grows. The earlier 666-line credential slice above
+is historical; the follow-on's debt reduction is policy ownership, not line count.
+All other controller/factory/credential bodies are byte-identical.
+
+Local red-to-green contracts cover exact map identity without inspection, real
+candidate-backed primary/custom Profiles and fresh empty rejection. Native Main
+primary/custom startup captures its actual data getter; Windows-selected integration
+uses Main's actual callback and real controllers/provisioned private custom scope.
+These calls perform no data fetch or real-school test; native Windows and packages
+remain separately required. Existing origin/credential policy is not broadened.
+
+Rollback this method/Main callback/contracts/fixtures together needs no stored
+migration. Main's full semantic/public-entrypoint exit audit remains required for
+#81, independently of M1/M2/M5/governance/report and full-goal completion.
