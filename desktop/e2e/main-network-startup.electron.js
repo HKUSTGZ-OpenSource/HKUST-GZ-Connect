@@ -20,6 +20,7 @@ const { saveSettings } = require('../lib/persistence/settings/settings-store');
 // but do not turn host load into a false network-lifecycle regression.
 const TEST_TIMEOUT_MS = 45_000;
 const WAIT_TIMEOUT_MS = 15_000;
+let lastObservation = null;
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-network-startup-e2e-'));
 const networkStateFile = path.join(profile, 'synthetic-network-state.txt');
 const attemptFile = path.join(profile, 'synthetic-engine-attempt.txt');
@@ -105,17 +106,26 @@ async function run() {
   const network = require('../lib/connection/telemetry/network-status-monitor');
   const connection = require('../lib/connection/state/connection-state-machine');
   const OriginalOperation = connection.ConnectionOperationCoordinator;
-  const operationCalls = { pause: 0, current: 0 };
+  const operationCalls = { pause: 0, current: 0, declined: 0 };
   connection.ConnectionOperationCoordinator = class FixtureOperation extends OriginalOperation {
     pauseInitialOffline() { operationCalls.pause++; return super.pauseInitialOffline(); }
     isCurrentEngineContext(...args) { operationCalls.current++; return super.isCurrentEngineContext(...args); }
+    async shouldReconnectForConnectivity(intent, reason) {
+      // Controlled slow eligibility, not a changed production timeout/policy.
+      if (reason === 'network-online') await new Promise(resolve => setTimeout(resolve, 4000));
+      return super.shouldReconnectForConnectivity(intent, reason);
+    }
+    onConnectivityRecoveryDeclined(...args) {
+      operationCalls.declined++; return super.onConnectivityRecoveryDeclined(...args);
+    }
   };
   const originalEligibility = network.createStartupAutoConnectEligibility;
   const originalSystem = network.createNetworkStartupSystem;
-  let mainStartupEffects;
+  let mainStartupEffects, mainNetworkSystem;
   network.createNetworkStartupSystem = (effects) => {
     mainStartupEffects = effects;
-    return originalSystem(effects);
+    mainNetworkSystem = originalSystem(effects);
+    return mainNetworkSystem;
   };
   let factoryUsed = false, constructing = false, eligibilityReads = 0;
   network.createStartupAutoConnectEligibility = (effects) => {
@@ -152,13 +162,25 @@ async function run() {
     return state.phase === 'connectivity-paused' && attemptCount() === 1;
   }, 'ordinary offline pause');
   fs.writeFileSync(networkStateFile, 'online\n', { mode: 0o600 });
-  await new Promise((resolve) => setTimeout(resolve, 2500));
+  await waitFor(async () => {
+    const state = await invoke(control, 'window.api.getState()');
+    lastObservation = { stage: 'before-manual', phase: state.phase,
+      connected: state.connected === true, attempts: attemptCount(),
+      declines: operationCalls.declined, networkBaseline: mainNetworkSystem.monitor.snapshot().baseline,
+      pollInFlight: mainNetworkSystem.monitor.snapshot().pollInFlight };
+    return operationCalls.declined === 1 && state.phase === 'idle' && attemptCount() === 1;
+  }, 'ordinary automatic recovery decline before manual connection');
+  assert.equal(operationCalls.declined, 1, 'manual recovery test must actually observe the earlier automatic decline');
   assert.equal(attemptCount(), 1,
     'ordinary online must not auto-reconnect when autoReconnect is false');
   const manual = await invoke(control, 'window.api.connect()');
   assert.equal(manual.ok, true, 'declined automatic recovery must leave manual connect usable');
   await waitFor(async () => {
     const state = await invoke(control, 'window.api.getState()');
+    lastObservation = { stage: 'manual-after-decline', phase: state.phase,
+      connected: state.connected === true, attempts: attemptCount(), declines: operationCalls.declined,
+      networkBaseline: mainNetworkSystem.monitor.snapshot().baseline,
+      pollInFlight: mainNetworkSystem.monitor.snapshot().pollInFlight };
     return state.connected && attemptCount() === 2;
   }, 'manual connection after declined ordinary recovery');
   process.stdout.write('main initial network startup: PASS\n');
@@ -188,6 +210,7 @@ async function run() {
 }
 
 const hardTimeout = setTimeout(() => {
+  if (lastObservation) process.stderr.write(`main network startup observation: ${JSON.stringify(lastObservation)}\n`);
   process.stderr.write('main initial network startup: hard timeout\n');
   app.exit(1);
 }, TEST_TIMEOUT_MS);
@@ -196,6 +219,7 @@ run().then(
   () => { clearTimeout(hardTimeout); app.quit(); },
   (error) => {
     clearTimeout(hardTimeout);
+    if (lastObservation) process.stderr.write(`main network startup observation: ${JSON.stringify(lastObservation)}\n`);
     process.stderr.write(`${error.stack || error}\n`);
     process.exitCode = 1;
     app.exit(1);
