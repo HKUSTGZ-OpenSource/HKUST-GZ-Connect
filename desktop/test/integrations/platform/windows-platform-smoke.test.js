@@ -23,7 +23,7 @@ const { DesktopPersistenceRuntime, ObservedCredentialOwner } = require('../../..
 const { DomainRoutePolicyStore } = require('../../../lib/routing/policy/domain-route-policy');
 const { createStartupAutoConnectEligibility } = require('../../../lib/connection/telemetry/network-status-monitor');
 const { UpdateNotificationRuntime } = require('../../../lib/platform/update/update-check');
-const { createSharedPortalCredentialProvider } = require('../../../lib/profiles/runtime/school-profile-controller');
+const { createSharedPortalCredentialProvider, createSchoolProfileController, createSchoolProfileControllerFromCandidate } = require('../../../lib/profiles/runtime/school-profile-controller');
 const { DiagnosticLogAccessRuntime } = require('../../../lib/diagnostics/logging/log-writer');
 const { desktopRuntimeComposition: { ActiveContextLease } } = require('../../../lib/app/desktop-runtime-composition');
 const {
@@ -34,6 +34,29 @@ const {
 
 const DESKTOP = path.resolve(__dirname, '..', '..', '..');
 const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
+
+test('native Main portal data selector preserves primary identity and rejects an actual custom Profile', t => {
+  const source = fs.readFileSync(path.join(DESKTOP, 'main.js'), 'utf8');
+  const expression = source.match(/getSources:\s*(\(\) => activeSchoolProfile\.portalDataSources\(hkustMyPortalSources\))/u)?.[1];
+  assert.ok(expression);
+  const sources = Object.freeze({ schedule: { read() { throw new Error('must not fetch in selection'); } } });
+  let active = createSchoolProfileController({ packageRoot: DESKTOP, desktopDir: DESKTOP });
+  const getter = vm.runInNewContext(`(${expression})`, {
+    get activeSchoolProfile() { return active; }, hkustMyPortalSources: sources,
+  });
+  assert.equal(getter(), sources);
+  const root = privateRoot(t, 'hkustgz-native-portal-source-scope-'); let entropy = 70;
+  const provisioned = new CustomProfileProvisioningRuntime({ userData: root, profileStorageEffects,
+    randomBytes: length => Buffer.alloc(length, ++entropy), now: () => 1_800_000_000_500,
+  }).begin(customConfirmation());
+  assert.equal(provisioned.ok, true);
+  active = createSchoolProfileControllerFromCandidate({
+    directory: new ProfileCandidateDirectory({ userData: root, packageRoot: DESKTOP,
+      desktopDir: DESKTOP, isPackaged: false, profileStorageEffects }),
+    profileId: provisioned.context.profileId,
+  });
+  const empty = getter(); assert.deepEqual(empty, {}); assert.notEqual(getter(), empty);
+});
 
 test('native Main Connection admission callbacks share the actual operation FSM and opaque lease', async () => {
   const { ConnectionOperationCoordinator, ConnectionStateMachine } = require('../../../lib/connection/state/connection-state-machine');

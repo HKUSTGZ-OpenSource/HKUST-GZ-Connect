@@ -88,7 +88,14 @@ writeJson(path.join(userData, 'global', 'settings.json'), {
 });
 writeJson(path.join(userData, 'global', 'update-state.json'), { schemaVersion: 1, checkedAt: 0 });
 
+const portalRuntime = require('../lib/browser/session/browser-session-manager');
+const OriginalPortalRuntime = portalRuntime.MyPortalDataRuntime;
+let portalDataSources;
+portalRuntime.MyPortalDataRuntime = class FixturePortalRuntime extends OriginalPortalRuntime {
+  constructor(effects) { super(effects); portalDataSources = effects.getSources; }
+};
 require('../main');
+portalRuntime.MyPortalDataRuntime = OriginalPortalRuntime;
 
 async function waitFor(predicate, message) {
   const deadline = Date.now() + 15_000;
@@ -106,6 +113,10 @@ async function run() {
     window.webContents.getURL().endsWith('/renderer/index.html') && !window.webContents.isLoading()
   )), 'custom Profile control window did not start');
   const state = await control.webContents.executeJavaScript('window.api.getState()');
+  const emptyPortalSources = portalDataSources();
+  assert.deepEqual(emptyPortalSources, {});
+  assert.notEqual(portalDataSources(), emptyPortalSources,
+    'actual Main custom Profile keeps fresh unsupported source maps without reading HKUST data');
   assert.equal(state.schoolProfile.profileId, custom.profileId);
   assert.equal(state.schoolProfile.unverified, true);
   assert.equal(state.schoolProfile.normalizedGatewayOrigin, 'https://vpn.example.edu');

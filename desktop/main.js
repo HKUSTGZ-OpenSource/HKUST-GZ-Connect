@@ -515,7 +515,7 @@ registerControlDataIpc({
     isCustomGatewayEnabled: () => customGatewayOnboardingEnabled,
     deleteProfile: (request) => customProfileDeletion.deleteProfile({ ...request, activeProfileId: activeSchoolProfile.activeContextBinding().profileId }),
     switchProfile: switchSchoolProfile },
-  integrations: externalIntegrationRuntime, campusData: new MyPortalDataRuntime({ electronSession: session, getPartition: () => campusBrowserManager.browserPartition, getPortalUrl: () => activeSchoolProfile.browserHomeUrl, getSessionUrlHint: () => campusBrowserManager.portalSessionUrl(activeSchoolProfile.browserHomeUrl), getSources: () => activeSchoolProfile.activeContextBinding().profileId === 'hkustgz' ? hkustMyPortalSources : {} }), browser: { clearSiteData: () => campusBrowserManager.clearSiteData(), translate: (key) => t(key) },
+  integrations: externalIntegrationRuntime, campusData: new MyPortalDataRuntime({ electronSession: session, getPartition: () => campusBrowserManager.browserPartition, getPortalUrl: () => activeSchoolProfile.browserHomeUrl, getSessionUrlHint: () => campusBrowserManager.portalSessionUrl(activeSchoolProfile.browserHomeUrl), getSources: () => activeSchoolProfile.portalDataSources(hkustMyPortalSources) }), browser: { clearSiteData: () => campusBrowserManager.clearSiteData(), translate: (key) => t(key) },
 });
 registerSettingsCredentialIpc({
   register: trustedHandle,

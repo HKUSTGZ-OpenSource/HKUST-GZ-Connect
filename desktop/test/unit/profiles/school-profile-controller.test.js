@@ -15,6 +15,17 @@ function controller(options = {}) {
   });
 }
 
+test('reviewed portal data selection preserves source identity without inspecting or reading adapters', () => {
+  const profile = controller(); let reads = 0;
+  const sources = new Proxy({}, { get() { reads++; throw new Error('must not inspect sources'); },
+    ownKeys() { reads++; throw new Error('must not enumerate sources'); } });
+  assert.equal(profile.portalDataSources(sources), sources);
+  const replacement = Object.freeze({});
+  assert.equal(profile.portalDataSources(replacement), replacement);
+  assert.equal(reads, 0);
+  assert.equal(Object.isFrozen(profile), true);
+});
+
 test('composes the reviewed HKUST deployment without persistent account scope', () => {
   const profile = controller();
   assert.equal(profile.gatewayHost, 'remote.hkust-gz.edu.cn');
