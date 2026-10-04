@@ -2,6 +2,89 @@
 
 const { normalizeToolbarCommand } = require('./campus-toolbar-contract');
 
+// Window-scoped chrome geometry and find state. Tabs and native windows remain
+// owned by their lifecycle owners; this owner holds only one bounded resize.
+class BrowserViewportOwner {
+  constructor({ getWindow, getActiveTab, isContextCurrent, updateToolbar,
+    toolbarHeight, findBarHeight, timers = { setImmediate, clearImmediate } } = {}) {
+    if ([getWindow, getActiveTab, isContextCurrent, updateToolbar,
+      timers?.setImmediate, timers?.clearImmediate].some(port => typeof port !== 'function') ||
+      !Number.isSafeInteger(toolbarHeight) || toolbarHeight < 1 ||
+      !Number.isSafeInteger(findBarHeight) || findBarHeight < 1) {
+      throw new TypeError('Browser viewport dependencies are incomplete');
+    }
+    Object.assign(this, { getWindow, getActiveTab, isContextCurrent, updateToolbar,
+      toolbarHeight, findBarHeight, timers });
+    this.findOpen = false;
+    this.scheduledLayout = null;
+    this.generation = 0;
+  }
+
+  cancelScheduledLayout() {
+    this.generation++;
+    const handle = this.scheduledLayout;
+    this.scheduledLayout = null;
+    if (handle !== null) this.timers.clearImmediate(handle);
+  }
+
+  scheduleLayout() {
+    const window = this.getWindow();
+    if (this.scheduledLayout !== null || !this.isContextCurrent() ||
+        !window || window.isDestroyed()) return;
+    const generation = this.generation;
+    const handle = this.timers.setImmediate(() => {
+      if (generation !== this.generation || this.scheduledLayout !== handle) return;
+      this.scheduledLayout = null;
+      if (this.getWindow() !== window || window.isDestroyed()) return;
+      this.applyLayout();
+    });
+    this.scheduledLayout = handle;
+    handle.unref?.();
+  }
+
+  applyLayout() {
+    const window = this.getWindow();
+    const active = this.getActiveTab();
+    if (!this.isContextCurrent() || !window || window.isDestroyed() ||
+        !active || active.view.webContents.isDestroyed()) return;
+    const [width, height] = window.getContentSize();
+    const toolbarHeight = this.toolbarHeight + (this.findOpen ? this.findBarHeight : 0);
+    active.view.setBounds({ x: 0, y: toolbarHeight,
+      width: Math.max(1, width), height: Math.max(1, height - toolbarHeight) });
+  }
+
+  layout() {
+    this.cancelScheduledLayout();
+    this.applyLayout();
+  }
+
+  // Per-window state persists across tab switches; find matches stay per-tab.
+  setFindBar(open) {
+    const window = this.getWindow();
+    if (!this.isContextCurrent() || !window || window.isDestroyed()) return;
+    this.findOpen = !!open;
+    this.layout();
+    this.updateToolbar();
+    if (!this.isContextCurrent() || this.getWindow() !== window || window.isDestroyed()) return;
+    if (open) {
+      window.webContents.send?.('campus-toolbar-focus', 'find');
+      return;
+    }
+    const active = this.getActiveTab();
+    if (active && !active.view.webContents.isDestroyed()) {
+      if (typeof active.view.webContents.stopFindInPage === 'function') {
+        active.view.webContents.stopFindInPage('clearSelection');
+      }
+      active.view.webContents.focus();
+    }
+  }
+
+  reset() {
+    this.cancelScheduledLayout();
+    this.findOpen = false;
+  }
+}
+
 class BrowserToolbarOwner {
   constructor({
     getWindow, getActiveTab, getTabs, getActiveTabId, getFindOpen, getDownloadState,
@@ -259,4 +342,4 @@ class BrowserToolbarCommandOwner {
   }
 }
 
-module.exports = { BrowserToolbarCommandOwner, BrowserToolbarOwner };
+module.exports = { BrowserToolbarCommandOwner, BrowserToolbarOwner, BrowserViewportOwner };

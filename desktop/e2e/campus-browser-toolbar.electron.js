@@ -24,6 +24,9 @@ const { scheduleTemporaryProfileCleanup } = require('../scripts/temp-profile-cle
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-browser-toolbar-'));
 fs.chmodSync(profile, 0o700);
 app.setPath('userData', profile);
+// This fixture closes the last window and explicitly reopens its replacement.
+// Keep Electron alive until the awaited test sequence resolves or fails.
+app.on('window-all-closed', () => {});
 let profileCleanupScheduled = false;
 function scheduleProfileCleanup() {
   if (profileCleanupScheduled) return;
@@ -369,6 +372,42 @@ async function assertWorkspaceHome(browser) {
     'Workspace Home must remain an app-owned local page');
 }
 
+async function assertViewportLifecycle(browser) {
+  for (const [width, height] of [[660, 520], [900, 620], [1200, 720]]) {
+    browser.window.setContentSize(width, height);
+    await waitFor(browser.window, `window.innerWidth === ${width}`, 'native viewport width');
+    for (const open of [true, false]) {
+      await toolbarCommand(browser, open ? 'find-open' : 'find-close');
+      await waitForMain(() => browser.findOpen === open, 'owned native find state');
+      const y = TOOLBAR_HEIGHT + (open ? FIND_BAR_HEIGHT : 0);
+      await waitForMain(() => {
+        // Native window managers may clamp content height to the runner's
+        // work area. Layout must match the actual window, never a request that
+        // the OS did not apply; requested width is still checked above.
+        const [actualWidth, actualHeight] = browser.window.getContentSize();
+        const bounds = browser.activeTab().view.getBounds();
+        return bounds.y === y && bounds.width === actualWidth &&
+          bounds.height === Math.max(1, actualHeight - y);
+      }, 'native view below chrome with no overflow');
+      assert.equal(browser.findOpen, browser.viewportOwner.findOpen);
+      assertOnlyActiveTabAttached(browser);
+    }
+    console.log('native viewport geometry', JSON.stringify({ requested: [width, height],
+      actual: browser.window.getContentSize(), bounds: browser.activeTab().view.getBounds() }));
+  }
+  const oldWindow = browser.window;
+  browser.scheduleLayout();
+  assert.notEqual(browser.scheduledLayout, null);
+  browser.close();
+  await waitForMain(() => oldWindow.isDestroyed(), 'native window closure');
+  assert.equal(browser.scheduledLayout, null);
+  assert.equal(browser.findOpen, false);
+  await browser.open(DEAD_URL, 11080, 'campus');
+  assert.notEqual(browser.window, oldWindow);
+  assert.equal(browser.findOpen, false, 'replacement does not inherit retired find state');
+  console.log('native Browser viewport resize/find/retirement: PASS');
+}
+
 async function captureBrowserChrome(browser) {
   const output = process.env.HKUSTGZ_BROWSER_SCREENSHOT_DIR;
   if (!output) return;
@@ -532,6 +571,7 @@ async function main() {
     await runStage('drag regions', () => assertDragRegions(browser));
     await runStage('route switch', () => assertRouteSwitch(browser));
     await runStage('find bar', () => assertFindBar(browser));
+    await runStage('viewport lifecycle', () => assertViewportLifecycle(browser));
     await runStage('browser screenshots', () => captureBrowserChrome(browser));
     assert.deepEqual(errors, [], `unexpected campus browser errors: ${errors.join('; ')}`);
     process.stdout.write('campus browser toolbar: PASS\n');
