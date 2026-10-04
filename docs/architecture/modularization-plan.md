@@ -169,6 +169,11 @@ workspace home
 `CampusBrowserRuntime` composes these owners. It does not retain their algorithms. The popup owner
 must preserve shared Session cookies, opener messaging, explicit close and the no-OTP-storage rule.
 
+The [viewport owner contract](browser-viewport-owner.md) separates resize scheduling, native page
+bounds and per-window find state behind the existing toolbar module. Its local candidate lowers
+Browser 1,122->1,094 without adding a production graph node; exact-head acceptance is still required.
+Page/document and credential command ownership remain open, so this slice is not M2 completion.
+
 Exit target: no Browser owner exceeds 600 lines and lifecycle tests cover every extracted teardown.
 
 ## Wave M3 — Desktop Main composition

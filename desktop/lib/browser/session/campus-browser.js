@@ -9,7 +9,7 @@ const {
   ROUTE_DIRECT,
 } = require('../../routing/policy/campus-route');
 const { normalizeRuleHost } = require('../../routing/rules/routing-rule-store');
-const { BrowserToolbarCommandOwner, BrowserToolbarOwner } = require('../toolbar/browser-toolbar-owner');
+const { BrowserToolbarCommandOwner, BrowserToolbarOwner, BrowserViewportOwner } = require('../toolbar/browser-toolbar-owner');
 const { BrowserWorkspaceOwner, projectBrowserWorkspaceResources, MAX_WORKSPACE_HOME_RESOURCES } =
   require('../workspace/campus-workspace-controller');
 const { CertificateController } = require('../certificates/certificate-controller');
@@ -404,8 +404,12 @@ class CampusBrowser {
       focusWorkspaceSearch: () => this.focusWorkspaceSearch(),
       scheduleToolbarUpdate: () => this.scheduleToolbarUpdate(),
     });
-    this.findOpen = false;
-    this.scheduledLayout = null;
+    this.viewportOwner = new BrowserViewportOwner({
+      getWindow: () => this.window, getActiveTab: () => this.activeTab(),
+      isContextCurrent: () => this.windowOwner?.contextRetired !== true,
+      updateToolbar: () => this.updateToolbar(),
+      toolbarHeight: TOOLBAR_HEIGHT, findBarHeight: FIND_BAR_HEIGHT,
+    });
     this.toolbarOwner = new BrowserToolbarOwner({
       getWindow: () => this.window,
       getActiveTab: () => this.activeTab(),
@@ -451,6 +455,8 @@ class CampusBrowser {
   // Keep the existing CampusBrowser diagnostics/test surface while all state
   // mutations flow through the dedicated managers.
   get window() { return this.windowOwner?.window || null; }
+  get findOpen() { return this.viewportOwner.findOpen; }
+  get scheduledLayout() { return this.viewportOwner.scheduledLayout; }
   get scheduledToolbarUpdate() { return this.toolbarOwner.scheduledUpdate; }
   get downloadSessions() { return this.downloadController.downloadSessions; }
   get downloadState() { return this.downloadController.downloadState; }
@@ -581,39 +587,19 @@ class CampusBrowser {
   }
 
   cancelScheduledLayout() {
-    if (this.scheduledLayout === null) return;
-    clearImmediate(this.scheduledLayout);
-    this.scheduledLayout = null;
+    this.viewportOwner.cancelScheduledLayout();
   }
 
   scheduleLayout() {
-    if (this.scheduledLayout !== null || !this.window || this.window.isDestroyed()) return;
-    const scheduledWindow = this.window;
-    this.scheduledLayout = setImmediate(() => {
-      this.scheduledLayout = null;
-      if (this.window !== scheduledWindow || scheduledWindow.isDestroyed()) return;
-      this.applyLayout();
-    });
-    this.scheduledLayout.unref?.();
+    this.viewportOwner.scheduleLayout();
   }
 
   applyLayout() {
-    const active = this.activeTab();
-    if (!this.window || this.window.isDestroyed() || !active) return;
-    if (active.view.webContents.isDestroyed()) return;
-    const [width, height] = this.window.getContentSize();
-    const toolbarHeight = TOOLBAR_HEIGHT + (this.findOpen ? FIND_BAR_HEIGHT : 0);
-    active.view.setBounds({
-      x: 0,
-      y: toolbarHeight,
-      width: Math.max(1, width),
-      height: Math.max(1, height - toolbarHeight),
-    });
+    this.viewportOwner.applyLayout();
   }
 
   layout() {
-    this.cancelScheduledLayout();
-    this.applyLayout();
+    this.viewportOwner.layout();
   }
 
   currentUrl(tab) {
@@ -660,21 +646,7 @@ class CampusBrowser {
   // The find bar is per-window: it stays open across tab switches, but matches
   // are per-tab, so a switched-to tab has no active find until the next search.
   setFindBar(open) {
-    if (!this.window || this.window.isDestroyed()) return;
-    this.findOpen = !!open;
-    this.layout();
-    this.updateToolbar();
-    if (open) {
-      this.window.webContents.send?.('campus-toolbar-focus', 'find');
-      return;
-    }
-    const active = this.activeTab();
-    if (active && !active.view.webContents.isDestroyed()) {
-      if (typeof active.view.webContents.stopFindInPage === 'function') {
-        active.view.webContents.stopFindInPage('clearSelection');
-      }
-      active.view.webContents.focus();
-    }
+    this.viewportOwner.setFindBar(open);
   }
 
   clearSlowTimer(tab) {
@@ -1024,7 +996,7 @@ class CampusBrowser {
     this.view = null;
     this.attachedView = null;
     this.routingActivationOwner.reset();
-    this.findOpen = false;
+    this.viewportOwner.reset();
     this.toolbarOwner.reset();
   }
 
@@ -1083,7 +1055,7 @@ class CampusBrowser {
     this.attachedView = null;
     this.routingActivationOwner.reset();
     this.tabManager.clear();
-    this.findOpen = false;
+    this.viewportOwner.reset();
     this.toolbarOwner.reset();
   }
 
