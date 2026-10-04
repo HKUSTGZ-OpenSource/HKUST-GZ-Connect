@@ -81,6 +81,51 @@ test('managed popup retains the opener Session and hardens untrusted WebPreferen
   assert.equal(f.calls.filter(([kind]) => kind === 'close-tab').length, 1);
 });
 
+test('popup close failure retains its exact owner and does not suppress another child close', () => {
+  const f = fixture();
+  f.owner.windowOpenResponse({}, 'https://sso.example.invalid/').createWindow({});
+  f.owner.windowOpenResponse({}, 'https://sso.example.invalid/').createWindow({});
+  const [first, second] = f.windows;
+  const close = first.close.bind(first);
+  first.close = () => { throw new Error('synthetic popup close failure'); };
+  const retained = [...f.owner.popups][0];
+  assert.throws(() => f.owner.closeAll(), /cleanup is unconfirmed/);
+  assert.equal(second.isDestroyed(), true);
+  assert.equal(first.isDestroyed(), false);
+  assert.deepEqual([...f.owner.popups], [retained]);
+  first.close = close;
+  f.owner.closeAll(); f.owner.closeAll();
+  assert.equal(first.isDestroyed(), true);
+  assert.equal(f.owner.popups.size, 0);
+});
+
+test('popup close veto is not physical-close confirmation', () => {
+  const f = fixture();
+  f.owner.windowOpenResponse({}, 'https://sso.example.invalid/').createWindow({});
+  const window = f.windows[0], close = window.close.bind(window);
+  window.close = () => {};
+  assert.throws(() => f.owner.closeAll(), /cleanup is unconfirmed/);
+  assert.equal(f.owner.popups.size, 1);
+  assert.equal(f.calls.some(([name]) => name === 'close-tab'), false);
+  window.close = close; f.owner.closeAll();
+  assert.equal(f.owner.popups.size, 0);
+});
+
+test('native popup cleanup failure is observed without losing its retryable association owner', () => {
+  const f = fixture();
+  f.owner.windowOpenResponse({}, 'https://sso.example.invalid/').createWindow({});
+  const popup = [...f.owner.popups][0], failure = new Error('synthetic association cleanup failure');
+  f.owner.credentialController.closeTab = () => { throw failure; };
+  assert.doesNotThrow(() => f.windows[0].close(), 'native terminal events cannot throw out of their observer');
+  assert.equal(f.owner.popups.has(popup), true);
+  assert.equal(popup.cleanupFailure, failure);
+  assert.throws(() => f.owner.closeAll(), /cleanup is unconfirmed/);
+  f.owner.credentialController.closeTab = () => {};
+  f.owner.closeAll(); f.owner.closeAll();
+  assert.equal(f.owner.popups.size, 0);
+  assert.equal(popup.cleanupFailure, null);
+});
+
 test('unsupported schemes are denied while ordinary web popups become isolated tabs', () => {
   const f = fixture();
   assert.deepEqual(f.owner.windowOpenResponse({}, 'file:///private'), { action: 'deny' });

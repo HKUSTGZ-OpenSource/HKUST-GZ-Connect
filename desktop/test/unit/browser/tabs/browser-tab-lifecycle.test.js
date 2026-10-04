@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const { BrowserTabLifecycle } = require('../../../../lib/browser/tabs/tab-manager');
 
-function fixture() {
+function fixture(overrides = {}) {
   const calls = [];
   const created = [];
   const context = { height: 108, workspace: null, failFor: null, construct: null };
@@ -44,7 +44,10 @@ function fixture() {
     'scheduleToolbarUpdate', 'updateToolbar', 'beforeDeactivate', 'layout',
     'cancelScheduledUpdates', 'cancelCertificatePrompts', 'clearSlowTimer',
     'clearCredentialCandidate', 'openNewTab', 'reportCreateFailure',
-  ].map(name => [name, (...args) => { calls.push([name, ...args]); return name === 'navigate' ? true : undefined; }]));
+  ].map(name => [name, (...args) => { calls.push([name, ...args]);
+    if (overrides[name]) return overrides[name](...args);
+    return name === 'navigate' ? true : undefined;
+  }]));
   const owner = new BrowserTabLifecycle({
     WebContentsView: View, campusPreload: '/synthetic/preload.js',
     getWindow: () => context.window, getToolbarHeight: () => context.height,
@@ -141,6 +144,43 @@ test('window view teardown and transient cleanup are repeatable without closing 
   f.owner.clear();
   f.owner.closeViews();
   assert.equal(f.owner.size, 0);
+});
+
+test('window view cleanup continues across failing timers, candidates and native pages', () => {
+  const overrides = {}, f = fixture(overrides);
+  const first = f.page(), second = f.page();
+  const failure = new Error('synthetic timer cleanup failure');
+  overrides.clearSlowTimer = tab => { if (tab === first) throw failure; };
+  overrides.clearCredentialCandidate = tab => { if (tab === second) throw failure; };
+  assert.throws(() => f.owner.closeViews(), /cleanup is unconfirmed/);
+  assert.deepEqual(f.created.map(view => view.webContents.closeCount), [1, 1]);
+  assert.equal(f.calls.filter(([name]) => name === 'clearCredentialCandidate').length, 2);
+  assert.equal(f.owner.size, 2, 'an attempted close is not permission to discard ownership');
+  overrides.clearSlowTimer = () => {};
+  overrides.clearCredentialCandidate = () => {};
+  f.owner.closeViews();
+  assert.deepEqual(f.created.map(view => view.webContents.closeCount), [1, 1]);
+  f.owner.clear();
+});
+
+test('transient cleanup attempts each candidate even after another cleanup throws', () => {
+  const overrides = {}, f = fixture(overrides); f.page(); f.page();
+  let candidates = 0;
+  overrides.clearSlowTimer = () => { throw new Error('synthetic timer cleanup failure'); };
+  overrides.clearCredentialCandidate = () => { candidates++; };
+  assert.throws(() => f.owner.clearTransientState(), /cleanup is unconfirmed/);
+  assert.equal(candidates, 2);
+  assert.equal(f.owner.size, 2);
+});
+
+test('retry after native view destruction uses captured contents rather than a dead view getter', () => {
+  const f = fixture(), tab = f.page(), contents = tab.view.webContents;
+  contents.destroyed = true;
+  contents.isDestroyed = () => true;
+  Object.defineProperty(tab.view, 'webContents', { get: () => undefined });
+  assert.doesNotThrow(() => f.owner.closeViews());
+  assert.equal(contents.closeCount, 0, 'an already-confirmed native destroy cannot be closed twice');
+  assert.equal(f.owner.size, 1);
 });
 
 test('active views receive current find-bar height and clamped bounds before becoming visible', () => {

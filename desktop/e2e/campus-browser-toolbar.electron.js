@@ -115,6 +115,50 @@ function toolbarCommand(browser, command, value = '') {
   );
 }
 
+async function assertTeardownFailureIsolation(browser) {
+  await browser.open(CONFIGURED_HOME, 11080, ROUTE_DIRECT);
+  const tab = browser.activeTab(), controller = browser.credentialController, window = browser.window;
+  await waitForPage(tab.view.webContents, 'location.href === ' + JSON.stringify(CONFIGURED_HOME), 'owned cleanup page');
+  const originalVault = controller.vault, originalClear = controller.clearTimer;
+  const resetCommands = browser.credentialCommands.reset.bind(browser.credentialCommands);
+  const closePopups = browser.popupOwner.closeAll.bind(browser.popupOwner);
+  let commands = 0, popups = 0;
+  controller.vault = { get: async () => null };
+  browser.credentialCommands.reset = () => { commands++; return resetCommands(); };
+  browser.popupOwner.closeAll = () => { popups++; return closePopups(); };
+  try {
+    assert.equal(controller.stage(tab, { origin: new URL(CONFIGURED_HOME).origin,
+      username: 'synthetic-user', password: 'synthetic-secret' }), true);
+    controller.clearTimer = () => { throw new Error('synthetic native credential cancellation failure'); };
+    assert.throws(() => browser.close(), /cleanup is unconfirmed/);
+    await waitForMain(() => window.isDestroyed() && browser.windowOwner.current?.retired === true,
+      'native close despite independent cleanup failure');
+    assert.equal(tab.pendingCredential, null);
+    assert.ok(commands > 0 && popups > 0, 'independent owners were attempted');
+    assert.equal(browser.windowOwner.current.cleanupComplete, false);
+    assert.equal(browser.tabs.includes(tab), true, 'unconfirmed ownership is not discarded');
+    assert.equal(await browser.closeForContextSwitch(), false);
+    await assert.rejects(browser.createWindow(), /cleanup is unconfirmed/);
+  } finally {
+    controller.clearTimer = originalClear;
+    controller.vault = originalVault;
+    browser.credentialCommands.reset = resetCommands;
+    browser.popupOwner.closeAll = closePopups;
+    // Release the fixture's resources explicitly; this does not unblock or
+    // claim successful retirement of the failed native window record.
+    try { browser.handleWindowClosed(); }
+    catch (error) {
+      const describe = value => value instanceof AggregateError
+        ? value.errors.map(describe) : String(value?.stack || value);
+      process.stderr.write('native cleanup causes: ' + JSON.stringify(describe(error)) + '\n');
+      throw error;
+    }
+  }
+  assert.equal(browser.tabs.length, 0);
+  assert.equal(controller.stagedTabs.size, 0);
+  process.stdout.write('native Browser teardown failure isolation: PASS\n');
+}
+
 function assertOnlyActiveTabAttached(browser) {
   const tabViews = browser.window.contentView.children.filter((child) => (
     browser.tabs.some((tab) => tab.view === child)
@@ -685,6 +729,7 @@ async function main() {
     await runStage('find bar', () => assertFindBar(browser));
     await runStage('viewport lifecycle', () => assertViewportLifecycle(browser));
     await runStage('browser screenshots', () => captureBrowserChrome(browser));
+    await runStage('teardown failure isolation', () => assertTeardownFailureIsolation(browser));
     assert.deepEqual(errors, [], `unexpected campus browser errors: ${errors.join('; ')}`);
     process.stdout.write('campus browser toolbar: PASS\n');
   } finally {

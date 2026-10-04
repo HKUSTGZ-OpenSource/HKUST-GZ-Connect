@@ -193,6 +193,12 @@ to original window/tab/context and storage identity, retaining login/MFA evidenc
 consent. Source candidate921->919 retires old approvals and candidate timers without a new node;
 native retirement and existing MFA gates remain required. Remaining Browser composition is still M2.
 
+The [teardown isolation coordinator](browser-teardown-isolation.md) composes independent cleanup
+through the existing Session entrypoint. Native close is attempted after another owner's failure;
+unconfirmed tab/popup/window ownership is retained, and retry uses captured native contents.
+Source candidate919->897 adds no production graph node or schema; full M2 route/open/composition
+acceptance remains separate from this bounded partial-cleanup repair.
+
 ## Wave M3 — Desktop Main composition
 
 Completed source outcome, with every #81 criterion mapped to concrete owner/test/platform

@@ -150,6 +150,7 @@ class BrowserTabLifecycle extends TabManager {
     }
     Object.assign(this, { WebContentsView, campusPreload, getWindow, getToolbarHeight, getWorkspace, blankUrl });
     this.effects = Object.freeze({ ...effects });
+    this.cleanupContents = new WeakMap();
     this.view = null;
     this.attachedView = null;
   }
@@ -196,6 +197,7 @@ class BrowserTabLifecycle extends TabManager {
         routeSource: resolution.source,
         matchedRule: resolution.matchedRule,
       };
+      this.cleanupContents.set(tab, view.webContents);
       this.effects.linkPopup(options.credentialReservation, tab);
       this.add(tab);
       added = true;
@@ -251,6 +253,7 @@ class BrowserTabLifecycle extends TabManager {
         route: ROUTE_DIRECT, routeSource: 'local-workspace', matchedRule: null,
         pendingWorkspaceFocus: null,
       };
+      this.cleanupContents.set(tab, view.webContents);
       this.add(tab);
       view.setVisible(false);
       if (!isCurrent() || !this.activate(tab.id)) throw new Error('workspace activation failed');
@@ -375,18 +378,22 @@ class BrowserTabLifecycle extends TabManager {
   }
 
   clearTransientState() {
-    for (const tab of this.tabs) {
-      this.effects.clearSlowTimer(tab);
-      this.effects.clearCredentialCandidate(tab);
-    }
+    this.closeViews(false);
   }
 
-  closeViews() {
-    for (const tab of this.tabs) {
-      this.effects.clearSlowTimer(tab);
-      this.effects.clearCredentialCandidate(tab);
-      if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close();
+  closeViews(closePages = true) {
+    const failures = [];
+    for (const tab of [...this.tabs]) {
+      for (const operation of [() => this.effects.clearSlowTimer(tab),
+        () => this.effects.clearCredentialCandidate(tab), () => {
+          if (!closePages) return;
+          const contents = this.cleanupContents.get(tab) || tab.view.webContents;
+          if (!contents.isDestroyed()) contents.close();
+        }]) {
+        try { operation(); } catch (error) { failures.push(error); }
+      }
     }
+    if (failures.length) throw new AggregateError(failures, 'Browser tab cleanup is unconfirmed');
   }
 }
 
