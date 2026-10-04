@@ -406,3 +406,19 @@ test('bounded tail reads stop at lifecycle boundaries and close their owned desc
   fs.promises.open = originalOpen;
   assert.ok((await readLogTail(file)).includes('synthetic line'));
 });
+
+test('tail result is fenced after asynchronous descriptor cleanup as well', async t => {
+  const file = temporaryLog(t); fs.writeFileSync(file, 'synthetic scoped tail\n', { mode: 0o600 });
+  const originalOpen = fs.promises.open; let retired = false;
+  fs.promises.open = async (...args) => {
+    const handle = await originalOpen.apply(fs.promises, args);
+    if (args[0] === file) {
+      const close = handle.close.bind(handle);
+      handle.close = async () => { retired = true; await close(); };
+    }
+    return handle;
+  };
+  t.after(() => { fs.promises.open = originalOpen; });
+  assert.equal(await readLogTail(file, { contextCurrent: () => !retired }), '');
+  assert.equal(retired, true);
+});

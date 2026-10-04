@@ -345,6 +345,7 @@ class BufferedLogWriter {
 
 async function readLogTail(file, { maxBytes = DEFAULT_TAIL_BYTES, maxLines = 300, contextCurrent = () => true } = {}) {
   let opened;
+  let result = '';
   try {
     if (typeof contextCurrent !== 'function' || contextCurrent() !== true) return '';
     opened = await openVerifiedRegular(file, fs.constants.O_RDONLY);
@@ -375,12 +376,14 @@ async function readLogTail(file, { maxBytes = DEFAULT_TAIL_BYTES, maxLines = 300
       if (firstNewline !== -1) text = text.slice(firstNewline + 1);
     }
     const lines = text.split('\n');
-    return lines.slice(-boundedLines).join('\n');
+    result = lines.slice(-boundedLines).join('\n');
   } catch {
     return '';
   } finally {
     await opened?.handle.close().catch(() => {});
   }
+  try { return contextCurrent() === true ? result : ''; }
+  catch { return ''; }
 }
 
 class DiagnosticLogAccessRuntime {
