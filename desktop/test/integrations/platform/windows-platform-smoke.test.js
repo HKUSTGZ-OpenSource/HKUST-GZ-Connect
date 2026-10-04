@@ -35,6 +35,50 @@ const {
 const DESKTOP = path.resolve(__dirname, '..', '..', '..');
 const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
 
+test('native Main Connection admission callbacks share the actual operation FSM and opaque lease', async () => {
+  const { ConnectionOperationCoordinator, ConnectionStateMachine } = require('../../../lib/connection/state/connection-state-machine');
+  const { ConnectivityRecovery } = require('../../../lib/connection/recovery/connectivity-recovery');
+  const source = fs.readFileSync(path.join(DESKTOP, 'main.js'), 'utf8');
+  const ports = source.match(/contextLease: activeContextLease, connectivityRecovery, loadSettingsOrReport/u)?.[0];
+  assert.ok(ports);
+  const lease = new ActiveContextLease({ profileId: 'hkustgz', profileRevision: 1,
+    accountHandle: `account-${'a'.repeat(36)}`, activeContextEpoch: 1 });
+  const fsm = new ConnectionStateMachine(); let owner, reconnects = 0;
+  const recovery = new ConnectivityRecovery({ invalidate: (_reason, intent) => fsm.pauseForConnectivity(intent),
+    getLifecycleIntent: () => owner.currentRecoveryIntent(), shouldReconnect: () => false, reconnect() {} });
+  owner = new ConnectionOperationCoordinator({ connectionState: fsm,
+    engineSupervisor: { isCurrent: generation => generation === 4, hasActive: true }, isQuitting: () => false,
+    ...vm.runInNewContext(`({${ports}})`, { activeContextLease: lease, connectivityRecovery: recovery, loadSettingsOrReport: () => ({}) }),
+  });
+  owner.reconnect = () => { reconnects++; return Promise.resolve({ ok: true }); };
+  const expressions = [
+    source.match(/const activeEngineContextCurrent = ([^;]+);/u)?.[1],
+    source.match(/pauseOffline:\s*([^,]+),\s*resumeInitialOffline:/u)?.[1],
+    source.match(/canResumeBrowser:\s*([^,]+),\s*assertPersistence:/u)?.[1],
+    source.match(/reconnect:\s*(\(generation, token\) => connectionOperations\.reconnectCurrentEngineContext\(generation, token\))/u)?.[1],
+  ];
+  assert.ok(expressions.every(Boolean));
+  const [current, pause, resume, reconnect] = expressions.map(expression => (
+    vm.runInNewContext(`(${expression})`, { connectionOperations: owner })
+  ));
+  try {
+    const intent = pause();
+    assert.equal(recovery.snapshot().pendingIntent, intent);
+    assert.equal(fsm.snapshot().phase, 'connectivity-paused');
+    assert.equal(resume(), false);
+    fsm.resumeConnectivity(intent); fsm.bindEngineGeneration(4);
+    fsm.markEnginePhase(4, 'preparing_tunnel'); fsm.recordEngineConnectedCandidate(4);
+    fsm.recordListenerReady(4); assert.equal(fsm.markConnected(4), true);
+    const token = lease.capture({ connectionIntent: intent, engineGeneration: 4 });
+    assert.equal(current(4, token), true); assert.equal(current(5, token), false);
+    assert.equal(resume(), true); assert.deepEqual(await reconnect(4, token), { ok: true });
+    lease.invalidate();
+    assert.equal(current(4, token), false);
+    assert.deepEqual(await reconnect(4, token), { ok: false, stale: true });
+    assert.equal(reconnects, 1);
+  } finally { recovery.dispose(); }
+});
+
 function privateRoot(t, prefix) {
   const value = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   t.after(() => fs.rmSync(value, { recursive: true, force: true }));

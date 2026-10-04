@@ -6,6 +6,7 @@ const path = require('node:path');
 const test = require('node:test');
 const attempt = fs.readFileSync(require.resolve('../../../lib/connection/engine/engine-process'), 'utf8');
 const statusOwner = fs.readFileSync(require.resolve('../../../lib/connection/state/connection-recovery-presentation'), 'utf8');
+const operationOwner = fs.readFileSync(require.resolve('../../../lib/connection/state/connection-state-machine'), 'utf8');
 
 const source = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'main.js'), 'utf8');
 
@@ -29,7 +30,10 @@ test('Engine callbacks require context epoch connection intent and process gener
   const connect = attempt;
   assert.match(source, /engineAttempts\.run\(isRetry, intent\)/u);
   assert.match(source, /contextLease: \{ capture: options => activeContextLease\.capture\(options\) \}/u);
-  assert.match(source, /activeContextLease\.isCurrent\(token, \{ connectionIntent: connectionState\.snapshot\(\)\.intent, engineGeneration: generation \}\)/u);
+  assert.match(source, /activeEngineContextCurrent = \(generation, token\) => connectionOperations\.isCurrentEngineContext\(generation, token\)/u);
+  assert.match(source, /contextLease: activeContextLease, connectivityRecovery, loadSettingsOrReport/u);
+  assert.match(operationOwner, /this\.engineSupervisor\.isCurrent\(generation\) && this\.contextLease\.isCurrent\(token, \{\s*connectionIntent: this\.connectionState\.snapshot\(\)\.intent, engineGeneration: generation/u);
+  assert.doesNotMatch(source, /activeContextLease\.isCurrent\(token|engineSupervisor\.isCurrent\(generation\)/u);
   assert.match(connect, /activeEngineContextCurrent\(generation, engineContextToken\)/u);
   const capture = connect.indexOf('this.contextLease.capture({ connectionIntent: intent, engineGeneration })');
   const bind = connect.indexOf('connectionState.bindEngineGeneration(engineGeneration)');
@@ -49,7 +53,7 @@ test('Engine callbacks require context epoch connection intent and process gener
   assert.match(source, /onRecovering: \(generation, token\) => connectionStatus\.reportRecovering\(generation, token\)/u);
   assert.match(statusOwner, /if \(!this\.#effects\.isEngineCurrent\(generation, token\)\) return;/u);
   assert.match(source, /isEngineCurrent: activeEngineContextCurrent/u);
-  assert.match(source, /reconnect: \(generation, token\) => activeEngineContextCurrent\(generation, token\)/u);
+  assert.match(source, /reconnect: \(generation, token\) => connectionOperations\.reconnectCurrentEngineContext\(generation, token\)/u);
   assert.doesNotMatch(connect, /activeContextEpoch:\s*1/u);
 });
 
@@ -65,10 +69,21 @@ test('all serialized settings routing and resource mutations capture active cont
 
 test('Main injects Routing coordination without owning PAC publication or rule rollback', () => {
   assert.match(source, /new RoutingPolicyCoordinator\(\{/u);
-  assert.match(source, /canResumeBrowser: \(\) => connectionState\.isConnected\(\) && engineSupervisor\.hasActive/u);
+  assert.match(source, /canResumeBrowser: \(\) => connectionOperations\.canResumeBrowser\(\)/u);
+  assert.match(operationOwner, /return this\.connectionState\.isConnected\(\) && this\.engineSupervisor\.hasActive/u);
   assert.match(source, /browserRoutingPolicy = routingPolicyCoordinator\.browserPolicy/u);
   assert.doesNotMatch(source, /require\('\.\/lib\/routing\/pac\/pac-file'\)/u);
   assert.doesNotMatch(source, /\bsavePacFile\(|\bcurrentPacUrl\b|function browserPolicyProxyConfig/u);
+});
+
+test('Main delegates initial offline intent choreography without cancelling its startup owner', () => {
+  assert.match(source, /pauseOffline: \(\) => connectionOperations\.pauseInitialOffline\(\)/u);
+  assert.doesNotMatch(source, /connectionState\.beginConnectIntent\(|connectivityRecovery\.networkOffline\(intent\)/u);
+  const pause = operationOwner.slice(operationOwner.indexOf('  pauseInitialOffline() {'), operationOwner.indexOf('  currentRecoveryIntent() {'));
+  assert.match(pause, /this\.connectivityRecovery\.cancel\(\)/u);
+  assert.match(pause, /this\.connectionState\.beginConnectIntent\(\)/u);
+  assert.match(pause, /this\.connectivityRecovery\.networkOffline\(intent\) \? intent : null/u);
+  assert.doesNotMatch(pause, /this\.cancelRecovery\(/u);
 });
 
 test('Main delegates settings snapshot and close-action transaction to Persistence', () => {

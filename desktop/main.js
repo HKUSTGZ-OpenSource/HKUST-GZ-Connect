@@ -163,8 +163,7 @@ const engineApplication = createEngineApplicationRuntime({ spawnProcess: spawn, 
 } });
 const { authChallenges: authChallengeCoordinator, controlRegistry: engineControlRegistry,
   supervisor: engineSupervisor } = engineApplication;
-const activeEngineContextCurrent = (generation, token) => engineSupervisor.isCurrent(generation) &&
-  activeContextLease.isCurrent(token, { connectionIntent: connectionState.snapshot().intent, engineGeneration: generation });
+const activeEngineContextCurrent = (generation, token) => connectionOperations.isCurrentEngineContext(generation, token);
 const routingPolicyTransactions = new RoutingPolicyTransactionQueue({ isContextCurrent: (token) => activeContextLease.isContextCurrent(token) });
 function runActiveContextTransaction(options) { return routingPolicyTransactions.run(activeContextLease.captureContext(), options); }
 let logWriter = null;
@@ -297,12 +296,12 @@ const { monitor: networkStatusMonitor, startup: networkStartupCoordinator, envir
   appIsPackaged: app.isPackaged, environment: process.env, dataDirectory: DATA, fileSystem: fs,
   isOnline: () => electronNet.isOnline(), onOffline: () => connectivityRecovery.networkOffline(),
   onOnline: () => connectivityRecovery.networkOnline(), shouldAutoConnect: createStartupAutoConnectEligibility({ readSettings: loadSettingsOrReport, hasPersistentCredential: () => vpnCredentialAccess.hasPersistent() }),
-  pauseOffline: () => { connectivityRecovery.cancel(); const intent = connectionState.beginConnectIntent(); return connectivityRecovery.networkOffline(intent) ? intent : null; },
+  pauseOffline: () => connectionOperations.pauseInitialOffline(),
   resumeInitialOffline: (intent) => connectivityRecovery.initialNetworkOnline(intent), connect: () => connect(), isQuitting: () => desktopShell?.isQuitting === true, onPublicEgress: (snapshot) => desktopShell?.send('network-environment', snapshot),
 });
 const connectionOperations = new ConnectionOperationCoordinator({
   connectionState, engineSupervisor, isQuitting: () => desktopShell?.isQuitting === true,
-  loadSettingsOrReport,
+  contextLease: activeContextLease, connectivityRecovery, loadSettingsOrReport,
   cancelRecovery: () => { networkStartupCoordinator?.cancel(); connectivityRecovery.cancel(); },
   clearProxyCredential: clearActiveProxyCredential, clearPresentation: clearConnectionPresentation,
   removeSidecar: removeExternalProxySidecar, getPresentation: () => state, getTranslator: () => desktopLocale.translator, emit,
@@ -377,7 +376,7 @@ const routingPolicyCoordinator = new RoutingPolicyCoordinator({
   policy: domainRoutePolicy, externalPacFile: PAC_FILE, browserPacFile: CAMPUS_BROWSER_PAC_FILE,
   getSettings: loadSettingsOrReport, getSocksPort: socksPort,
   getBrowser: () => campusBrowserManager,
-  canResumeBrowser: () => connectionState.isConnected() && engineSupervisor.hasActive,
+  canResumeBrowser: () => connectionOperations.canResumeBrowser(),
   assertPersistence: assertSettingsPersistenceAvailable,
   runTransaction: runActiveContextTransaction, encodePac: pacDataUrl,
 });
@@ -616,9 +615,7 @@ telemetryCoordinator = new ConnectionTelemetryCoordinator({
   send: (snapshot) => desktopShell.send('telemetry', snapshot),
   getAutoReconnect: () => loadSettingsOrReport().autoReconnect,
   isDesiredConnected: () => connectionState.snapshot().desiredConnected,
-  reconnect: (generation, token) => activeEngineContextCurrent(generation, token)
-    ? reconnect(generation)
-    : Promise.resolve({ ok: false, stale: true }),
+  reconnect: (generation, token) => connectionOperations.reconnectCurrentEngineContext(generation, token),
   onRecovering: (generation, token) => connectionStatus.reportRecovering(generation, token),
 });
 app.on('second-instance', () => desktopShell.showWindow());

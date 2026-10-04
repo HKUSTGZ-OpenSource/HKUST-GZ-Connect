@@ -12,6 +12,21 @@ const { createLegacyRuntimeStoragePaths } = require('../lib/persistence/paths/ru
 const { DesktopPersistenceRuntime } = require('../lib/persistence/runtime/desktop-persistence-runtime');
 const { createT } = require('../lib/platform/i18n/i18n');
 const diagnostics = require('../lib/diagnostics/logging/log-writer');
+const connectionOwners = require('../lib/connection/state/connection-state-machine');
+const telemetryOwners = require('../lib/connection/telemetry/connection-telemetry-coordinator');
+const OriginalOperation = connectionOwners.ConnectionOperationCoordinator;
+const OriginalTelemetry = telemetryOwners.ConnectionTelemetryCoordinator;
+let operationOwner, telemetryEffects;
+const admissionCalls = { current: 0, resume: 0, reconnect: 0 };
+connectionOwners.ConnectionOperationCoordinator = class FixtureOperation extends OriginalOperation {
+  constructor(effects) { super(effects); operationOwner = this; }
+  isCurrentEngineContext(...args) { admissionCalls.current++; return super.isCurrentEngineContext(...args); }
+  canResumeBrowser() { admissionCalls.resume++; return super.canResumeBrowser(); }
+  reconnectCurrentEngineContext(...args) { admissionCalls.reconnect++; return super.reconnectCurrentEngineContext(...args); }
+};
+telemetryOwners.ConnectionTelemetryCoordinator = class FixtureTelemetry extends OriginalTelemetry {
+  constructor(effects) { super(effects); telemetryEffects = effects; }
+};
 const OriginalDiagnosticAccess = diagnostics.DiagnosticLogAccessRuntime;
 let diagnosticOwner, diagnosticWriter, diagnosticsArmed = false, diagnosticFlushes = 0, finishDiagnosticFlush;
 const diagnosticFlush = new Promise(resolve => { finishDiagnosticFlush = resolve; });
@@ -135,6 +150,8 @@ const startupProjections = [...new Set([
 for (const file of startupProjections) fs.writeFileSync(file, 'synthetic-startup-projection', { mode: 0o600 });
 
 require('../main');
+connectionOwners.ConnectionOperationCoordinator = OriginalOperation;
+telemetryOwners.ConnectionTelemetryCoordinator = OriginalTelemetry;
 diagnostics.DiagnosticLogAccessRuntime = OriginalDiagnosticAccess;
 profiles.createSharedPortalCredentialProvider = originalPortalProvider;
 updates.UpdateNotificationRuntime = OriginalUpdater;
@@ -206,6 +223,12 @@ async function run() {
   const control = await waitForControlWindow();
 
   const initial = await invoke(control, 'window.api.getState()');
+  assert.ok(operationOwner && telemetryEffects, 'actual Main must compose the public Connection owners');
+  const contextToken = operationOwner.contextLease.captureContext();
+  assert.equal(telemetryEffects.isEngineCurrent(1, contextToken), false);
+  assert.deepEqual(await telemetryEffects.reconnect(1, contextToken), { ok: false, stale: true });
+  assert.ok(admissionCalls.current >= 2);
+  assert.equal(admissionCalls.reconnect, 1);
   assert.equal(typeof (await invoke(control, 'window.api.getLogs()')), 'string');
   assert.ok(diagnosticOwner, 'actual Main must construct the public diagnostics owner');
   assert.equal(typeof portalProvider, 'function', 'actual Main must compose the Profile-owned selector');
@@ -389,6 +412,8 @@ async function run() {
   assert.equal(rules.version, 1);
   assert.equal(rules.rules[0].host, 'login.microsoftonline.com');
   assert.ok(fs.readFileSync(persistence.paths.externalPac, 'utf8').includes('127.0.0.1:6180'));
+  assert.ok(admissionCalls.resume > 0, 'actual routing transactions must use the Connection admission owner');
+  process.stdout.write('main Connection admission owner: PASS\n');
   process.stdout.write('main integration: PASS\n');
   diagnosticsArmed = true;
   pendingDiagnostics = Promise.all([diagnosticOwner.read(), diagnosticOwner.open()]);
