@@ -14,7 +14,7 @@ const { ConnectionTelemetryCoordinator } = require('./lib/connection/telemetry/c
 const { DomainRoutePolicyStore } = require('./lib/routing/policy/domain-route-policy');
 const { MyPortalDataRuntime, hkustMyPortalSources, pacDataUrl } = require('./lib/browser/session/browser-session-manager');
 const { CampusBrowserManager, officialPortalHomeUrl } = require('./lib/browser/session/campus-browser-manager');
-const { createPreReadySchoolProfileController } = require('./lib/profiles/runtime/school-profile-controller');
+const { createPreReadySchoolProfileController, createSharedPortalCredentialProvider } = require('./lib/profiles/runtime/school-profile-controller');
 const {
   createTrustedControlRegistrar,
   createControlStateSnapshot, createCustomProfileDeletionRuntime,
@@ -413,7 +413,7 @@ campusBrowserManager = new CampusBrowserManager({
   getSocksPort: socksPort, getNewTabUrl: () => loadSettingsOrReport().browserNewTabUrl,
   getLocale: () => desktopLocale.locale,
   getTranslator: () => desktopLocale.translator,
-  getProfilePresentation: () => activeSchoolProfile.createPresentation({ locale: desktopLocale.locale }).schoolProfile, getWorkspaceResources: () => safeCampusResourceLibrary(), getWorkspaceGroups: () => resourceLibraryRuntime.listGroups(), getSharedPortalCredential: (origin) => origin === 'https://sso.hkust-gz.edu.cn' && activeSchoolProfile.activeContextBinding().profileId === 'hkustgz' ? persistenceRuntime.openCredential() : null,
+  getProfilePresentation: () => activeSchoolProfile.createPresentation({ locale: desktopLocale.locale }).schoolProfile, getWorkspaceResources: () => safeCampusResourceLibrary(), getWorkspaceGroups: () => resourceLibraryRuntime.listGroups(), getSharedPortalCredential: createSharedPortalCredentialProvider({ getProfileId: () => activeSchoolProfile.activeContextBinding().profileId, openCredential: () => persistenceRuntime.openCredential() }),
   onTogglePageFavorite: (candidate) => pageFavoriteController.toggle(candidate).catch((error) => ({ ok: false, error: error.message })), onRecordPageOpen: (url) => (resourceLibraryRuntime.recordOpenByUrl(url) && (emit(), true)), onOpenResource: (resourceId) => resourceLibraryRuntime.openByIdSerialized({ resourceId }), onWorkspaceMutation: (command) => pageFavoriteController.handleWorkspaceCommand(command),
   showItemInFolder: (file) => shell.showItemInFolder(file), showSettings: () => { desktopShell?.showWindow(); desktopShell?.send('open-settings'); },
   showRoutingRules: () => {

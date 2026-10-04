@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const test = require('node:test');
-const { createSchoolProfileController } = require('../../../lib/profiles/runtime/school-profile-controller');
+const { createSchoolProfileController, createSharedPortalCredentialProvider } = require('../../../lib/profiles/runtime/school-profile-controller');
 
 const desktopRoot = path.resolve(__dirname, '..', '..', '..');
 
@@ -154,4 +154,55 @@ test('controller exposes the reviewed raw Profile only through a synchronous cal
     frozen: true,
   });
   assert.throws(() => profile.withProfileDocument(async () => null), /synchronous/u);
+});
+
+test('shared portal provider validates effects without reading context or credentials at construction', () => {
+  let calls = 0;
+  const effect = () => { calls++; throw new Error('construction must not invoke effects'); };
+  assert.equal(typeof createSharedPortalCredentialProvider({ getProfileId: effect, openCredential: effect }), 'function');
+  for (const options of [undefined, {}, { getProfileId: effect }, { openCredential: effect }]) {
+    assert.throws(() => createSharedPortalCredentialProvider(options), TypeError);
+  }
+  assert.equal(calls, 0);
+});
+
+test('shared credentials require the exact reviewed origin without aliases, coercion or context reads on rejection', () => {
+  let reads = 0, opens = 0;
+  const provide = createSharedPortalCredentialProvider({ getProfileId: () => { reads++; return 'hkustgz'; },
+    openCredential: () => { opens++; return null; } });
+  for (const origin of [undefined, null, '', 'http://sso.hkust-gz.edu.cn',
+    'https://sso.hkust-gz.edu.cn/', 'https://sso.hkust-gz.edu.cn:443',
+    'https://SSO.hkust-gz.edu.cn', 'https://sso.hkust-gz.edu.cn/path',
+    'https://sso.hkust-gz.edu.cn.example', { toString() { throw new Error('must not coerce'); } }]) {
+    assert.equal(provide(origin), null);
+  }
+  assert.equal(reads, 0); assert.equal(opens, 0);
+  assert.equal(provide('https://sso.hkust-gz.edu.cn'), null);
+  assert.equal(reads, 1); assert.equal(opens, 1);
+});
+
+test('only the current exact primary Profile can open credentials; unknown/custom identities remain denied', () => {
+  let profileId = 'custom-fixture', opens = 0;
+  const owner = { get withStrings() { throw new Error('provider must not inspect secrets'); },
+    toJSON() { throw new Error('provider must not serialize a credential owner'); } };
+  const provide = createSharedPortalCredentialProvider({ getProfileId: () => profileId,
+    openCredential: () => { opens++; return owner; } });
+  for (const id of ['custom-fixture', 'HKUSTGZ', '', null, undefined, { profileId: 'hkustgz' }]) {
+    profileId = id; assert.equal(provide('https://sso.hkust-gz.edu.cn'), null);
+  }
+  assert.equal(opens, 0);
+  profileId = 'hkustgz'; assert.equal(provide('https://sso.hkust-gz.edu.cn'), owner);
+  profileId = 'custom-fixture'; assert.equal(provide('https://sso.hkust-gz.edu.cn'), null);
+  assert.equal(opens, 1, 'context is read when invoked, not retained from construction');
+});
+
+test('shared portal provider preserves context/open failure identity without permissive fallback', () => {
+  const failure = new Error('synthetic context failure');
+  const contextFailure = createSharedPortalCredentialProvider({ getProfileId: () => { throw failure; },
+    openCredential: () => assert.fail('failed context cannot open a credential') });
+  assert.equal(contextFailure('https://unknown.example'), null);
+  assert.throws(() => contextFailure('https://sso.hkust-gz.edu.cn'), error => error === failure);
+  const openFailure = createSharedPortalCredentialProvider({ getProfileId: () => 'hkustgz',
+    openCredential: () => { throw failure; } });
+  assert.throws(() => openFailure('https://sso.hkust-gz.edu.cn'), error => error === failure);
 });

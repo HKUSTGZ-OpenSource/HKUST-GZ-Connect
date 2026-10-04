@@ -24,6 +24,15 @@ const {
 
 const CURRENT_PROFILE_CAPABILITIES = new Set(['auth.password', 'transport.l3']);
 
+function createSharedPortalCredentialProvider({ getProfileId, openCredential } = {}) {
+  if (typeof getProfileId !== 'function' || typeof openCredential !== 'function') {
+    throw new TypeError('shared portal credential provider dependencies are invalid');
+  }
+  return origin => origin === 'https://sso.hkust-gz.edu.cn' && getProfileId() === 'hkustgz'
+    ? openCredential()
+    : null;
+}
+
 function selectedCapabilityLayer(keys) {
   return Object.fromEntries(keys.map((capability) => [
     capability,
@@ -296,6 +305,7 @@ function createController(context, options) {
 }
 
 module.exports = {
+  createSharedPortalCredentialProvider,
   createPreReadySchoolProfileController,
   createSchoolProfileController,
   createSchoolProfileControllerFromCandidate,

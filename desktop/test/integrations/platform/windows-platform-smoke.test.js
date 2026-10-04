@@ -19,10 +19,11 @@ const {
   ActiveContextSwitchJournalStore,
 } = require('../../../lib/switching/active-context/active-context-switch-store');
 const { createPrivateStorageEffects } = require('../../../lib/platform/storage/private-file');
-const { DesktopPersistenceRuntime } = require('../../../lib/persistence/runtime/desktop-persistence-runtime');
+const { DesktopPersistenceRuntime, ObservedCredentialOwner } = require('../../../lib/persistence/runtime/desktop-persistence-runtime');
 const { DomainRoutePolicyStore } = require('../../../lib/routing/policy/domain-route-policy');
 const { createStartupAutoConnectEligibility } = require('../../../lib/connection/telemetry/network-status-monitor');
 const { UpdateNotificationRuntime } = require('../../../lib/platform/update/update-check');
+const { createSharedPortalCredentialProvider } = require('../../../lib/profiles/runtime/school-profile-controller');
 const {
   commitActiveContextSwitch,
   createPreparedActiveContextSwitch,
@@ -65,6 +66,35 @@ function customConfirmation() {
   });
   return owner.consume({ confirmationHandle: view.confirmationHandle, activeContext });
 }
+
+test('native Main shared-portal selection preserves exact rejection and disposable-owner identity', t => {
+  const source = fs.readFileSync(path.join(DESKTOP, 'main.js'), 'utf8');
+  const expression = source.match(/getSharedPortalCredential:\s*(createSharedPortalCredentialProvider\(\{[\s\S]*?\}\)),\s*onTogglePageFavorite:/u)?.[1];
+  assert.ok(expression);
+  let profileId = 'custom-fixture', profileReads = 0, opens = 0, consumed = 0, destroyed = 0;
+  const owner = new ObservedCredentialOwner({
+    withStrings: callback => { consumed++; return callback('synthetic-portal-user', 'synthetic-portal-input'); },
+    destroy: () => { destroyed++; },
+  }, () => {});
+  t.after(() => owner.destroy());
+  const provide = vm.runInNewContext(`(${expression})`, { createSharedPortalCredentialProvider,
+    activeSchoolProfile: { activeContextBinding: () => { profileReads++; return { profileId }; } },
+    persistenceRuntime: { openCredential: () => { opens++; return owner; } },
+  });
+  assert.equal(profileReads, 0); assert.equal(opens, 0);
+  assert.equal(provide('https://unknown.example'), null);
+  assert.equal(provide('https://sso.hkust-gz.edu.cn/'), null);
+  assert.equal(profileReads, 0); assert.equal(opens, 0);
+  assert.equal(provide('https://sso.hkust-gz.edu.cn'), null);
+  profileId = 'hkustgz'; assert.equal(provide('https://sso.hkust-gz.edu.cn'), owner);
+  assert.equal(opens, 1); assert.equal(consumed, 0); assert.equal(destroyed, 0);
+  profileId = 'custom-fixture'; assert.equal(provide('https://sso.hkust-gz.edu.cn'), null);
+  assert.equal(opens, 1);
+  owner.withStrings((username, password) => { assert.equal(username, 'synthetic-portal-user');
+    assert.equal(password, 'synthetic-portal-input'); });
+  owner.destroy(); assert.equal(destroyed, 1);
+  assert.throws(() => owner.withStrings(() => assert.fail('destroyed owner cannot expose credentials')));
+});
 
 test('native Main quit retires pending update ownership before resource disposal', async () => {
   const source = fs.readFileSync(path.join(DESKTOP, 'main.js'), 'utf8');
