@@ -11,6 +11,26 @@ const { saveSettings } = require('../lib/persistence/settings/settings-store');
 const { createLegacyRuntimeStoragePaths } = require('../lib/persistence/paths/runtime-storage-paths');
 const { DesktopPersistenceRuntime } = require('../lib/persistence/runtime/desktop-persistence-runtime');
 const { createT } = require('../lib/platform/i18n/i18n');
+const diagnostics = require('../lib/diagnostics/logging/log-writer');
+const OriginalDiagnosticAccess = diagnostics.DiagnosticLogAccessRuntime;
+let diagnosticOwner, diagnosticWriter, diagnosticsArmed = false, diagnosticFlushes = 0, finishDiagnosticFlush;
+const diagnosticFlush = new Promise(resolve => { finishDiagnosticFlush = resolve; });
+const diagnosticEffects = { read: 0, open: 0 };
+diagnostics.DiagnosticLogAccessRuntime = class FixtureDiagnosticAccess extends OriginalDiagnosticAccess {
+  constructor(effects) {
+    super({ ...effects, getWriter: () => {
+      const writer = effects.getWriter();
+      if (!diagnosticsArmed) return writer;
+      if (!diagnosticWriter) diagnosticWriter = { get closed() { return writer.closed; },
+        flush: () => { diagnosticFlushes++; return diagnosticFlush; } };
+      return diagnosticWriter;
+    }, readTail: (...args) => { diagnosticEffects.read++; return diagnostics.readLogTail(...args); },
+    openPath: async () => { diagnosticEffects.open++; },
+    });
+    diagnosticOwner = this;
+  }
+};
+let pendingDiagnostics;
 
 const profiles = require('../lib/profiles/runtime/school-profile-controller');
 const originalPortalProvider = profiles.createSharedPortalCredentialProvider;
@@ -115,6 +135,7 @@ const startupProjections = [...new Set([
 for (const file of startupProjections) fs.writeFileSync(file, 'synthetic-startup-projection', { mode: 0o600 });
 
 require('../main');
+diagnostics.DiagnosticLogAccessRuntime = OriginalDiagnosticAccess;
 profiles.createSharedPortalCredentialProvider = originalPortalProvider;
 updates.UpdateNotificationRuntime = OriginalUpdater;
 shells.DesktopShell = OriginalShell;
@@ -125,14 +146,19 @@ app.on('before-quit', () => {
   (async () => {
     assert.equal(updateSignal?.aborted, true, 'actual Main must cancel pending update before cleanup');
     const before = { ...updateEffects };
+    const diagnosticBefore = { ...diagnosticEffects };
     retiredSettings = true;
     finishUpdate({ updateAvailable: true, latestVersion: '99.0.0',
       url: 'https://github.com/synthetic/project/releases/tag/v99.0.0' });
+    finishDiagnosticFlush();
     assert.equal(await lateUpdate, null);
     assert.deepEqual(updateEffects, before);
     assert.equal(updater.inFlightCount, 0);
     assert.equal(updater.snapshot(), null);
     assert.deepEqual(updater.open('https://github.com/synthetic/project/releases/tag/v99.0.0'), { ok: false });
+    assert.deepEqual(await pendingDiagnostics, ['', undefined]);
+    assert.deepEqual(diagnosticEffects, diagnosticBefore);
+    process.stdout.write('main diagnostic quit retirement: PASS\n');
     process.stdout.write('main late update quit retirement: PASS\n');
     validateQuit();
   })().catch(error => { process.stderr.write(`${error.stack || error}\n`); app.exit(1); });
@@ -180,6 +206,8 @@ async function run() {
   const control = await waitForControlWindow();
 
   const initial = await invoke(control, 'window.api.getState()');
+  assert.equal(typeof (await invoke(control, 'window.api.getLogs()')), 'string');
+  assert.ok(diagnosticOwner, 'actual Main must construct the public diagnostics owner');
   assert.equal(typeof portalProvider, 'function', 'actual Main must compose the Profile-owned selector');
   assert.deepEqual(portalCalls, { profile: 0, open: 0 });
   for (const origin of ['http://sso.hkust-gz.edu.cn', 'https://sso.hkust-gz.edu.cn/', 'https://unknown.example']) {
@@ -362,6 +390,9 @@ async function run() {
   assert.equal(rules.rules[0].host, 'login.microsoftonline.com');
   assert.ok(fs.readFileSync(persistence.paths.externalPac, 'utf8').includes('127.0.0.1:6180'));
   process.stdout.write('main integration: PASS\n');
+  diagnosticsArmed = true;
+  pendingDiagnostics = Promise.all([diagnosticOwner.read(), diagnosticOwner.open()]);
+  await waitFor(() => diagnosticFlushes === 2, 'parked diagnostic flushes');
   updatesArmed = true;
   lateUpdate = updater.run(true);
   await waitFor(() => typeof finishUpdate === 'function', 'parked Main update request');

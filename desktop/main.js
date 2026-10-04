@@ -27,7 +27,7 @@ const {
 } = require('./lib/ipc/control-ipc-suite');
 const { ensureOwnerOnly, createPrivateStorageEffects } = require('./lib/platform/storage/private-file');
 const profileStorageEffects = createPrivateStorageEffects({ fileSystem: fs, platform: process.platform });
-const { BufferedLogWriter, readLogTail } = require('./lib/diagnostics/logging/log-writer');
+const { BufferedLogWriter, DiagnosticLogAccessRuntime } = require('./lib/diagnostics/logging/log-writer');
 const { UpdateNotificationRuntime, checkForUpdate } = require('./lib/platform/update/update-check');
 const { ConnectivityRecovery } = require('./lib/connection/recovery/connectivity-recovery');
 const { createNetworkStartupSystem, createStartupAutoConnectEligibility } = require('./lib/connection/telemetry/network-status-monitor');
@@ -171,6 +171,11 @@ let logWriter = null;
 function initializeLogWriter() {
   logWriter = new BufferedLogWriter(LOG, { onError: reportLogFailure, onRecovered: () => connectionStatus.reportLogRecovered() });
 }
+const diagnosticLogAccess = new DiagnosticLogAccessRuntime({
+  file: LOG, getWriter: () => logWriter,
+  captureContext: () => activeContextLease.captureContext(), isContextCurrent: token => activeContextLease.isContextCurrent(token),
+  isQuitting: () => desktopShell?.isQuitting === true, onFlushFailure: reportLogFailure, openPath: file => shell.openPath(file),
+});
 const proxyAccess = DesktopPersistenceRuntime.createProxyAccess({
   credentialStore: { filePath: PROXY_CREDENTIAL, safeStorage, platform: process.platform },
   sidecarFile: PROXY_HELPER_CREDENTIAL,
@@ -547,14 +552,8 @@ registerCoreControlIpc({
   connect: async () => { const { intent: _intent, ...result } = await connect(); return result; },
   disconnect: () => disconnect(),
   reconnect: async () => { const { intent: _intent, ...result } = await reconnect(); return result; },
-  getLogs: async () => {
-    await logWriter.flush().catch(reportLogFailure);
-    return readLogTail(LOG);
-  },
-  openLog: async () => {
-    await logWriter.flush().catch(reportLogFailure);
-    await shell.openPath(LOG).catch(() => {});
-  },
+  getLogs: () => diagnosticLogAccess.read(),
+  openLog: () => diagnosticLogAccess.open(),
   copyText: (text) => {
     clipboard.writeText(text);
     return { ok: true };

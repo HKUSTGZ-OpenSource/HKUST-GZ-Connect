@@ -201,12 +201,12 @@ test('current production graph has no cycle and stays within debt growth caps', 
   assert.deepEqual(snapshot.rootLibraryDebtErrors, []);
 });
 
-test('Main state and startup admission composition budgets ratchet to the current owned root', () => {
-  assert.equal(BASELINE.mainLines, 666);
+test('Main diagnostic and admission composition budgets ratchet to the current owned root', () => {
+  assert.equal(BASELINE.mainLines, 665);
   assert.equal(BASELINE.mainDirectDependencies, 20);
   assert.equal(BASELINE.mainEffectiveDirectDependencies, 35);
   assert.equal(BASELINE.runtimeCompositionMembers, 16);
-  assert.ok(architectureErrors({ cycles: [], mainLines: 667 })
+  assert.ok(architectureErrors({ cycles: [], mainLines: 666 })
     .some(error => error.includes('mainLines')));
 });
 
