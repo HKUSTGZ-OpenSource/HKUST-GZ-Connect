@@ -1,8 +1,8 @@
 # Modularization plan
 
-- Status: Active execution plan; M4 completed, M1/M2/M3/M5 open
+- Status: Active execution plan; M3/M4 source outcomes completed, M1/M2/M5 open
 - Owner: architecture maintainers
-- Last verified: 2026-10-03 (`main@eb5a60743427286e5af5c6eafce48d4ddaa5b63d`)
+- Last verified: 2026-10-04 (`main@52479ca69c721133df9280eea6b314610eb44210`)
 - Applies to: development `main` after published 2.0.3; merged source is not a new release
 - Supersedes: ad-hoc file-by-file extraction without an ownership receipt
 
@@ -21,12 +21,13 @@ Renderer has 563 lines. At that baseline, the gate could not see the main Render
 global-script graph; #110 later added a static boundary policy for new changes.
 
 At the verification commit, Renderer `app.js` is 420 lines, Campus Browser 1,122,
-Desktop Main 730 (24 direct / 39 effective / 170 transitive dependencies) and
-`ec-engine.rs` 498. M4/#82 is closed through #148; the other
-four waves remain open. Counts are debt evidence, not a substitute for ownership/lifecycle gates.
+Desktop Main 662 (20 direct / 35 effective / 170 transitive dependencies) and
+`ec-engine.rs` 498. M3's [whole-root receipt](../engineering/desktop-main-m3-exit.md)
+accepts its source outcome; M4/#82 is closed through #148. M1/M2/M5 remain open.
+Counts are debt evidence, not a substitute for ownership/lifecycle gates.
 Per-wave size counts below are historical extraction receipts, not competing current totals.
-M3's intermediate below-800/24 stage is met; final 500-700/20 composition is not.
-The current static-JS debt inventory/cap is 105 and the frozen legacy Renderer list has 24 files.
+All three M3 numerical stages and semantic/platform criteria are met at the receipt checkpoint.
+Current static-JS debt inventory/cap is 90 and the frozen legacy Renderer list has 24 files.
 
 Primary concurrency hot spots:
 
@@ -172,6 +173,13 @@ Exit target: no Browser owner exceeds 600 lines and lifecycle tests cover every 
 
 ## Wave M3 — Desktop Main composition
 
+Completed source outcome, with every #81 criterion mapped to concrete owner/test/platform
+evidence in the [exit receipt](../engineering/desktop-main-m3-exit.md) and the
+[composition boundary](desktop-main-composition-boundary.md). #239 removes the final eight
+Main private-import exceptions and forbids matching legacy records from bypassing Main.
+The paragraphs below are historical slice receipts: their then-open statements and sizes
+describe those checkpoints, not current gates or incomplete work after the exit receipt.
+
 [Update notification ownership](update-notification-owner.md) keeps scheduling and
 notification state in the existing update domain, lowering Main to 1,682 lines
 without increasing dependency caps. This is one bounded seam, not M3 completion.
@@ -201,7 +209,7 @@ legacy journal recovery, its blocked/retry state, mutation dispatch and recovery
 feedback into that same Runtime. At that historical slice Main falls to 1,008 lines,
 32 direct / 46 effective dependencies, with 170 transitive dependencies unchanged.
 The first-stage dependency target was still open at that slice. Later #212 reaches the
-intermediate below-800/24 stage; the current 730-line/24-dependency root remains above final composition.
+intermediate below-800/24 stage; the then-730-line/24-dependency root remained above final composition.
 
 The follow-on connectivity-operation seam extends the existing
 [Connection operation owner](desktop-connection-operation-owner.md) with recovery
@@ -353,7 +361,8 @@ The static-JS ratchet now rejects new resolved cross-module bypasses against 124
 edges at `main@381c5f29`. Declaring the existing shared campus-route contract public reduces
 the inventory to 116. Merged #184 Routing coordination lowers it to 115 and #185 certificate
 entrypoint to 113, without new public policy or budget expansion. Later #210/#212/#215 lower
-the inventory/hard cap to 105. Dynamic Renderer and Rust visibility remain separate M5 work.
+the inventory/hard cap to 105, then locale/entrypoint reconciliation lowers it to 90.
+Main's zero-exception subset is enforced, not full M5. Dynamic Renderer and Rust visibility remain separate work.
 
 - Root Desktop test debt is zero; keep tests in `test/unit/<domain>`, `test/contracts` or
   `test/integrations` and reject new root-test debt.

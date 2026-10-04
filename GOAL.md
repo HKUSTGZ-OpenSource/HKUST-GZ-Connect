@@ -4,8 +4,8 @@
 - Authority: project maintainer
 - Baseline: `main@15738338ff2a280300b66e98a1823659f24630a4`
 - Started: 2026-09-04
-- Last verified: 2026-10-03 (before this documentation PR)
-- Development main at verification: `eb5a60743427286e5af5c6eafce48d4ddaa5b63d`
+- Last verified: 2026-10-04 (source/M3 acceptance; repository settings retain their separately dated evidence)
+- Development main at verification: `52479ca69c721133df9280eea6b314610eb44210`
 - Scope: repository governance, documentation truth, agent instructions, module boundaries,
   contributor workflow, GitHub protections and organization migration
 
@@ -36,8 +36,10 @@ high-risk rules. No instruction file is treated as a substitute for review or te
 
 1. PR #59 established the contributor, agent, documentation and machine-governance baseline on
    `main`; runtime modularization must now consume those boundaries rather than create alternatives.
-2. `desktop/main.js`, `desktop/lib/browser/session/campus-browser.js` and the Renderer
-   bootstrap/CSS remain concurrency hot spots. Rust process composition M4 is completed through
+2. Desktop Main's M3 composition outcome is accepted at the verified source checkpoint;
+   see the [requirement-by-requirement receipt](docs/engineering/desktop-main-m3-exit.md).
+   `desktop/lib/browser/session/campus-browser.js` and Renderer bootstrap/CSS remain
+   concurrency hot spots. Rust process composition M4 is completed through
    #148/#82; its root is 498 lines and default production gates the five research modules
    specified in ADR-0034. The additional config/tunnel ownership ambiguity remains M5 work.
 3. Legacy Renderer globals and HTML script order remain migration debt. The merged static policy
@@ -60,10 +62,12 @@ high-risk rules. No instruction file is treated as a substitute for review or te
    into its Session owner. #210-#212 narrow credential access, Browser request-security dispatch
    and proxy-access composition. #213/#214 retire the new-tab and browser-data classic globals;
    #215 owns ordered ready startup and removes unused App composition exports.
-   Main is 730 lines with 24 direct / 39 effective / 170 transitive dependencies; Browser is
-   1,122 lines, Renderer bootstrap 420 and Engine root 498. M3's first 1,200/30 and intermediate
-   below-800/24 stages are met, but final 500-700/20 composition is not. M2's full ownership target
-   is not met. Static-JS private-edge inventory/cap is 105; 24 legacy Renderer files remain.
+   Later #219-#239 finish Main assembly, status, credential/locale/recovery/resource/admission/
+   diagnostic/portal ownership and the zero-exception direct-entrypoint contract. Main is
+   662 lines with 20 direct / 35 effective / 170 transitive dependencies; Browser is 1,122,
+   Renderer bootstrap 420 and Engine root 498. All M3 numerical stages and whole-root semantic/
+   ownership/platform gates are satisfied. M2's full ownership target is not met.
+   Static-JS private-edge inventory/cap is 90; 24 legacy Renderer files remain.
    #162's reproduced window cleanup is merged; #178 fixes the reproduced calendar source query,
    but #177 still requires a sanitized reporter retest. #200 closes custom-Profile credential
    retirement failure #199; #198 closes #197's bounded Gateway locator/explicit TLS source scope.
@@ -72,8 +76,8 @@ high-risk rules. No instruction file is treated as a substitute for review or te
    #205 removes the vulnerable Desktop build/download dependency chain while keeping Electron
    43.7.7 and older supported platforms. Its build tool is pinned to an explicitly reviewed
    prerelease (`electron-builder@27.0.0-alpha.9`), not silently represented as stable tooling.
-   None of these post-tag changes is in 2.0.3. M1/M2/M3/M5 and the original Windows report #127
-   remain open. Exact-main CI `37123050750` passed on the verification commit after #215.
+   None of these post-tag changes is in 2.0.3. M1/M2/M5 and the original Windows report #127
+   remain open. Exact-main CI `37174025703` passed on the verification commit after #239.
    An empty PR queue is not completion; merged post-tag source is not a released capability.
 5. Repository Rulesets, CODEOWNERS, templates, Dependabot, release Environment and immutable Action
    policies are active. Two Organization owners are present. Protected `main` still requires one
@@ -218,10 +222,10 @@ release assumptions.
 
 Stable remains immutable `v2.0.3@b57c394c73e0b07a0076e26f58e1666e29f00135`.
 Development source at this checkpoint is
-`main@eb5a60743427286e5af5c6eafce48d4ddaa5b63d`; post-tag source fixes and owner extractions
+`main@52479ca69c721133df9280eea6b314610eb44210`; post-tag source fixes and owner extractions
 do not silently alter that release or the installed application. An empty PR queue is not
-goal completion. M4/#82 and dependency backlog #105 are
-closed; Renderer, remaining Browser, Main composition, full dependency enforcement, deferred
+goal completion. M3's source exit and M4/#82 and dependency backlog #105 are accepted;
+Renderer, remaining Browser, full dependency enforcement, deferred
 role-specific governance and the unreproduced Windows report remain separate acceptance work.
 
 The maintainer-authorized administrator exception does not invent an independent approval or
