@@ -12,6 +12,18 @@ const { createLegacyRuntimeStoragePaths } = require('../lib/persistence/paths/ru
 const { DesktopPersistenceRuntime } = require('../lib/persistence/runtime/desktop-persistence-runtime');
 const { createT } = require('../lib/platform/i18n/i18n');
 
+const profiles = require('../lib/profiles/runtime/school-profile-controller');
+const originalPortalProvider = profiles.createSharedPortalCredentialProvider;
+let portalProvider;
+const portalCalls = { profile: 0, open: 0 };
+profiles.createSharedPortalCredentialProvider = effects => {
+  portalProvider = originalPortalProvider({
+    getProfileId: () => { portalCalls.profile++; return effects.getProfileId(); },
+    openCredential: () => { portalCalls.open++; return effects.openCredential(); },
+  });
+  return portalProvider;
+};
+
 // Test-process-only update transport and quit gate. Every ordinary check is
 // offline; a parked result is deliberately allowed to arrive after retirement.
 const updates = require('../lib/platform/update/update-check');
@@ -103,6 +115,7 @@ const startupProjections = [...new Set([
 for (const file of startupProjections) fs.writeFileSync(file, 'synthetic-startup-projection', { mode: 0o600 });
 
 require('../main');
+profiles.createSharedPortalCredentialProvider = originalPortalProvider;
 updates.UpdateNotificationRuntime = OriginalUpdater;
 shells.DesktopShell = OriginalShell;
 let quitChecked = false;
@@ -167,6 +180,14 @@ async function run() {
   const control = await waitForControlWindow();
 
   const initial = await invoke(control, 'window.api.getState()');
+  assert.equal(typeof portalProvider, 'function', 'actual Main must compose the Profile-owned selector');
+  assert.deepEqual(portalCalls, { profile: 0, open: 0 });
+  for (const origin of ['http://sso.hkust-gz.edu.cn', 'https://sso.hkust-gz.edu.cn/', 'https://unknown.example']) {
+    assert.equal(portalProvider(origin), null);
+  }
+  assert.deepEqual(portalCalls, { profile: 0, open: 0 });
+  assert.equal(portalProvider('https://sso.hkust-gz.edu.cn'), null, 'synthetic Main has no persistent credential');
+  assert.deepEqual(portalCalls, { profile: 1, open: 1 });
   assert.equal(initial.settings.port, 1080);
   assert.equal(initial.dnsMode, 'unknown');
   assert.equal(initial.notice, createT(initial.locale)(recoveryKind === 'restored'

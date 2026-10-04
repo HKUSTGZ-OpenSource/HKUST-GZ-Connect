@@ -55,6 +55,15 @@ test('profile drives resources, routes and a Main-resolved official portal home'
   assert.match(main, /gatewayPort: GATEWAY_PORT/u);
 });
 
+test('Main credential-origin policy debt is zero and only public Profile/persistent owner capabilities are composed', () => {
+  const block = section('campusBrowserManager = new CampusBrowserManager({', '\nconst integrationTargetSelector');
+  const originPolicyCount = (main.match(/https:\/\/sso\.hkust-gz\.edu\.cn/gu) || []).length;
+  assert.equal(originPolicyCount, 0, 'the one legacy deployment-specific credential gate cannot return to Main');
+  assert.match(block, /getSharedPortalCredential: createSharedPortalCredentialProvider\(\{ getProfileId: \(\) => activeSchoolProfile\.activeContextBinding\(\)\.profileId, openCredential: \(\) => persistenceRuntime\.openCredential\(\) \}\)/u);
+  assert.doesNotMatch(block, /getSharedPortalCredential:.*vpnCredentialAccess/u,
+    'this selector must not acquire a new memory-credential entitlement');
+});
+
 test('reviewed profile and config binding is validated before credential decryption', () => {
   const connect = attempt;
   assert.match(main, /engineAttempts\.run\(isRetry, intent\)/u);
