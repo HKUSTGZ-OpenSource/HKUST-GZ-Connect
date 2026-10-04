@@ -396,15 +396,30 @@ async function assertViewportLifecycle(browser) {
       actual: browser.window.getContentSize(), bounds: browser.activeTab().view.getBounds() }));
   }
   const oldWindow = browser.window;
+  const oldPage = browser.activeTab();
+  const oldContents = oldPage.view.webContents;
+  assert.equal(browser.pagePresentationOwner.records.has(oldPage), true);
+  const oldPageRecord = browser.pagePresentationOwner.records.get(oldPage);
+  const staleTitle = oldPageRecord.listeners.find(([name]) => name === 'page-title-updated')[1];
+  const staleLoading = oldPageRecord.listeners.find(([name]) => name === 'did-start-loading')[1];
   browser.scheduleLayout();
   assert.notEqual(browser.scheduledLayout, null);
   browser.close();
   await waitForMain(() => oldWindow.isDestroyed(), 'native window closure');
   assert.equal(browser.scheduledLayout, null);
   assert.equal(browser.findOpen, false);
+  assert.equal(browser.pagePresentationOwner.records.size, 0);
   await browser.open(DEAD_URL, 11080, 'campus');
   assert.notEqual(browser.window, oldWindow);
   assert.equal(browser.findOpen, false, 'replacement does not inherit retired find state');
+  assert.equal(browser.pagePresentationOwner.records.has(oldPage), false);
+  assert.equal(oldContents.listeners('page-title-updated').includes(staleTitle), false);
+  const replacementUpdate = browser.scheduledToolbarUpdate;
+  staleLoading(); staleTitle();
+  assert.equal(oldPage.slowTimer, null);
+  assert.equal(browser.scheduledToolbarUpdate, replacementUpdate,
+    'old page callbacks cannot create or replace the new window update');
+  console.log('native Browser page listeners and late callback retirement: PASS');
   console.log('native Browser viewport resize/find/retirement: PASS');
 }
 

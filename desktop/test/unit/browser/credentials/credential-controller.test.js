@@ -388,23 +388,27 @@ test('CampusBrowser delegates candidate state and keeps all lifecycle clear call
   );
   assert.match(source, /new CredentialController\(\{/);
   assert.match(source, /this\.credentialController\.stage\(tab, candidate\)/);
-  assert.match(source, /this\.credentialController\.confirmPageState\(tab, candidate\)/);
-  assert.match(source, /markCredentialNavigation\(tab, url, httpResponseCode\)/);
-  for (const fragment of [
-    'const handleLoadFailure',
-    '\n  handleRendererCrash(tab, details = {})',
-    '\n  async setTabRoute',
-  ]) {
-    const start = source.indexOf(fragment);
-    assert.notEqual(start, -1, `missing lifecycle boundary: ${fragment}`);
-    assert.match(source.slice(start, start + 1800), /clearCredentialCandidate\(tab\)/,
-      `${fragment} must clear any staged credential`);
-  }
+  assert.match(source, /this\.credentialController\.confirmPageState\(tab, state\)/);
+  const page = fs.readFileSync(path.join(desktopRoot, 'lib', 'browser', 'toolbar', 'browser-toolbar-owner.js'), 'utf8');
+  assert.match(page, /this\.effects\.markCredentialNavigation\(tab, url, code\)/);
+  const failure = page.slice(page.indexOf('\n  renderFailure('), page.indexOf('\n  handleRendererCrash('));
+  assert.match(failure, /this\.effects\.clearCredentialCandidate\(tab\)/,
+    'the actual page-failure owner must clear staged credentials before rendering');
+  assert.match(page.slice(page.indexOf('const failed ='), page.indexOf("on('did-fail-load'")),
+    /this\.renderFailure\(record, url, description\)/);
+  assert.match(page.slice(page.indexOf('\n  handleRendererCrash('), page.indexOf('\nclass BrowserViewportOwner')),
+    /this\.renderFailure\(record,/,
+    'renderer crashes use the same credential-clearing failure boundary');
+  assert.match(source.slice(source.indexOf('\n  handleRendererCrash('), source.indexOf('\n  async manageCredential(')),
+    /this\.pagePresentationOwner\.handleRendererCrash\(tab, details\)/);
+  const routeStart = source.indexOf('\n  async setTabRoute');
+  assert.notEqual(routeStart, -1);
+  assert.match(source.slice(routeStart, routeStart + 1800), /clearCredentialCandidate\(tab\)/);
   const closeStart = source.indexOf('\n  closeTab(id)');
   assert.notEqual(closeStart, -1);
   const owner = fs.readFileSync(path.join(desktopRoot, 'lib', 'browser', 'tabs', 'tab-manager.js'), 'utf8');
   assert.match(source.slice(closeStart, closeStart + 100), /this\.tabManager\.close\(id\)/);
-  assert.match(source, /closeTabState: tab => this\.credentialController\.closeTab\(tab\)/);
+  assert.match(source, /closeTabState: tab => \{\s+try \{ this\.pagePresentationOwner\.detach\(tab\); \}\s+finally \{ this\.credentialController\.closeTab\(tab\); \}/);
   assert.match(owner.slice(owner.indexOf('\n  close(id)'), owner.indexOf('\n  clearTransientState()')),
     /this\.effects\.closeTabState\(tab\)/,
     'closing a popup must unlink it without copying or prematurely consuming the owner secret');
