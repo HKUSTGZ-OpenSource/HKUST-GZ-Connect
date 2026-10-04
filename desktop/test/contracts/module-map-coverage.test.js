@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const {
   moduleCoverage, moduleEdgeDebtErrors, moduleImportViolations,
@@ -11,6 +12,7 @@ const {
 } = require('../../scripts/module-map-coverage');
 const {
   architectureErrors, architectureSnapshot, moduleEdgeRatchetErrors, relativeRequires,
+  buildDependencyGraph, collectJavaScriptFiles, filesInScope, JAVASCRIPT_SCOPE,
 } = require('../../scripts/check-architecture');
 
 function fixture() {
@@ -179,6 +181,71 @@ test('static module imports distinguish undeclared edges from private entrypoint
     .includes('unowned import target: desktop/lib/missing/unsafe.js'));
 });
 
+test('Main resolves exactly twenty direct edges with no private or undeclared entrypoint exception', () => {
+  const root = path.resolve(__dirname, '../../..'), desktop = path.join(root, 'desktop');
+  const graph = buildDependencyGraph(filesInScope(collectJavaScriptFiles(desktop), desktop, JAVASCRIPT_SCOPE.PRODUCTION));
+  const imports = graph.get(path.join(desktop, 'main.js')).map(target => [
+    'desktop/main.js', path.relative(root, target).replaceAll(path.sep, '/'),
+  ]);
+  assert.equal(imports.length, 20);
+  const source = fs.readFileSync(path.join(root, 'docs/architecture/module-map.yml'), 'utf8');
+  assert.deepEqual(moduleImportViolations(source, imports), { errors: [], violations: [] });
+});
+
+test('reviewed Main service entrypoints do not make implementation siblings or undeclared directions public', () => {
+  const root = path.resolve(__dirname, '../../..');
+  const source = fs.readFileSync(path.join(root, 'docs/architecture/module-map.yml'), 'utf8');
+  const entries = [
+    'desktop/lib/app/card-board-main-runtime.js',
+    'desktop/lib/connection/recovery/connectivity-recovery.js',
+    'desktop/lib/connection/telemetry/connection-telemetry-coordinator.js',
+    'desktop/lib/connection/telemetry/network-status-monitor.js',
+    'desktop/lib/integrations/external-proxy-config.js',
+    'desktop/lib/platform/update/update-check.js',
+    'desktop/lib/profiles/runtime/school-profile-controller.js',
+    'desktop/lib/switching/effects/browser-engine-barrier.js',
+  ];
+  const imports = entries.map(entry => ['desktop/main.js', entry]);
+  assert.deepEqual(moduleImportViolations(source, imports), { errors: [], violations: [] });
+  for (const entry of entries) {
+    const map = parseModuleMap(source);
+    const owner = map.modules.find(module => module.publicEntrypoints.includes(entry));
+    assert.ok(owner, entry);
+    owner.publicEntrypoints = owner.publicEntrypoints.filter(file => file !== entry);
+    assert.deepEqual(moduleImportViolations(JSON.stringify(map), imports).violations,
+      [`desktop/main.js -> ${entry} [private-entrypoint]`]);
+  }
+  for (const sibling of ['desktop/lib/app/startup/multi-school-startup-runtime.js',
+    'desktop/lib/connection/recovery/health-supervisor.js',
+    'desktop/lib/persistence/credentials/credential-store.js',
+    'desktop/lib/profiles/registry/profile-candidate-directory.js',
+    'desktop/lib/platform/storage/windows-private-file.js']) {
+    assert.deepEqual(moduleImportViolations(source, [['desktop/main.js', sibling]]).violations,
+      [`desktop/main.js -> ${sibling} [private-entrypoint]`]);
+  }
+  const map = parseModuleMap(source);
+  map.modules.find(module => module.id === 'desktop-main').allowedDependencies = [];
+  assert.equal(moduleImportViolations(JSON.stringify(map), imports).violations.length, entries.length);
+  assert.ok(moduleImportViolations(JSON.stringify(map), imports).violations.every(value => value.endsWith('[undeclared-dependency]')));
+});
+
+test('Main cannot grandfather a private entrypoint through a matching legacy debt record', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hkust-main-entry-contract-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const desktop = path.join(root, 'desktop'), docs = path.join(root, 'docs', 'architecture');
+  fs.mkdirSync(path.join(desktop, 'scripts'), { recursive: true }); fs.mkdirSync(docs, { recursive: true });
+  const f = fixture();
+  f.document.modules.push({ id: 'desktop-main', paths: ['desktop/main.js'], publicEntrypoints: [],
+    allowedDependencies: ['a'], risk: 'critical', requiredChecks: ['desktop'] });
+  const edge = 'desktop/main.js -> desktop/lib/a/private.js [private-entrypoint]';
+  fs.writeFileSync(path.join(docs, 'module-map.yml'), JSON.stringify(f.document));
+  fs.writeFileSync(path.join(desktop, 'scripts', 'module-edge-debt.json'), JSON.stringify({
+    schemaVersion: 1, baseSha: 'a'.repeat(40), exceptions: [edge],
+  }));
+  const graph = new Map([[path.join(desktop, 'main.js'), [path.join(desktop, 'lib', 'a', 'private.js')]]]);
+  assert.ok(moduleEdgeRatchetErrors(desktop, graph).includes(`Main import boundary violation: ${edge}`));
+});
+
 test('the actual shared i18n file is public for its three existing consumers, not a hidden bypass', () => {
   const root = path.resolve(__dirname, '../../..');
   const source = fs.readFileSync(path.join(root, 'docs/architecture/module-map.yml'), 'utf8');
@@ -195,7 +262,7 @@ test('the actual shared i18n file is public for its three existing consumers, no
   assert.equal(moduleImportViolations(JSON.stringify(map), imports).violations.length, 3,
     'removing the declaration must reveal all old edges rather than silently exempting them');
   const debt = JSON.parse(fs.readFileSync(path.join(root, 'desktop/scripts/module-edge-debt.json'), 'utf8'));
-  assert.equal(debt.exceptions.length, 98);
+  assert.equal(debt.exceptions.length, 90);
   assert.ok(debt.exceptions.every(edge => !edge.includes('platform/i18n/i18n.js')));
 });
 
@@ -217,7 +284,7 @@ test('exact static-edge debt rejects new bypasses and stale exceptions', () => {
   assert.deepEqual(moduleEdgeDebtErrors([], debt), [`stale module edge debt: ${old}`]);
   for (const invalid of [null, { ...debt, exceptions: [old, old] },
     { ...debt, extra: true }, { ...debt, baseSha: 'short' },
-    { ...debt, exceptions: Array.from({ length: 114 }, (_, index) =>
+    { ...debt, exceptions: Array.from({ length: 91 }, (_, index) =>
       `desktop/lib/a/${index}.js -> desktop/lib/b/private.js [private-entrypoint]`).sort() }]) {
     assert.deepEqual(moduleEdgeDebtErrors([old], invalid), ['module edge debt manifest is invalid']);
   }

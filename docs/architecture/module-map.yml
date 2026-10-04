@@ -28,6 +28,7 @@ modules:
     paths: [desktop/lib/app/**]
     publicEntrypoints:
       - desktop/lib/app/desktop-runtime-composition.js
+      - desktop/lib/app/card-board-main-runtime.js
     allowedDependencies:
       - desktop-connection
       - desktop-browser
@@ -46,6 +47,9 @@ modules:
       - desktop/lib/connection/engine/engine-process.js
       - desktop/lib/connection/engine/engine-connection-runtime.js
       - desktop/lib/connection/state/connection-state-machine.js
+      - desktop/lib/connection/recovery/connectivity-recovery.js
+      - desktop/lib/connection/telemetry/connection-telemetry-coordinator.js
+      - desktop/lib/connection/telemetry/network-status-monitor.js
     allowedDependencies: [desktop-profiles, desktop-platform, desktop-diagnostics]
     risk: high
     requiredChecks: [desktop, desktop-electron, engine, architecture]
@@ -92,7 +96,9 @@ modules:
     paths: [desktop/lib/profiles/**, desktop/lib/switching/**]
     publicEntrypoints:
       - desktop/lib/profiles/runtime/school-profile-runtime.js
+      - desktop/lib/profiles/runtime/school-profile-controller.js
       - desktop/lib/switching/runtime/profile-switch-runtime.js
+      - desktop/lib/switching/effects/browser-engine-barrier.js
     allowedDependencies: [desktop-persistence, desktop-connection, desktop-browser, desktop-routing]
     risk: high
     requiredChecks: [desktop, profile-e2e, migration-e2e, architecture]
@@ -119,6 +125,7 @@ modules:
   - id: desktop-integrations
     paths: [desktop/lib/integrations/**]
     publicEntrypoints:
+      - desktop/lib/integrations/external-proxy-config.js
       - desktop/lib/integrations/integration-center-runtime.js
     allowedDependencies: [desktop-resources, desktop-routing, desktop-profiles, desktop-connection]
     risk: high
@@ -139,6 +146,7 @@ modules:
   - id: desktop-platform
     paths: [desktop/lib/platform/**, desktop/lib/network-environment/**]
     publicEntrypoints:
+      - desktop/lib/platform/update/update-check.js
       - desktop/lib/platform/shell/desktop-shell.js
       - desktop/lib/platform/storage/private-file.js
       - desktop/lib/platform/i18n/i18n.js

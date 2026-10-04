@@ -91,14 +91,6 @@
     "desktop/lib/resources/runtime/resource-activity-store.js -> desktop/lib/platform/storage/windows-private-file.js [private-entrypoint]",
     "desktop/lib/resources/schema/campus-resource-contract.js -> desktop/lib/routing/policy/host-safety.js [private-entrypoint]",
     "desktop/lib/switching/active-context/active-context-activation-store.js -> desktop/lib/persistence/paths/profile-workspace-layout.js [private-entrypoint]",
-    "desktop/lib/switching/active-context/active-context-activation-store.js -> desktop/lib/persistence/schema/profile-workspace-documents.js [private-entrypoint]",
-    "desktop/main.js -> desktop/lib/app/card-board-main-runtime.js [private-entrypoint]",
-    "desktop/main.js -> desktop/lib/connection/recovery/connectivity-recovery.js [private-entrypoint]",
-    "desktop/main.js -> desktop/lib/connection/telemetry/connection-telemetry-coordinator.js [private-entrypoint]",
-    "desktop/main.js -> desktop/lib/connection/telemetry/network-status-monitor.js [private-entrypoint]",
-    "desktop/main.js -> desktop/lib/integrations/external-proxy-config.js [private-entrypoint]",
-    "desktop/main.js -> desktop/lib/platform/update/update-check.js [private-entrypoint]",
-    "desktop/main.js -> desktop/lib/profiles/runtime/school-profile-controller.js [private-entrypoint]",
-    "desktop/main.js -> desktop/lib/switching/effects/browser-engine-barrier.js [private-entrypoint]"
+    "desktop/lib/switching/active-context/active-context-activation-store.js -> desktop/lib/persistence/schema/profile-workspace-documents.js [private-entrypoint]"
   ]
 }
