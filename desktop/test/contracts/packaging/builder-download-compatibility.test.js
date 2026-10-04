@@ -13,14 +13,24 @@ const path = require('node:path');
 const test = require('node:test');
 
 async function runWorker(kind, cacheRoot) {
+  const deadlineCase = kind === 'deadline' || kind === 'deadline-preparation';
   const body = Buffer.from('synthetic builder artifact; never executable');
   const checksum = crypto.createHash('sha256').update(body).digest('hex');
   let requests = 0;
   let proxied = 0;
+  let deadlineController = null, deadlineTimer = null;
   const server = http.createServer((request, response) => {
     requests += 1;
     if (request.url.startsWith('http://127.0.0.2:')) proxied += 1;
-    if (kind === 'deadline') return;
+    if (deadlineCase) {
+      // Measure the installed builder's forwarding of the same300ms deadline
+      // only after actual request admission, not cache/lock/fetch preparation.
+      if (deadlineController && deadlineTimer === null) {
+        deadlineTimer = setTimeout(() => deadlineController.abort(
+          new DOMException('synthetic in-flight deadline', 'TimeoutError')), 300);
+      }
+      return;
+    }
     if ((kind === 'retry' && requests === 1) || kind === 'not-found') {
       response.writeHead(kind === 'retry' ? 503 : 404);
       response.end('synthetic status');
@@ -53,6 +63,7 @@ async function runWorker(kind, cacheRoot) {
   const major = Number(manifest.version.split('.')[0]);
   assert.ok([26, 27].includes(major), 'a new builder major needs an explicit compatibility review');
   const usesFetch = major === 27;
+  if (usesFetch && deadlineCase) deadlineController = new AbortController();
   // Optional local negative experiment: replace only builder's @electron/get import.
   // This does not edit node_modules, the lockfile or any installed application.
   if (process.env.HKUST_TEST_GET5_CANDIDATE === '1') {
@@ -84,12 +95,13 @@ async function runWorker(kind, cacheRoot) {
         resolveAssetURL: async () => `http://${kind === 'proxy' ? '127.0.0.2' : '127.0.0.1'}:${port}/${filename}`,
       },
       downloadOptions: usesFetch
-        ? { signal: AbortSignal.timeout(kind === 'deadline' ? 300 : 10_000), quiet: true }
-        : { timeout: { request: kind === 'deadline' ? 50 : 2_000 }, retry: { limit: 0 }, quiet: true },
+        ? { signal: deadlineController?.signal || AbortSignal.timeout(10_000), quiet: true }
+        : { timeout: { request: deadlineCase ? 50 : 2_000 }, retry: { limit: 0 }, quiet: true },
     },
   };
   const started = performance.now();
   try {
+    if (kind === 'deadline-preparation') await new Promise(resolve => setTimeout(resolve, 750));
     const downloaded = await downloadElectronArtifactZip(options);
     assert.deepEqual(await fs.readFile(downloaded), body);
     assert.ok(downloaded.startsWith(`${cacheRoot}${path.sep}`));
@@ -108,8 +120,9 @@ async function runWorker(kind, cacheRoot) {
       checksumMismatch: error instanceof builderRequire('sumchecker').ChecksumMismatchError,
       deadlineRejected: error.name === 'TimeoutError' || error.name === 'AbortError',
       status: error.response?.statusCode ?? error.response?.status ?? null,
-      elapsed: performance.now() - started };
+      elapsed: performance.now() - started, deadlineArmed: deadlineTimer !== null };
   } finally {
+    if (deadlineTimer !== null) clearTimeout(deadlineTimer);
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
   }
@@ -174,7 +187,10 @@ if (process.argv[2] === '--builder-download-worker') {
   test('builder retains its configured request deadline on a stalled loopback download', { timeout: 25_000 }, async (t) => {
     const result = await fixture(t, 'deadline');
     assert.equal(result.outcome, 'rejected');
-    if (result.usesFetch) assert.equal(result.deadlineRejected, true);
+    if (result.usesFetch) {
+      assert.equal(result.deadlineRejected, true);
+      assert.equal(result.deadlineArmed, true, 'the abort deadline follows an observed request');
+    }
     else assert.equal(result.code, 'ETIMEDOUT');
     assert.ok(result.requests >= 1, 'the deadline must bound an actually started download');
     assert.ok(result.elapsed < 18_000, 'bounded retries must retain request deadlines');
@@ -184,6 +200,18 @@ if (process.argv[2] === '--builder-download-worker') {
     const result = await fixture(t, 'retry');
     assert.equal(result.outcome, 'downloaded');
     assert.equal(result.requests, 2);
+  });
+
+  test('in-flight deadline evidence excludes delayed preparation before the request starts', { timeout: 25_000 }, async t => {
+    const result = await fixture(t, 'deadline-preparation');
+    assert.equal(result.outcome, 'rejected');
+    assert.ok(result.requests >= 1, 'preparation is not an in-flight request deadline measurement');
+    if (result.usesFetch) {
+      assert.equal(result.deadlineRejected, true);
+      assert.equal(result.deadlineArmed, true);
+    }
+    else assert.equal(result.code, 'ETIMEDOUT');
+    assert.ok(result.elapsed < 18_000, 'the existing total guard is unchanged');
   });
 
   test('builder rejects a permanent 404 without repeating the download', { timeout: 25_000 }, async (t) => {
