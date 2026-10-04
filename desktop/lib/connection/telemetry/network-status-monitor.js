@@ -121,7 +121,10 @@ class NetworkStartupCoordinator {
       if (this.timerRecord !== record) return undefined;
       this.timerRecord = null;
       if (!this.current(epoch) || !this.eligible()) return undefined;
-      return Promise.resolve().then(() => this.connect()).catch(() => {});
+      return Promise.resolve().then(() => {
+        if (!this.current(epoch) || !this.eligible()) return undefined;
+        return this.connect();
+      }).catch(() => {});
     }, this.delayMs);
     record.timer?.unref?.();
     this.timerRecord = record;

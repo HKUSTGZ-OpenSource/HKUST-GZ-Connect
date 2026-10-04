@@ -399,3 +399,30 @@ test('real Windows switch journal remains owner-only through every durable state
   assert.equal(store.clearCommitted(), true);
   assert.equal(store.read(), null);
 });
+
+test('native Windows queued startup cancellation preserves the real connection user stop intent', {
+  skip: process.platform !== 'win32',
+}, async () => {
+  const { NetworkStartupCoordinator } = require('../../../lib/connection/telemetry/network-status-monitor');
+  const { ConnectionStateMachine, ConnectionOperationCoordinator } = require('../../../lib/connection/state/connection-state-machine');
+  const connectionState = new ConnectionStateMachine();
+  let tick, launches = 0;
+  const operations = new ConnectionOperationCoordinator({ connectionState,
+    engineSupervisor: { hasActive: false }, isQuitting: () => false, cancelRecovery() {},
+    runAttempt: async () => { launches++; return { ok: true }; } });
+  const startup = new NetworkStartupCoordinator({
+    monitor: { start: async () => true, snapshot: () => ({ baseline: true }) },
+    shouldAutoConnect: () => true, pauseOffline() {}, resumeOffline() {}, isQuitting: () => false,
+    connect: () => operations.connect(),
+    setTimeout: callback => { tick = callback; return { unref() {} }; }, clearTimeout() {},
+  });
+  try {
+    assert.equal(await startup.start(), true);
+    const pending = tick();
+    startup.cancel(); const stoppedIntent = connectionState.beginStop(false);
+    await pending;
+    assert.equal(launches, 0);
+    assert.equal(connectionState.snapshot().intent, stoppedIntent);
+    assert.equal(connectionState.snapshot().desiredConnected, false);
+  } finally { startup.dispose(); }
+});

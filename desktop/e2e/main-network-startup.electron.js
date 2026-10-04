@@ -104,6 +104,12 @@ async function run() {
   // construction effect-free and ordinary coordinator evaluation authoritative.
   const network = require('../lib/connection/telemetry/network-status-monitor');
   const originalEligibility = network.createStartupAutoConnectEligibility;
+  const originalSystem = network.createNetworkStartupSystem;
+  let mainStartupEffects;
+  network.createNetworkStartupSystem = (effects) => {
+    mainStartupEffects = effects;
+    return originalSystem(effects);
+  };
   let factoryUsed = false, constructing = false, eligibilityReads = 0;
   network.createStartupAutoConnectEligibility = (effects) => {
     factoryUsed = true; constructing = true;
@@ -116,6 +122,7 @@ async function run() {
   };
   require('../main');
   network.createStartupAutoConnectEligibility = originalEligibility;
+  network.createNetworkStartupSystem = originalSystem;
   const control = await controlWindow();
   await waitFor(async () => (await invoke(control, 'window.api.getState()')).phase ===
     'connectivity-paused', 'initial offline pause');
@@ -145,6 +152,29 @@ async function run() {
     return state.connected && attemptCount() === 2;
   }, 'manual connection after declined ordinary recovery');
   process.stdout.write('main initial network startup: PASS\n');
+  assert.equal((await invoke(control, 'window.api.disconnect()')).ok, true);
+  let tick, queuedConnectCalls = 0;
+  // The temporary owner uses Main's actual injected capabilities, but an
+  // isolated online monitor/timer; no production hook or real network change.
+  const queuedStartup = new network.NetworkStartupCoordinator({
+    monitor: { start: async () => true, snapshot: () => ({ baseline: true }) },
+    shouldAutoConnect: mainStartupEffects.shouldAutoConnect,
+    pauseOffline: mainStartupEffects.pauseOffline,
+    resumeOffline: mainStartupEffects.resumeInitialOffline,
+    isQuitting: mainStartupEffects.isQuitting,
+    connect: () => { queuedConnectCalls++; return mainStartupEffects.connect(); },
+    setTimeout: callback => { tick = callback; return { unref() {} }; }, clearTimeout() {},
+  });
+  try {
+    assert.equal(await queuedStartup.start(), true);
+    const pending = tick();
+    queuedStartup.cancel();
+    await pending;
+    assert.equal(queuedConnectCalls, 0, 'cancelled queued work cannot call Main connect');
+    assert.equal(attemptCount(), 2, 'no further real synthetic Engine generation starts');
+    assert.equal((await invoke(control, 'window.api.getState()')).phase, 'idle');
+    process.stdout.write('main queued startup cancellation: PASS\n');
+  } finally { queuedStartup.dispose(); }
 }
 
 const hardTimeout = setTimeout(() => {
