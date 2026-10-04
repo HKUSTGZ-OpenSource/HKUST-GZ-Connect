@@ -236,6 +236,48 @@ test('an ordinary Browser close still allows a later explicit open', async () =>
   assert.equal(fixture.browser.tabs.filter(tab => tab.kind === 'workspace').length, 1);
 });
 
+test('native user close cancels a pending open without implicit window recreation or late PAC activation', async () => {
+  const f = createFakeBrowser({ emitWindowClosedOnClose: true }), ready = deferred();
+  await f.browser.open('https://original.example.invalid/', 1080, 'direct');
+  const original = f.browser.window;
+  f.browser.ensureCampusReady = () => ready.promise;
+  let activations = 0;
+  const activate = f.browser.routingActivationOwner.activate.bind(f.browser.routingActivationOwner);
+  f.browser.routingActivationOwner.activate = (...args) => { activations++; return activate(...args); };
+  const opening = f.browser.open('https://late.example.invalid/', 1080, 'campus').then(value => ({ value }), error => ({ error }));
+  original.close(); ready.resolve(true);
+  const result = await opening;
+  assert.equal(result.error?.code, 'BROWSER_OPEN_RETIRED');
+  assert.equal(f.browserWindows.length, 1);
+  assert.equal(activations, 0);
+  assert.equal(f.browser.tabs.length, 0);
+  f.browser.ensureCampusReady = async () => true;
+  assert.equal(await f.browser.openWorkspace(1080), 'about:blank', 'a later explicit request remains usable');
+  assert.equal(f.browserWindows.length, 2);
+  f.browser.close();
+});
+
+test('windowless ordinary close cancels an open waiting for readiness but not a new explicit request', async () => {
+  const f = createFakeBrowser({ emitWindowClosedOnClose: true }), ready = deferred();
+  f.browser.ensureCampusReady = () => ready.promise;
+  const opening = f.browser.open('https://late.example.invalid/', 1080, 'campus').then(value => ({ value }), error => ({ error }));
+  f.browser.close(); ready.resolve(true);
+  assert.equal((await opening).error?.code, 'BROWSER_OPEN_RETIRED');
+  assert.equal(f.browserWindows.length, 0);
+  f.browser.ensureCampusReady = async () => true;
+  await f.browser.openWorkspace(1080); f.browser.close();
+});
+
+test('retired workspace configuration cannot create a window after ordinary close', async () => {
+  const f = createFakeBrowser({ emitWindowClosedOnClose: true }), configured = deferred();
+  const configure = f.browser.configure.bind(f.browser);
+  f.browser.configure = async (...args) => { await configured.promise; return configure(...args); };
+  const opening = f.browser.openWorkspace(1080).then(value => ({ value }), error => ({ error }));
+  f.browser.close(); configured.resolve();
+  assert.equal((await opening).error?.code, 'BROWSER_OPEN_RETIRED');
+  assert.equal(f.browserWindows.length, 0);
+});
+
 test('a closed pending window cannot let its old Browser.open affect a replacement', async (t) => {
   const firstLoad = deferred();
   const replacementLoad = deferred();

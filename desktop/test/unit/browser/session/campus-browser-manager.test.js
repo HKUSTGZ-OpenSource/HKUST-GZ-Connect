@@ -88,6 +88,38 @@ function deferredOpen() {
   return { promise, resolve, reject };
 }
 
+test('native Browser retirement invalidates Manager readiness and quiets its outer feedback', async () => {
+  const ready = deferredOpen(), f = fixture({ ensureConnected: () => ready.promise });
+  const browser = f.manager.getOrCreate();
+  const opening = f.manager.openWithFeedback('https://late.example.invalid/');
+  browser.options.onOpenRetired?.();
+  ready.resolve({ ok: true });
+  assert.deepEqual(await opening, { ok: false, stale: true });
+  assert.deepEqual(browser.opens, []);
+  assert.deepEqual(f.errors, [null], 'no terminal feedback may clear a replacement lifetime');
+});
+
+test('retirement between successful inner open and outer feedback suppresses the terminal clear',async()=>{
+  const f=fixture({resolveRoute:()=>({route:'direct'})}), original=f.manager.open.bind(f.manager);
+  f.manager.open=async request=>{const result=await original(request);f.manager.browser.options.onOpenRetired();return result;};
+  assert.deepEqual(await f.manager.openWithFeedback('https://public.example.invalid/'),{ok:false,stale:true});
+  assert.deepEqual(f.errors,[null]);
+});
+
+test('retired bookmark-manager opening cannot focus or report a new lifetime',async()=>{
+  const waiting=deferredOpen(),f=fixture(),browser=f.manager.getOrCreate();
+  browser.openWorkspace=()=>waiting.promise;
+  const pending=f.manager.openBookmarkManager();browser.options.onOpenRetired();waiting.resolve();
+  assert.deepEqual(await pending,{ok:false,stale:true});assert.equal(browser.workspaceFocus,undefined);assert.deepEqual(f.errors,[]);
+});
+
+test('retirement callback from a replaced Browser does not cancel the current Manager request',async()=>{
+  const f=fixture({resolveRoute:()=>({route:'direct'})}),old=f.manager.getOrCreate();
+  f.manager.browser=null;const current=f.manager.getOrCreate();old.options.onOpenRetired();
+  assert.equal((await f.manager.openWithFeedback('https://public.example.invalid/')).ok,true);
+  assert.equal(f.manager.browser,current);assert.deepEqual(f.errors,[null,null]);
+});
+
 test('user-command feedback clears before open and after success without changing the result', async () => {
   const f = fixture({ resolveRoute: () => ({ route: 'direct' }),
     ensureConnected: () => { throw new Error('Direct must not need Engine'); } });

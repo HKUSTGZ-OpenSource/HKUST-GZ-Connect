@@ -41,6 +41,16 @@ test('activation owner rejects incomplete injected Session capabilities', () => 
   assert.throws(() => new BrowserRoutingActivationOwner({}), TypeError);
 });
 
+test('optional entry admission fences readiness and activation without changing other callers',async()=>{
+  const f=fixture();assert.equal(await f.owner.ensureReady({route:'campus'},6180,()=>false),false);
+  assert.deepEqual(f.calls,[]);
+  const ready=deferred(),g=fixture({ensureCampusReady:()=>ready.promise});let current=true;
+  const waiting=g.owner.ensureReady({route:'campus'},6180,()=>current);current=false;ready.resolve(true);
+  assert.equal(await waiting,false);assert.deepEqual(g.calls,[]);
+  await assert.rejects(g.owner.ensureReady({route:'direct'},6180,null),/admission is invalid/);
+  assert.equal(await f.owner.ensureReady({route:'direct'},6180),true);
+});
+
 test('the extracted routing activation owner stays below the M2 owner ceiling', () => {
   const source = fs.readFileSync(require.resolve('../../../../lib/browser/session/browser-session-manager'), 'utf8');
   const tree = acorn.parse(source, { ecmaVersion: 'latest', locations: true });

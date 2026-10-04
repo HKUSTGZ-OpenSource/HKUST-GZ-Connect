@@ -18,6 +18,7 @@ const { BrowserCredentialCommandOwner, CredentialController, ManagedCredentialPo
 const {
   BrowserRoutingActivationOwner,
   BrowserRouteCommandOwner,
+  BrowserOpenOwner,
   BrowserSessionManager,
   BrowserTeardownOwner,
   applyCampusSessionPolicy,
@@ -150,6 +151,7 @@ class CampusBrowser {
     showBookmarkMenu = null,
     onTogglePageFavorite = null,
     onRecordPageOpen = null,
+    onOpenRetired,
     getSharedPortalCredential = null,
     onPortalSessionUrl = null,
     workspaceController = null,
@@ -456,6 +458,7 @@ class CampusBrowser {
       certificates: this.certificateController, popups: this.popupOwner,
       routing: this.routingActivationOwner, viewport: this.viewportOwner, toolbar: this.toolbarOwner,
       clearViewReferences: () => { this.view = null; this.attachedView = null; },
+      retireOpenRequests: nativeClosed => this.openOwner.reset(nativeClosed ? this.windowOwner?.current?.failure : null),
     });
     this.routeCommands = new BrowserRouteCommandOwner({
       findTab: id => this.tabManager.find(id),
@@ -470,6 +473,19 @@ class CampusBrowser {
       configure: (port, options) => this.configure(port, options), clearSlowTimer: tab => this.clearSlowTimer(tab),
       updateAllTabRoutes: () => this.updateAllTabRoutes(), updateTabRoute: (tab, url) => this.updateTabRoute(tab, url),
       navigate: (url, tab) => this.navigate(url, tab), scheduleToolbarUpdate: () => this.scheduleToolbarUpdate(),
+    });
+    this.openOwner = new BrowserOpenOwner({
+      blankUrl: BLANK_CAMPUS_HOME, normalizeUrl: url => normalizeCampusUrl(url, this.homeUrl, this.t),
+      resolveRoute: (...args) => this.resolveRoute(...args),
+      ensureRoutingReady: (...args) => this.ensureRoutingReady(...args),
+      showReadyWindow: () => this.showReadyWindow(), getWindow: () => this.window,
+      isContextCurrent: () => this.windowOwner?.contextRetired !== true,
+      getPort: () => this.configuredPort, isRoutingSuspended: () => this.routingSuspended,
+      configure: port => this.configure(port), getTabs: () => this.tabs,
+      prepareOpen: () => { if (this.window?.isDestroyed()) this.windowOwner.clear(); },
+      switchTab: id => this.switchTab(id), sendWorkspaceState: tab => this.workspaceController.sendState(tab.view.webContents),
+      createTab: (...args) => this.createTab(...args), createWorkspaceTab: () => this.createWorkspaceTab(),
+      translate: key => this.t(key), onRetired: onOpenRetired,
     });
   }
 
@@ -546,8 +562,8 @@ class CampusBrowser {
 
   async openNewTab() { return this.navigationOwner.openNewTab(); }
 
-  async ensureRoutingReady(resolution, port = this.configuredPort || 1080) {
-    return this.routingActivationOwner.ensureReady(resolution, port);
+  async ensureRoutingReady(resolution, port = this.configuredPort || 1080, admissionCurrent) {
+    return this.routingActivationOwner.ensureReady(resolution, port, admissionCurrent);
   }
 
   async activateRoutingPolicy(port) {
@@ -793,43 +809,11 @@ class CampusBrowser {
   }
 
   async open(rawUrl, port, route = null, options = {}) {
-    const url = normalizeCampusUrl(rawUrl, this.homeUrl, this.t);
-    const resolution = this.resolveRoute(url, null, route);
-    // ensureCampusReady() proves the current engine generation has reached its
-    // listener-ready boundary. Only then may a Session suspended during a
-    // previous disconnect be pointed back at the live loopback frontend.
-    if (!await this.ensureRoutingReady(resolution, port)) {
-      throw new Error(this.t('error.connectTimeout'));
-    }
-    await this.showReadyWindow();
-    if (url === BLANK_CAMPUS_HOME) {
-      const existing = this.windowOwner.assertContextCurrent(this.tabs.find((tab) => tab.kind === 'workspace'));
-      if (existing) {
-        this.switchTab(existing.id);
-        this.workspaceController.sendState(existing.view.webContents);
-      } else {
-        this.createTab(url, ROUTE_DIRECT);
-      }
-    } else {
-      this.createTab(url, resolution.route, { displayName: options.displayName || '' });
-    }
-    return this.windowOwner?.assertContextCurrent(url) ?? url;
+    return this.openOwner.open(rawUrl, port, route, options);
   }
 
   async openWorkspace(port) {
-    if (!Number.isSafeInteger(port) || port < 1 || port > 65535) {
-      throw new TypeError('Campus Workspace port is invalid');
-    }
-    if (!this.configuredPort && !this.routingSuspended) await this.configure(port);
-    await this.showReadyWindow();
-    const existing = this.windowOwner.assertContextCurrent(this.tabs.find((tab) => tab.kind === 'workspace'));
-    if (existing) {
-      this.switchTab(existing.id);
-      this.workspaceController.sendState(existing.view.webContents);
-    } else {
-      this.createWorkspaceTab();
-    }
-    return this.windowOwner?.assertContextCurrent(BLANK_CAMPUS_HOME) ?? BLANK_CAMPUS_HOME;
+    return this.openOwner.openWorkspace(port);
   }
 
   close() {

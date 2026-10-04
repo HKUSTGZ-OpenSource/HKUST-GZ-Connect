@@ -23,19 +23,19 @@ const CAMPUS_OFFSET_MS = 28_800_000;
 // to skip another independent cleanup or to discard an unconfirmed resource.
 class BrowserTeardownOwner {
   constructor({ windowOwner, tabs, credentials, commands, pages, certificates,
-    popups, routing, viewport, toolbar, clearViewReferences } = {}) {
+    popups, routing, viewport, toolbar, clearViewReferences, retireOpenRequests = () => {} } = {}) {
     const owners = { tabs, credentials, commands, pages, certificates,
       popups, routing, viewport, toolbar };
     const methods = { tabs: ['closeViews', 'clearTransientState', 'clear'],
       credentials: ['reset'], commands: ['reset'], pages: ['reset'],
       certificates: ['cancelAll'], popups: ['closeAll'], routing: ['reset'],
       viewport: ['cancelScheduledLayout', 'reset'], toolbar: ['cancel', 'reset'] };
-    if (typeof clearViewReferences !== 'function' ||
+    if (typeof clearViewReferences !== 'function' || typeof retireOpenRequests !== 'function' ||
         Object.entries(methods).some(([key, names]) => names.some(name => typeof owners[key]?.[name] !== 'function')) ||
         (windowOwner && ['requestClose', 'clear'].some(name => typeof windowOwner[name] !== 'function'))) {
       throw new TypeError('Browser teardown dependencies are incomplete');
     }
-    Object.assign(this, { windowOwner, ...owners, clearViewReferences });
+    Object.assign(this, { windowOwner, ...owners, clearViewReferences, retireOpenRequests });
   }
 
   attempt(operations, failures = []) {
@@ -74,6 +74,7 @@ class BrowserTeardownOwner {
 
   closed() {
     const failures = [];
+    this.attempt([() => this.retireOpenRequests(true)], failures);
     this.presentation(failures);
     this.attempt([() => this.certificates.cancelAll(), () => this.tabs.closeViews(),
       () => this.popups.closeAll(), () => this.routing.reset(),
@@ -84,6 +85,7 @@ class BrowserTeardownOwner {
 
   close() {
     const failures = [];
+    this.attempt([() => this.retireOpenRequests()], failures);
     this.presentation(failures);
     this.attempt([() => this.certificates.cancelAll()], failures);
     let requested = false, retired = false;
@@ -97,6 +99,97 @@ class BrowserTeardownOwner {
       }
     }
     this.finish(failures);
+  }
+}
+
+// Entry requests may share window creation, but never survive user retirement.
+// The existing window/session/tab owners still own their resources and policy.
+class BrowserOpenOwner {
+  constructor({ blankUrl, normalizeUrl, resolveRoute, ensureRoutingReady,
+    showReadyWindow, getWindow, isContextCurrent, getPort, isRoutingSuspended,
+    configure, getTabs, switchTab, sendWorkspaceState, createTab, createWorkspaceTab,
+    translate, prepareOpen, onRetired = () => {} } = {}) {
+    const ports = { normalizeUrl, resolveRoute, ensureRoutingReady, showReadyWindow,
+      getWindow, isContextCurrent, getPort, isRoutingSuspended, configure, getTabs,
+      switchTab, sendWorkspaceState, createTab, createWorkspaceTab, translate, prepareOpen, onRetired };
+    if (typeof blankUrl !== 'string' || !blankUrl ||
+        Object.values(ports).some(port => typeof port !== 'function')) {
+      throw new TypeError('Browser open dependencies are incomplete');
+    }
+    Object.assign(this, { blankUrl, ...ports });
+    this.epoch = 0;
+    this.retiredFailure = null;
+  }
+
+  current(epoch, window = null) {
+    return epoch === this.epoch && this.isContextCurrent() &&
+      (!window || (this.getWindow() === window && !window.isDestroyed()));
+  }
+
+  assertCurrent(epoch, window = null) {
+    if (this.current(epoch, window)) return;
+    const currentWindow = this.getWindow();
+    if (this.retiredFailure?.epoch === epoch && this.epoch === epoch + 1 &&
+        this.isContextCurrent() && (!currentWindow || currentWindow.isDestroyed())) {
+      throw this.retiredFailure.error;
+    }
+    throw Object.assign(new Error('Browser open request is retired'), { code: 'BROWSER_OPEN_RETIRED' });
+  }
+
+  reset(failure = null) {
+    this.retiredFailure = failure ? { error: failure, epoch: this.epoch } : null;
+    this.epoch++;
+    if (!failure) this.onRetired();
+  }
+
+  reject(epoch, error) {
+    this.assertCurrent(epoch); throw error;
+  }
+
+  async perform(url, epoch, resolution = null, options = {}) {
+    this.assertCurrent(epoch);
+    await this.showReadyWindow();
+    const window = this.getWindow();
+    this.assertCurrent(epoch, window);
+    if (!window || window.isDestroyed()) throw new Error('Browser window is unavailable');
+    if (url === this.blankUrl) {
+      const existing = this.getTabs().find(tab => tab.kind === 'workspace');
+      this.assertCurrent(epoch, window);
+      if (existing) {
+        this.switchTab(existing.id);
+        this.assertCurrent(epoch, window);
+        this.sendWorkspaceState(existing);
+      } else if (resolution) this.createTab(url, ROUTE_DIRECT);
+      else this.createWorkspaceTab();
+    } else this.createTab(url, resolution.route, { displayName: options.displayName || '' });
+    this.assertCurrent(epoch, window);
+    return url;
+  }
+
+  async open(rawUrl, port, route = null, options = {}) {
+    let epoch = this.epoch;
+    try {
+      this.assertCurrent(epoch);
+      this.prepareOpen(); epoch = this.epoch;
+      const url = this.normalizeUrl(rawUrl), resolution = this.resolveRoute(url, null, route);
+      this.assertCurrent(epoch);
+      const ready = await this.ensureRoutingReady(resolution, port, () => this.current(epoch));
+      this.assertCurrent(epoch);
+      if (!ready) throw new Error(this.translate('error.connectTimeout'));
+      return await this.perform(url, epoch, resolution, options);
+    } catch (error) { this.reject(epoch, error); }
+  }
+
+  async openWorkspace(port) {
+    if (!Number.isSafeInteger(port) || port < 1 || port > 65535) throw new TypeError('Campus Workspace port is invalid');
+    let epoch = this.epoch;
+    try {
+      this.assertCurrent(epoch);
+      this.prepareOpen(); epoch = this.epoch;
+      if (!this.getPort() && !this.isRoutingSuspended()) await this.configure(port);
+      this.assertCurrent(epoch);
+      return await this.perform(this.blankUrl, epoch);
+    } catch (error) { this.reject(epoch, error); }
   }
 }
 
@@ -526,15 +619,17 @@ class BrowserRoutingActivationOwner {
     this.inFlight = null;
   }
 
-  async ensureReady(resolution, port) {
+  async ensureReady(resolution, port, admissionCurrent = () => true) {
+    if (typeof admissionCurrent !== 'function') throw new TypeError('Browser routing admission is invalid');
     if (!resolution || ![ROUTE_CAMPUS, ROUTE_DIRECT].includes(resolution.route)) return false;
+    if (!admissionCurrent()) return false;
     if ((resolution.route === ROUTE_CAMPUS && !await this.ensureCampusReady()) ||
-        !this.isContextCurrent()) return false;
+        !this.isContextCurrent() || !admissionCurrent()) return false;
     const activated = await this.activate(port);
     // A superseding suspend intent resolves activation to null. Navigation
     // remains forbidden while the Session's fail-closed gate is authoritative.
     const state = this.getSessionState();
-    return activated !== null && !state.suspended && !state.requestsBlocked;
+    return activated !== null && !state.suspended && !state.requestsBlocked && admissionCurrent();
   }
 
   activeSessionForPort(port) {
@@ -1212,6 +1307,7 @@ class MyPortalDataRuntime {
 }
 
 module.exports = {
+  BrowserOpenOwner,
   BrowserRouteCommandOwner,
   BrowserTeardownOwner,
   BrowserRoutingActivationOwner,

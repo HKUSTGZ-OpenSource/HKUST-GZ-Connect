@@ -205,6 +205,12 @@ accepted IO cannot reconfigure/present in another lifetime; rule semantics stay 
 Browser897->871 and exactly one private root rule-store edge/cap90->89 retire without a new
 production node. Creation/open/composition and full M2 acceptance remain separate.
 
+The [open-request lifetime](browser-open-request-lifetime.md) retires pending entries on ordinary
+or native user close before late readiness can recreate a window. It preserves later explicit
+reopen, shared creation, current load failure and independently owned Session/Engine; Manager
+feedback uses its existing private epoch. Browser871->855 without a new production node.
+Remaining creation/composition and full M2 acceptance remain separate from this entry repair.
+
 ## Wave M3 — Desktop Main composition
 
 Completed source outcome, with every #81 criterion mapped to concrete owner/test/platform
