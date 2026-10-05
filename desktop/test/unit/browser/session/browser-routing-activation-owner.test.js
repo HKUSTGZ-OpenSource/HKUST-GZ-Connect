@@ -168,6 +168,70 @@ test('context retirement during Engine readiness prevents late Session activatio
   assert.deepEqual(f.calls, []);
 });
 
+for (const retirement of ['context', 'reset']) {
+  test(`${retirement} retirement during accepted Session activation cannot report new readiness`, async () => {
+    const gate = deferred();
+    const f = fixture({ configure: async port => {
+      await gate.promise;
+      Object.assign(f.state, { configuredPort: port, requestsBlocked: false, campusSession: f.session });
+      return f.session;
+    } });
+    const pending = f.owner.ensureReady({ route: 'direct' }, 6180);
+    if (retirement === 'context') f.retire(); else f.owner.reset();
+    gate.resolve();
+    assert.equal(await pending, false);
+    assert.equal(f.state.campusSession, f.session, 'accepted Session IO is not falsely rolled back');
+    assert.equal(f.owner.inFlight, null);
+  });
+}
+
+test('retired activation failure is quiet while the same current failure preserves its cause', async () => {
+  for (const retired of [false, true]) {
+    const gate = deferred(), failure = new Error('synthetic activation failure');
+    const f = fixture({ configure: () => gate.promise });
+    const pending = f.owner.ensureReady({ route: 'direct' }, 6180);
+    if (retired) f.retire();
+    gate.reject(failure);
+    if (retired) assert.equal(await pending, false);
+    else await assert.rejects(pending, error => error === failure);
+  }
+});
+
+test('retired Engine-readiness failure is quiet but a current failure remains actionable', async () => {
+  for (const retired of [false, true]) {
+    const gate = deferred(), failure = new Error('synthetic readiness failure');
+    const f = fixture({ ensureCampusReady: () => gate.promise });
+    const pending = f.owner.ensureReady({ route: 'campus' }, 6180);
+    if (retired) f.owner.reset();
+    gate.reject(failure);
+    if (retired) assert.equal(await pending, false);
+    else await assert.rejects(pending, error => error === failure);
+    assert.deepEqual(f.calls, []);
+  }
+});
+
+test('an already retired context cannot request Engine readiness or inspect Session state', async () => {
+  const f = fixture(); f.retire();
+  f.owner.getSessionState = () => { throw new Error('retired Session read'); };
+  assert.equal(await f.owner.ensureReady({ route: 'campus' }, 6180), false);
+  assert.deepEqual(f.calls, []);
+});
+
+test('completion retirement is checked before another owner is read and again after that read', async () => {
+  const gate = deferred(), f = fixture({ configure: () => gate.promise });
+  const pending = f.owner.ensureReady({ route: 'direct' }, 6180);
+  f.owner.getSessionState = () => { throw new Error('retired Session read'); };
+  f.retire(); gate.resolve(f.session);
+  assert.equal(await pending, false);
+  const g = fixture(), readState = g.owner.getSessionState;
+  g.owner.getSessionState = () => {
+    const state = readState();
+    if (state.campusSession) g.retire();
+    return state;
+  };
+  assert.equal(await g.owner.ensureReady({ route: 'direct' }, 6180), false);
+});
+
 test('a superseding Session suspension keeps a completed readiness attempt fail closed', async () => {
   const f = fixture({ configure: async () => {
     f.state.suspended = true;

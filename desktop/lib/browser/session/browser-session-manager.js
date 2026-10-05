@@ -141,7 +141,7 @@ class BrowserTeardownOwner {
 
   close() {
     const failures = [];
-    this.attempt([() => this.retireOpenRequests()], failures);
+    this.attempt([() => this.retireOpenRequests(), () => this.routing.reset()], failures);
     this.presentation(failures);
     this.attempt([() => this.certificates.cancelAll()], failures);
     let requested = false, retired = false;
@@ -739,19 +739,27 @@ class BrowserRoutingActivationOwner {
     this.configure = configure;
     this.resume = resume;
     this.inFlight = null;
+    this.generation = 0;
   }
 
   async ensureReady(resolution, port, admissionCurrent = () => true) {
     if (typeof admissionCurrent !== 'function') throw new TypeError('Browser routing admission is invalid');
     if (!resolution || ![ROUTE_CAMPUS, ROUTE_DIRECT].includes(resolution.route)) return false;
-    if (!admissionCurrent()) return false;
-    if ((resolution.route === ROUTE_CAMPUS && !await this.ensureCampusReady()) ||
-        !this.isContextCurrent() || !admissionCurrent()) return false;
-    const activated = await this.activate(port);
-    // A superseding suspend intent resolves activation to null. Navigation
-    // remains forbidden while the Session's fail-closed gate is authoritative.
-    const state = this.getSessionState();
-    return activated !== null && !state.suspended && !state.requestsBlocked && admissionCurrent();
+    const generation = this.generation;
+    const current = () => generation === this.generation && this.isContextCurrent() && admissionCurrent();
+    if (!current()) return false;
+    try {
+      if ((resolution.route === ROUTE_CAMPUS && !await this.ensureCampusReady()) || !current()) return false;
+      const activated = await this.activate(port);
+      if (!current()) return false;
+      // Accepted IO stays owned by Session. This result cannot admit a page
+      // after native/window/context retirement or a superseding suspend.
+      const state = this.getSessionState();
+      return activated !== null && !state.suspended && !state.requestsBlocked && current();
+    } catch (error) {
+      if (!current()) return false;
+      throw error;
+    }
   }
 
   activeSessionForPort(port) {
@@ -783,6 +791,7 @@ class BrowserRoutingActivationOwner {
     // Window teardown forgets coordination, not the shared Session/Engine.
     // An old completion cannot clear a newer record established after reset.
     this.inFlight = null;
+    this.generation++;
   }
 }
 

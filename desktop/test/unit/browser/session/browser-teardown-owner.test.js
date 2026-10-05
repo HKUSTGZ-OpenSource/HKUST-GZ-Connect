@@ -83,6 +83,15 @@ test('windowless close is repeatable and retains transient ownership until clean
   assert.deepEqual(f.calls.slice(-2), ['tabs.clear', 'references']);
 });
 
+test('routing admission retires before requesting native close even when other cleanup fails', () => {
+  const f = fixture(); f.failing.add('credentials');
+  const owner = new BrowserTeardownOwner({ ...f.options,
+    windowOwner: { requestClose: () => { f.calls.push('native.close'); return true; }, clear: () => false, window: {} } });
+  assert.throws(() => owner.close(), /cleanup is unconfirmed/);
+  assert.ok(f.calls.indexOf('routing') < f.calls.indexOf('native.close'));
+  assert.equal(f.calls.includes('native.close'), true);
+});
+
 test('the teardown coordinator remains below the M2 per-owner ceiling', () => {
   const source = fs.readFileSync(require.resolve('../../../../lib/browser/session/browser-session-manager'), 'utf8');
   const start = source.indexOf('class BrowserTeardownOwner {'), end = source.indexOf('\nfunction calendarWeekQuery', start);

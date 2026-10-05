@@ -296,6 +296,47 @@ async function assertLocaleProjection(browser) {
   process.stdout.write('native Browser host locale projection: PASS\n');
 }
 
+async function assertRoutingCompletionRetirement(browser) {
+  for (const action of ['navigate', 'reload']) {
+    await browser.open(CONFIGURED_HOME, 11080, ROUTE_DIRECT);
+    const tab = browser.activeTab(), contents = tab.view.webContents, window = browser.window;
+    await waitForPage(contents, 'location.href === ' + JSON.stringify(CONFIGURED_HOME), 'owned routing-retirement page');
+    const ownedSession = browser.campusSession, originalProxy = browser.routingPolicy.proxyConfig;
+    const originalLoad = contents.loadURL, originalReload = contents.reload;
+    const veto = event => event.preventDefault();
+    let release, pending, loads = 0, reloads = 0;
+    try {
+      await browser.suspendRoutingPolicy();
+      browser.routingPolicy.proxyConfig = async function(...args) {
+        await new Promise(resolve => { release = resolve; });
+        return originalProxy.apply(this, args);
+      };
+      contents.loadURL = function(...args) { loads++; return originalLoad.apply(this, args); };
+      contents.reload = function(...args) { reloads++; return originalReload.apply(this, args); };
+      pending = action === 'navigate' ? browser.navigateWhenReady(CONFIGURED_NEXT, tab) : browser.reloadWhenReady(tab);
+      await waitForMain(() => typeof release === 'function', 'accepted Session proxy configuration');
+      window.on('close', veto);
+      browser.close();
+      assert.equal(window.isDestroyed(), false, 'the real native close was vetoed');
+      assert.equal(browser.tabs.includes(tab), true);
+      release(); assert.equal(await pending, false);
+      assert.equal(loads, 0); assert.equal(reloads, 0);
+      assert.equal(contents.getURL(), CONFIGURED_HOME);
+      assert.equal(browser.campusSession, ownedSession, 'accepted shared Session IO remains independent');
+    } finally {
+      release?.(); if (pending) await pending.catch(() => {});
+      browser.routingPolicy.proxyConfig = originalProxy;
+      contents.loadURL = originalLoad; contents.reload = originalReload;
+      window.removeListener('close', veto);
+      browser.close();
+      await waitForMain(() => window.isDestroyed() && browser.window === null, 'confirmed native routing-retirement cleanup');
+    }
+  }
+  await browser.openWorkspace(11080);
+  assert.ok(browser.window && !browser.window.isDestroyed(), 'a later explicit open remains usable');
+  process.stdout.write('native Browser routing completion retirement: PASS\n');
+}
+
 async function assertManagerEntryPreparation(browser) {
   const originalRetired = browser.openOwner.onRetired, messages = [];
   let managedBrowser;
@@ -920,6 +961,7 @@ async function main() {
     await runStage('viewport lifecycle', () => assertViewportLifecycle(browser));
     await runStage('browser screenshots', () => captureBrowserChrome(browser));
     await runStage('host locale projection', () => assertLocaleProjection(browser));
+    await runStage('routing completion retirement', () => assertRoutingCompletionRetirement(browser));
     await runStage('tab creation admission', () => assertTabCreationAdmission(browser));
     await runStage('open request retirement', () => assertOpenRequestRetirement(browser));
     await runStage('Manager entry preparation', () => assertManagerEntryPreparation(browser));

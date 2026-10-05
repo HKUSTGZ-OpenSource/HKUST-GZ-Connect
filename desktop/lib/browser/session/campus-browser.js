@@ -541,12 +541,6 @@ class CampusBrowser {
     return this.browserSessionManager.resume(port);
   }
 
-  async refreshRoutingPolicy() {
-    if (this.configuredPort) await this.configure(this.configuredPort, { force: true });
-    this.updateAllTabRoutes();
-    this.updateToolbar();
-  }
-
   activeTab() {
     return this.tabManager.active();
   }
