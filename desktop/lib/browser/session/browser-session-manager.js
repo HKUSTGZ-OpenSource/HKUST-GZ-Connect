@@ -18,6 +18,62 @@ const requestBoundaryGates = new WeakMap();
 const DAY_MS = 86_400_000;
 const CAMPUS_OFFSET_MS = 28_800_000;
 
+// Constructor-time host configuration is bounded and writes the original Root
+// fields only. It never reads the credential service or creates native resources.
+function initializeBrowserHostConfiguration(host, options, { blankUrl, normalizeUrl, createTranslator }) {
+  if (!host || typeof host !== 'object' || typeof blankUrl !== 'string' || !blankUrl ||
+      typeof normalizeUrl !== 'function' || typeof createTranslator !== 'function') {
+    throw new TypeError('Browser host configuration dependencies are incomplete');
+  }
+  const { BrowserWindow, WebContentsView, createWindowOwner = null, session, dialog,
+    certificateTrust, credentialVault, parentWindow, toolbarFile, toolbarPreload, campusPreload,
+    profilePresentation = null, getWorkspaceResources = () => [], getWorkspaceGroups = () => [],
+    onOpenResource = null, showBookmarkMenu = null, onTogglePageFavorite = null, onRecordPageOpen = null,
+    onOpenRetired, getSharedPortalCredential = null, onPortalSessionUrl = null, workspaceController = null,
+    showItemInFolder = null, getNewTabUrl = () => blankUrl, onOpenSettings = null, homeUrl = blankUrl,
+    routingPolicy, ensureCampusReady, locale, t, onError, partition = NEUTRAL_CAMPUS_PARTITION } = options;
+  host.dialog = dialog;
+  host.credentialVault = credentialVault;
+  host.parentWindow = parentWindow;
+  host.toolbarFile = toolbarFile;
+  host.toolbarPreload = toolbarPreload;
+  host.campusPreload = campusPreload;
+  host.routingPolicy = routingPolicy || createMemoryRoutingPolicy();
+  host.ensureCampusReady = typeof ensureCampusReady === 'function' ? ensureCampusReady : async () => true;
+  host.locale = locale === 'en' ? 'en' : 'zh';
+  host.t = typeof t === 'function' ? t : createTranslator(host.locale);
+  host.profilePresentation = profilePresentation &&
+    typeof profilePresentation.schoolName === 'string' && typeof profilePresentation.unverified === 'boolean'
+    ? Object.freeze({ schoolName: profilePresentation.schoolName.slice(0, 160),
+      unverified: profilePresentation.unverified,
+      officialPortalResourceId: typeof profilePresentation.officialPortalResourceId === 'string'
+        ? profilePresentation.officialPortalResourceId : null })
+    : Object.freeze({ schoolName: host.t('browser.workspace'), unverified: false, officialPortalResourceId: null });
+  if (typeof getWorkspaceResources !== 'function' || typeof getWorkspaceGroups !== 'function') {
+    throw new TypeError('Campus Browser workspace provider is invalid');
+  }
+  host.getWorkspaceResources = getWorkspaceResources;
+  host.getWorkspaceGroups = getWorkspaceGroups;
+  host.onOpenResource = typeof onOpenResource === 'function' ? onOpenResource : null;
+  host.showBookmarkMenu = typeof showBookmarkMenu === 'function' ? showBookmarkMenu : null;
+  host.onTogglePageFavorite = typeof onTogglePageFavorite === 'function' ? onTogglePageFavorite : null;
+  host.onRecordPageOpen = typeof onRecordPageOpen === 'function' ? onRecordPageOpen : null;
+  host.getSharedPortalCredential = typeof getSharedPortalCredential === 'function' ? getSharedPortalCredential : () => null;
+  host.onPortalSessionUrl = typeof onPortalSessionUrl === 'function' ? onPortalSessionUrl : () => false;
+  if (workspaceController && (typeof workspaceController.createView !== 'function' ||
+      typeof workspaceController.load !== 'function' || typeof workspaceController.sendState !== 'function')) {
+    throw new TypeError('Campus Workspace controller is invalid');
+  }
+  host.workspaceController = workspaceController || null;
+  host.showItemInFolder = typeof showItemInFolder === 'function' ? showItemInFolder : () => {};
+  host.getNewTabUrl = typeof getNewTabUrl === 'function' ? getNewTabUrl : () => blankUrl;
+  host.onOpenSettings = typeof onOpenSettings === 'function' ? onOpenSettings : () => {};
+  host.homeUrl = homeUrl === blankUrl ? blankUrl : normalizeUrl(homeUrl, blankUrl, host.t);
+  host.onError = onError;
+  return { BrowserWindow, WebContentsView, createWindowOwner, session, dialog,
+    certificateTrust, credentialVault, campusPreload, onOpenRetired, partition };
+}
+
 // Cross-owner shutdown belongs to Browser Session lifetime, not the chrome
 // composition root. A failure is evidence to retain ownership, never permission
 // to skip another independent cleanup or to discard an unconfirmed resource.
@@ -1373,6 +1429,7 @@ class MyPortalDataRuntime {
 }
 
 module.exports = {
+  initializeBrowserHostConfiguration,
   BrowserTabCreationOwner,
   BrowserOpenOwner,
   BrowserRouteCommandOwner,

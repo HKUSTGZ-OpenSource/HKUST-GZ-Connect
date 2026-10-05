@@ -264,6 +264,38 @@ async function assertTabCreationAdmission(browser) {
   process.stdout.write('native Browser tab creation admission: PASS\n');
 }
 
+async function assertLocaleProjection(browser) {
+  const originalLocale = browser.locale, originalTranslator = browser.t;
+  const originalRefresh = browser.refreshWorkspaceHomes, originalUpdate = browser.updateToolbar;
+  const ownedSession = browser.campusSession, ids = browser.tabs.map(tab => tab.id), window = browser.window;
+  const originalTitle = window.setTitle, titles = [];
+  let refreshes = 0, updates = 0;
+  window.setTitle = function(value) { assert.equal(this, window); titles.push(value); return originalTitle.call(this, value); };
+  browser.refreshWorkspaceHomes = function(...args) { refreshes++; return originalRefresh.apply(this, args); };
+  browser.updateToolbar = function(...args) { updates++; return originalUpdate.apply(this, args); };
+  try {
+    for (const locale of ['en', 'zh']) {
+      browser.setLocale(locale);
+      await waitFor(window, `document.documentElement.lang === ${JSON.stringify(locale === 'zh' ? 'zh-CN' : 'en')}`,
+        'owned live toolbar locale');
+      assert.equal(titles.at(-1), browser.t('browser.windowTitleForSchool', {
+        school: browser.profilePresentation.schoolName,
+        trust: browser.profilePresentation.unverified ? browser.t('browser.unverifiedSuffix') : '',
+      }));
+      const rendererTitle = await evaluate(window.webContents, 'document.title');
+      await waitForMain(() => window.getTitle() === rendererTitle, 'native title follows the existing Renderer projection');
+      assert.equal(browser.window, window); assert.equal(browser.campusSession, ownedSession);
+      assert.deepEqual(browser.tabs.map(tab => tab.id), ids);
+    }
+    assert.equal(refreshes, 2); assert.equal(updates, 2); assert.equal(titles.length, 2);
+  } finally {
+    browser.refreshWorkspaceHomes = originalRefresh; browser.updateToolbar = originalUpdate;
+    window.setTitle = originalTitle;
+    browser.setLocale(originalLocale, originalTranslator);
+  }
+  process.stdout.write('native Browser host locale projection: PASS\n');
+}
+
 async function assertManagerEntryPreparation(browser) {
   const originalRetired = browser.openOwner.onRetired, messages = [];
   let managedBrowser;
@@ -887,6 +919,7 @@ async function main() {
     await runStage('find bar', () => assertFindBar(browser));
     await runStage('viewport lifecycle', () => assertViewportLifecycle(browser));
     await runStage('browser screenshots', () => captureBrowserChrome(browser));
+    await runStage('host locale projection', () => assertLocaleProjection(browser));
     await runStage('tab creation admission', () => assertTabCreationAdmission(browser));
     await runStage('open request retirement', () => assertOpenRequestRetirement(browser));
     await runStage('Manager entry preparation', () => assertManagerEntryPreparation(browser));

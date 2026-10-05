@@ -223,6 +223,13 @@ stay in the original Tab owner. Capacity/normalization/reuse order and shared Se
 are unchanged. Browser855->842/class697->683 with no new production node or dependency budget;
 remaining composition and whole-M2 acceptance are still required.
 
+The [host configuration/locale checkpoint](browser-host-configuration.md) moves constructor
+validation/defaults and live locale projection behind existing Session/Toolbar entrypoints.
+Original Root fields and native service identities remain; no second configuration/storage
+authority is created. Browser842->757/class683->598 reaches the numerical owner ceiling and
+adds a recursive Browser-class guard. Whole-M2 requirement mapping and exact-source/platform
+acceptance are still required; this checkpoint alone does not resolve #80 or the total goal.
+
 ## Wave M3 — Desktop Main composition
 
 Completed source outcome, with every #81 criterion mapped to concrete owner/test/platform

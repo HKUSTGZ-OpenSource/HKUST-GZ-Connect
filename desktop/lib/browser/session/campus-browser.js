@@ -8,7 +8,7 @@ const {
   ROUTE_CAMPUS,
   ROUTE_DIRECT,
 } = require('../../routing/policy/campus-route');
-const { BrowserPagePresentationOwner, BrowserToolbarCommandOwner, BrowserToolbarOwner,
+const { BrowserLocalePresentationOwner, BrowserPagePresentationOwner, BrowserToolbarCommandOwner, BrowserToolbarOwner,
   BrowserViewportOwner, errorPage, redactedFailedUrl } = require('../toolbar/browser-toolbar-owner');
 const { BrowserWorkspaceOwner, projectBrowserWorkspaceResources, MAX_WORKSPACE_HOME_RESOURCES } =
   require('../workspace/campus-workspace-controller');
@@ -24,7 +24,7 @@ const {
   BrowserTeardownOwner,
   applyCampusSessionPolicy,
   campusProxyConfig,
-  createMemoryRoutingPolicy,
+  initializeBrowserHostConfiguration,
   pacDataUrl,
 } = require('./browser-session-manager');
 const { DEFAULT_MAX_TABS, BrowserNavigationOwner, BrowserTabLifecycle } = require('../tabs/tab-manager');
@@ -133,93 +133,11 @@ function workspaceHomeResources(value, t = createT('zh')) {
 }
 
 class CampusBrowser {
-  constructor({
-    BrowserWindow,
-    WebContentsView,
-    createWindowOwner = null,
-    session,
-    dialog,
-    certificateTrust,
-    credentialVault,
-    parentWindow,
-    toolbarFile,
-    toolbarPreload,
-    campusPreload,
-    profilePresentation = null,
-    getWorkspaceResources = () => [],
-    getWorkspaceGroups = () => [],
-    onOpenResource = null,
-    showBookmarkMenu = null,
-    onTogglePageFavorite = null,
-    onRecordPageOpen = null,
-    onOpenRetired,
-    getSharedPortalCredential = null,
-    onPortalSessionUrl = null,
-    workspaceController = null,
-    showItemInFolder = null,
-    getNewTabUrl = () => BLANK_CAMPUS_HOME,
-    onOpenSettings = null,
-    homeUrl = DEFAULT_CAMPUS_HOME,
-    routingPolicy,
-    ensureCampusReady,
-    locale,
-    t,
-    onError,
-    partition = NEUTRAL_CAMPUS_PARTITION,
-  }) {
-    this.dialog = dialog;
-    this.credentialVault = credentialVault;
-    this.parentWindow = parentWindow;
-    this.toolbarFile = toolbarFile;
-    this.toolbarPreload = toolbarPreload;
-    this.campusPreload = campusPreload;
-    this.routingPolicy = routingPolicy || createMemoryRoutingPolicy();
-    this.ensureCampusReady = typeof ensureCampusReady === 'function'
-      ? ensureCampusReady
-      : async () => true;
-    this.locale = locale === 'en' ? 'en' : 'zh';
-    this.t = typeof t === 'function' ? t : createT(this.locale);
-    this.profilePresentation = profilePresentation &&
-      typeof profilePresentation.schoolName === 'string' &&
-      typeof profilePresentation.unverified === 'boolean'
-      ? Object.freeze({
-        schoolName: profilePresentation.schoolName.slice(0, 160),
-        unverified: profilePresentation.unverified,
-        officialPortalResourceId: typeof profilePresentation.officialPortalResourceId === 'string'
-          ? profilePresentation.officialPortalResourceId : null,
-      })
-      : Object.freeze({
-        schoolName: this.t('browser.workspace'), unverified: false,
-        officialPortalResourceId: null,
-      });
-    if (typeof getWorkspaceResources !== 'function' || typeof getWorkspaceGroups !== 'function') {
-      throw new TypeError('Campus Browser workspace provider is invalid');
-    }
-    this.getWorkspaceResources = getWorkspaceResources;
-    this.getWorkspaceGroups = getWorkspaceGroups;
-    this.onOpenResource = typeof onOpenResource === 'function' ? onOpenResource : null;
-    this.showBookmarkMenu = typeof showBookmarkMenu === 'function' ? showBookmarkMenu : null;
-    this.onTogglePageFavorite = typeof onTogglePageFavorite === 'function'
-      ? onTogglePageFavorite : null;
-    this.onRecordPageOpen = typeof onRecordPageOpen === 'function' ? onRecordPageOpen : null;
-    this.getSharedPortalCredential = typeof getSharedPortalCredential === 'function'
-      ? getSharedPortalCredential : () => null;
-    this.onPortalSessionUrl = typeof onPortalSessionUrl === 'function'
-      ? onPortalSessionUrl : () => false;
-    if (workspaceController && (typeof workspaceController.createView !== 'function' ||
-        typeof workspaceController.load !== 'function' ||
-        typeof workspaceController.sendState !== 'function')) {
-      throw new TypeError('Campus Workspace controller is invalid');
-    }
-    this.workspaceController = workspaceController || null;
-    this.showItemInFolder = typeof showItemInFolder === 'function' ? showItemInFolder : () => {};
-    this.getNewTabUrl = typeof getNewTabUrl === 'function'
-      ? getNewTabUrl : () => BLANK_CAMPUS_HOME;
-    this.onOpenSettings = typeof onOpenSettings === 'function' ? onOpenSettings : () => {};
-    this.homeUrl = homeUrl === BLANK_CAMPUS_HOME
-      ? BLANK_CAMPUS_HOME
-      : normalizeCampusUrl(homeUrl, DEFAULT_CAMPUS_HOME, this.t);
-    this.onError = onError;
+  constructor(options) {
+    const { BrowserWindow, WebContentsView, session, dialog, certificateTrust, credentialVault, campusPreload,
+      onOpenRetired, createWindowOwner, partition } = initializeBrowserHostConfiguration(this, options, {
+      blankUrl: BLANK_CAMPUS_HOME, normalizeUrl: normalizeCampusUrl, createTranslator: createT,
+    });
     this.certificateController = new CertificateController({
       trustStore: certificateTrust,
       dialog,
@@ -500,6 +418,12 @@ class CampusBrowser {
       createWorkspaceEntry: () => this.createWorkspaceTab(),
       switchTab: id => this.switchTab(id),
     });
+    this.localePresentationOwner = new BrowserLocalePresentationOwner({
+      getWindow: () => this.window, getPresentation: () => this.profilePresentation, getLocale: () => this.locale,
+      setLocale: value => { this.locale = value; }, setTranslator: value => { this.t = value; },
+      translate: (key, vars) => this.t(key, vars),
+      refreshWorkspaceHomes: () => this.refreshWorkspaceHomes(), updateToolbar: () => this.updateToolbar(),
+    });
   }
 
   // Keep the existing CampusBrowser diagnostics/test surface while all state
@@ -534,16 +458,7 @@ class CampusBrowser {
   // Live language switch: future dialogs and toolbar states use the new
   // strings immediately, and an open chrome window re-renders in place.
   setLocale(nextLocale, nextT) {
-    this.locale = nextLocale === 'en' ? 'en' : 'zh';
-    this.t = typeof nextT === 'function' ? nextT : createT(this.locale);
-    if (!this.window || this.window.isDestroyed()) return;
-    this.window.setTitle(this.t('browser.windowTitleForSchool', {
-      school: this.profilePresentation.schoolName,
-      trust: this.profilePresentation.unverified ? this.t('browser.unverifiedSuffix') : '',
-    }));
-    this.window.webContents.send?.('campus-toolbar-locale', this.locale);
-    this.refreshWorkspaceHomes();
-    this.updateToolbar();
+    return this.localePresentationOwner.set(nextLocale, nextT);
   }
 
   workspaceResources() { return this.workspaceOwner.workspaceResources(); }
