@@ -26,6 +26,46 @@ const {
 const { CampusBrowserManager, createCampusBrowserWindowOwner } = require('../../../../lib/browser/session/campus-browser-manager');
 const createWindowOwner = createCampusBrowserWindowOwner;
 
+test('Root has no unused alternate routing refresh transaction outside its owned command paths', () => {
+  assert.equal(Object.hasOwn(CampusBrowser.prototype, 'refreshRoutingPolicy'), false);
+  for (const entry of ['configure', 'setTabRoute', 'updateAllTabRoutes', 'updateToolbar']) {
+    assert.equal(typeof CampusBrowser.prototype[entry], 'function', entry);
+  }
+});
+
+for (const action of ['navigate', 'reload']) {
+  for (const retirement of ['context', 'ordinary']) {
+    test(`${action} waiting on actual Session activation stays inert after ${retirement} close veto`, async t => {
+      const f = createFakeBrowser({ browserWindowClose: () => {} }), browser = f.browser;
+      await browser.open('https://initial.example.invalid/', 1080, 'direct');
+      const window = browser.window, tab = browser.activeTab(), session = browser.campusSession;
+      await browser.suspendRoutingPolicy();
+      const gate = deferred(), originalProxy = browser.routingPolicy.proxyConfig.bind(browser.routingPolicy);
+      let admitted = false, timeoutClose;
+      browser.routingPolicy.proxyConfig = async port => { admitted = true; await gate.promise; return originalProxy(port); };
+      const pending = action === 'navigate'
+        ? browser.navigateWhenReady('https://late.example.invalid/', tab)
+        : browser.reloadWhenReady(tab);
+      let closing;
+      t.after(async () => {
+        gate.resolve(); await pending.catch(() => {}); timeoutClose?.(); if (closing) await closing;
+        window.close = () => { window.destroyed = true; window.emit('closed'); }; browser.close();
+      });
+      await waitForCondition(() => admitted, 'actual Session proxy configuration');
+      if (retirement === 'ordinary') browser.close();
+      else closing = browser.closeForContextSwitch({ timeoutMs: 100,
+        setTimeoutFn: callback => { timeoutClose = callback; return {}; }, clearTimeoutFn: () => {} });
+      assert.equal(window.isDestroyed(), false, 'veto preserves the original native page during retirement');
+      assert.equal(browser.tabs.includes(tab), true);
+      gate.resolve();
+      assert.equal(await pending, false);
+      assert.equal(tab.view.webContents.url, 'https://initial.example.invalid/');
+      assert.equal(tab.view.webContents.reloadCount, undefined);
+      assert.equal(browser.campusSession, session);
+    });
+  }
+}
+
 test('host defaults preserve neutral identity, callback fallbacks and no implicit native window', async () => {
   const { browser, browserWindows } = createFakeBrowser({ locale: 'unsupported', profilePresentation: null,
     onOpenResource: 1, showBookmarkMenu: {}, onTogglePageFavorite: false, onRecordPageOpen: '',

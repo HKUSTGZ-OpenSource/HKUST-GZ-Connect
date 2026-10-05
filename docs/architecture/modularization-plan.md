@@ -230,6 +230,12 @@ authority is created. Browser842->757/class683->598 reaches the numerical owner 
 adds a recursive Browser-class guard. Whole-M2 requirement mapping and exact-source/platform
 acceptance are still required; this checkpoint alone does not resolve #80 or the total goal.
 
+The [routing-completion retirement repair](browser-routing-completion-retirement.md) comes from
+the M2 exit audit, not a new numerical extraction: accepted Session activation could report
+readiness after a vetoed Browser close. Coordination generation/context fences now retire the
+old completion without cancelling independently owned Session IO. The unused alternate Root
+refresh entry is retired; Root757->751/class598->592. Whole-M2 acceptance remains pending.
+
 ## Wave M3 — Desktop Main composition
 
 Completed source outcome, with every #81 criterion mapped to concrete owner/test/platform
