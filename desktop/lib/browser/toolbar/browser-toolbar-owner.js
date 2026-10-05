@@ -4,6 +4,32 @@ const { normalizeToolbarCommand } = require('./campus-toolbar-contract');
 const { createT } = require('../../platform/i18n/i18n');
 const { ROUTE_CAMPUS, ROUTE_DIRECT } = require('../../routing/policy/campus-route');
 
+class BrowserLocalePresentationOwner {
+  constructor({ getWindow, getPresentation, getLocale, setLocale, setTranslator,
+    translate, refreshWorkspaceHomes, updateToolbar, createTranslator = createT } = {}) {
+    const ports = { getWindow, getPresentation, getLocale, setLocale, setTranslator,
+      translate, refreshWorkspaceHomes, updateToolbar, createTranslator };
+    if (Object.values(ports).some(port => typeof port !== 'function')) {
+      throw new TypeError('Browser locale presentation dependencies are incomplete');
+    }
+    Object.assign(this, ports);
+  }
+
+  set(nextLocale, nextTranslator) {
+    const locale = nextLocale === 'en' ? 'en' : 'zh';
+    this.setLocale(locale);
+    this.setTranslator(typeof nextTranslator === 'function' ? nextTranslator : this.createTranslator(locale));
+    if (!this.getWindow() || this.getWindow().isDestroyed()) return;
+    this.getWindow().setTitle(this.translate('browser.windowTitleForSchool', {
+      school: this.getPresentation().schoolName,
+      trust: this.getPresentation().unverified ? this.translate('browser.unverifiedSuffix') : '',
+    }));
+    this.getWindow().webContents.send?.('campus-toolbar-locale', this.getLocale());
+    this.refreshWorkspaceHomes();
+    this.updateToolbar();
+  }
+}
+
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({
     '&': '&amp;',
@@ -619,5 +645,5 @@ class BrowserToolbarCommandOwner {
   }
 }
 
-module.exports = { BrowserPagePresentationOwner, BrowserToolbarCommandOwner, BrowserToolbarOwner,
+module.exports = { BrowserLocalePresentationOwner, BrowserPagePresentationOwner, BrowserToolbarCommandOwner, BrowserToolbarOwner,
   BrowserViewportOwner, errorPage, redactedFailedUrl };

@@ -26,6 +26,69 @@ const {
 const { CampusBrowserManager, createCampusBrowserWindowOwner } = require('../../../../lib/browser/session/campus-browser-manager');
 const createWindowOwner = createCampusBrowserWindowOwner;
 
+test('host defaults preserve neutral identity, callback fallbacks and no implicit native window', async () => {
+  const { browser, browserWindows } = createFakeBrowser({ locale: 'unsupported', profilePresentation: null,
+    onOpenResource: 1, showBookmarkMenu: {}, onTogglePageFavorite: false, onRecordPageOpen: '',
+    getSharedPortalCredential: null, onPortalSessionUrl: null, showItemInFolder: null,
+    getNewTabUrl: null, onOpenSettings: null, ensureCampusReady: null });
+  assert.equal(browser.locale, 'zh'); assert.equal(browser.homeUrl, 'about:blank');
+  assert.equal(browser.profilePresentation.schoolName, browser.t('browser.workspace'));
+  assert.equal(Object.isFrozen(browser.profilePresentation), true);
+  assert.deepEqual(browser.getWorkspaceResources(), []); assert.deepEqual(browser.getWorkspaceGroups(), []);
+  assert.equal(browser.onOpenResource, null); assert.equal(browser.showBookmarkMenu, null);
+  assert.equal(browser.onTogglePageFavorite, null); assert.equal(browser.onRecordPageOpen, null);
+  assert.equal(browser.getSharedPortalCredential(), null); assert.equal(browser.onPortalSessionUrl(), false);
+  assert.equal(browser.getNewTabUrl(), 'about:blank'); assert.equal(await browser.ensureCampusReady(), true);
+  assert.deepEqual(browserWindows, []); browser.close();
+});
+
+test('host normalization preserves explicit services, frozen copied presentation and translator receiver', () => {
+  const policy = {}, observed = [], translate = function(key) {
+    observed.push(this); assert.equal(this.locale, 'en'); assert.equal(this.routingPolicy, policy); return key;
+  };
+  const resource = () => [], group = () => [], error = () => {};
+  const f = createFakeBrowser({ locale: 'en', t: translate, routingPolicy: policy, homeUrl: 'example.invalid/path',
+    getWorkspaceResources: resource, getWorkspaceGroups: group, onError: error });
+  assert.equal(observed[0], f.browser); assert.equal(f.browser.t, translate);
+  assert.equal(f.browser.getWorkspaceResources, resource); assert.equal(f.browser.getWorkspaceGroups, group);
+  assert.equal(f.browser.onError, error); assert.equal(f.browser.homeUrl, 'https://example.invalid/path');
+  f.browser.close();
+  const presentation = { schoolName: 'A'.repeat(170), unverified: true, officialPortalResourceId: 'resource' };
+  const g = createFakeBrowser({ profilePresentation: presentation });
+  assert.notEqual(g.browser.profilePresentation, presentation);
+  assert.equal(g.browser.profilePresentation.schoolName.length, 160);
+  assert.equal(g.browser.profilePresentation.officialPortalResourceId, 'resource');
+  assert.equal(Object.isFrozen(g.browser.profilePresentation), true); g.browser.close();
+});
+
+test('host validation keeps original first-error order before native window-owner construction', () => {
+  let calls = 0;
+  const factory = () => { calls++; throw new Error('native factory must not be called'); };
+  assert.throws(() => createFakeBrowser({ createWindowOwner: factory, getWorkspaceResources: null,
+    workspaceController: {}, homeUrl: 'file:///invalid' }), /workspace provider is invalid/);
+  assert.throws(() => createFakeBrowser({ createWindowOwner: factory,
+    workspaceController: {}, homeUrl: 'file:///invalid' }), /Workspace controller is invalid/);
+  assert.throws(() => createFakeBrowser({ createWindowOwner: factory, homeUrl: 'file:///invalid' }),
+    error => error.message === normalizeError('file:///invalid'));
+  assert.equal(calls, 0);
+  function normalizeError(url) { try { normalizeCampusUrl(url); } catch (error) { return error.message; } }
+});
+
+test('live locale projection preserves state/title/message/Workspace/toolbar order and Root receiver', async t => {
+  const { browser } = createFakeBrowser(); t.after(() => browser.close()); await browser.createWindow();
+  const calls = [], window = browser.window;
+  const translate = function(key) { assert.equal(this, browser); calls.push(['translate', key]); return key; };
+  window.setTitle = value => { assert.equal(browser.locale, 'en'); assert.equal(browser.t, translate); calls.push(['title', value]); };
+  window.webContents.send = (...args) => calls.push(['send', ...args]);
+  browser.refreshWorkspaceHomes = () => calls.push(['workspace']);
+  browser.updateToolbar = () => calls.push(['toolbar']);
+  browser.setLocale('en', translate);
+  assert.deepEqual(calls, [['translate', 'browser.windowTitleForSchool'], ['title', 'browser.windowTitleForSchool'],
+    ['send', 'campus-toolbar-locale', 'en'], ['workspace'], ['toolbar']]);
+  window.destroyed = true; calls.length = 0; browser.setLocale('unsupported');
+  assert.equal(browser.locale, 'zh'); assert.equal(typeof browser.t, 'function'); assert.deepEqual(calls, []);
+});
+
 test('creation admission rejects missing, destroyed and retired windows before page or workspace effects', async t => {
   const { browser } = createFakeBrowser(); t.after(() => browser.close());
   let calls = 0;
