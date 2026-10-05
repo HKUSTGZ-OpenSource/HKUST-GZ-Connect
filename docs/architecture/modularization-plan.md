@@ -217,6 +217,12 @@ Unconfirmed native cleanup fails before a new connection is admitted. Existing r
 and Session identity remain unchanged; Browser855/class697 and all growth budgets stay unchanged.
 This is a fault/lifetime repair, not completion of the remaining creation/composition outcome.
 
+The [tab creation admission owner](browser-tab-creation-owner.md) moves synchronous page/Workspace
+entry checks into the existing Session entrypoint while native allocation, rollback and teardown
+stay in the original Tab owner. Capacity/normalization/reuse order and shared Session identity
+are unchanged. Browser855->842/class697->683 with no new production node or dependency budget;
+remaining composition and whole-M2 acceptance are still required.
+
 ## Wave M3 — Desktop Main composition
 
 Completed source outcome, with every #81 criterion mapped to concrete owner/test/platform

@@ -26,6 +26,74 @@ const {
 const { CampusBrowserManager, createCampusBrowserWindowOwner } = require('../../../../lib/browser/session/campus-browser-manager');
 const createWindowOwner = createCampusBrowserWindowOwner;
 
+test('creation admission rejects missing, destroyed and retired windows before page or workspace effects', async t => {
+  const { browser } = createFakeBrowser(); t.after(() => browser.close());
+  let calls = 0;
+  browser.tabManager.createPage = () => { calls++; };
+  browser.tabManager.createWorkspace = () => { calls++; };
+  assert.equal(browser.createTab('https://entry.example.invalid/'), null);
+  assert.equal(browser.createWorkspaceTab(), null);
+  await browser.createWindow();
+  browser.window.destroyed = true;
+  assert.equal(browser.createTab('https://entry.example.invalid/'), null);
+  assert.equal(browser.createWorkspaceTab(), null);
+  browser.window.destroyed = false; browser.windowOwner.contextRetired = true;
+  assert.equal(browser.createTab('https://entry.example.invalid/'), null);
+  assert.equal(browser.createWorkspaceTab(), null); assert.equal(calls, 0);
+});
+
+test('page creation checks capacity before URL and Session while preserving blank-page options', async t => {
+  const errors = [], { browser } = createFakeBrowser({ onError: value => errors.push(value) });
+  t.after(() => browser.close()); await browser.createWindow();
+  browser.tabManager.canAdd = () => false;
+  browser.browserSessionManager.sessionForRoute = () => { throw new Error('Session must not be read at capacity'); };
+  assert.equal(browser.createTab('file:///invalid'), null); assert.equal(errors.length, 1);
+  assert.equal(errors[0], browser.t('tab.limit', { count: 24 }));
+  browser.tabManager.canAdd = () => true; errors.length = 0;
+  assert.equal(browser.createTab('file:///invalid'), null); assert.equal(errors.length, 1);
+  const originalSession = {}; let request;
+  browser.browserSessionManager.sessionForRoute = route => { assert.equal(route, 'campus'); return originalSession; };
+  browser.tabManager.createPage = input => { request = input; return input; };
+  const options = { blankPage: true, displayName: 'Synthetic' };
+  browser.createTab('file:///ignored-for-blank', 'campus', options);
+  assert.equal(request.url, 'about:blank'); assert.equal(request.options, options);
+  assert.equal(request.routeSession, originalSession); assert.equal(request.targetWindow, browser.window);
+  assert.deepEqual(request.resolution, { route: 'direct', source: 'local-blank', matchedRule: null });
+});
+
+test('missing Session refuses page admission before routing or native creation', async t => {
+  const { browser } = createFakeBrowser(); t.after(() => browser.close()); await browser.createWindow();
+  browser.browserSessionManager.sessionForRoute = () => null;
+  browser.resolveRoute = () => { throw new Error('route must not resolve without Session'); };
+  browser.tabManager.createPage = () => { throw new Error('page must not be allocated'); };
+  assert.equal(browser.createTab('https://entry.example.invalid/'), null);
+  assert.equal(browser.createWorkspaceTab(), null);
+});
+
+test('Workspace creation reuses the existing identity before capacity or Session checks', async t => {
+  const { browser } = createFakeBrowser(); t.after(() => browser.close()); await browser.openWorkspace(1080);
+  const existing = browser.tabs[0], order = [];
+  browser.tabManager.canAdd = () => { throw new Error('existing Workspace must bypass capacity'); };
+  browser.browserSessionManager.sessionForRoute = () => { throw new Error('reuse must not request Session'); };
+  browser.switchTab = id => { order.push(['switch', id]); };
+  browser.workspaceController.sendState = contents => { order.push(['state', contents]); };
+  assert.equal(browser.createWorkspaceTab(), existing);
+  assert.deepEqual(order, [['switch', existing.id], ['state', existing.view.webContents]]);
+  assert.throws(() => browser.createTab('about:blank'), /existing Workspace must bypass capacity/,
+    'generic page entry keeps its earlier capacity check');
+});
+
+test('creation keeps the Root Workspace facade and error callback receiver', async t => {
+  const { browser } = createFakeBrowser(); t.after(() => browser.close()); await browser.createWindow();
+  const selected = {}; browser.createWorkspaceTab = () => selected;
+  assert.equal(browser.createTab('about:blank'), selected);
+  let received;
+  browser.onError = function(message) { assert.equal(this, browser); received = message; };
+  browser.tabManager.canAdd = () => false;
+  assert.equal(browser.createTab('https://entry.example.invalid/'), null);
+  assert.equal(received, browser.t('tab.limit', { count: 24 }));
+});
+
 function rootedEntryManager(overrides = {}) {
   const state = { fixture: null, errors: [] }, noop = () => {};
   const manager = new CampusBrowserManager({

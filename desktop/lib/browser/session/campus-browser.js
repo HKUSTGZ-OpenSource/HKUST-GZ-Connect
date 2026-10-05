@@ -19,6 +19,7 @@ const {
   BrowserRoutingActivationOwner,
   BrowserRouteCommandOwner,
   BrowserOpenOwner,
+  BrowserTabCreationOwner,
   BrowserSessionManager,
   BrowserTeardownOwner,
   applyCampusSessionPolicy,
@@ -485,6 +486,20 @@ class CampusBrowser {
       createTab: (...args) => this.createTab(...args), createWorkspaceTab: () => this.createWorkspaceTab(),
       translate: key => this.t(key), onRetired: onOpenRetired,
     });
+    this.tabCreationOwner = new BrowserTabCreationOwner({
+      blankUrl: BLANK_CAMPUS_HOME, maxTabs: MAX_TABS,
+      isContextCurrent: () => !this.windowOwner?.contextRetired, getWindow: () => this.window,
+      getWorkspace: () => this.workspaceController, getTabs: () => this.tabs,
+      canAdd: () => this.tabManager.canAdd(), normalizeUrl: normalizeCampusUrl,
+      getHomeUrl: () => this.homeUrl, getTranslator: () => this.t,
+      getReportError: () => this.onError ? this.onError.bind(this) : null,
+      sessionForRoute: route => this.browserSessionManager.sessionForRoute(route),
+      resolveRoute: (...args) => this.resolveRoute(...args),
+      createPage: request => this.tabManager.createPage(request),
+      createWorkspace: routeSession => this.tabManager.createWorkspace(routeSession),
+      createWorkspaceEntry: () => this.createWorkspaceTab(),
+      switchTab: id => this.switchTab(id),
+    });
   }
 
   // Keep the existing CampusBrowser diagnostics/test surface while all state
@@ -744,39 +759,11 @@ class CampusBrowser {
   }
 
   createTab(rawUrl = null, route = null, options = {}) {
-    if (this.windowOwner?.contextRetired || !this.window || this.window.isDestroyed()) return null;
-    const targetWindow = this.window;
-    if (!this.tabManager.canAdd()) {
-      if (this.onError) this.onError(this.t('tab.limit', { count: MAX_TABS }));
-      return null;
-    }
-    let url;
-    try {
-      url = options.blankPage === true
-        ? BLANK_CAMPUS_HOME
-        : normalizeCampusUrl(rawUrl, this.homeUrl, this.t);
-    } catch (error) {
-      if (this.onError) this.onError(error.message);
-      return null;
-    }
-    if (url === BLANK_CAMPUS_HOME && options.blankPage !== true) return this.createWorkspaceTab();
-    const routeSession = this.browserSessionManager.sessionForRoute(ROUTE_CAMPUS);
-    if (!routeSession) return null;
-    const resolution = this.resolveRoute(url, null, route);
-    return this.tabManager.createPage({ url, routeSession, resolution, route, options, targetWindow });
+    return this.tabCreationOwner.createTab(rawUrl, route, options);
   }
 
   createWorkspaceTab() {
-    if (this.windowOwner?.contextRetired || !this.workspaceController || !this.window || this.window.isDestroyed()) return null;
-    const existing = this.tabs.find((tab) => tab.kind === 'workspace');
-    if (existing) { this.switchTab(existing.id); this.workspaceController.sendState(existing.view.webContents); return existing; }
-    if (!this.tabManager.canAdd()) {
-      this.onError?.(this.t('tab.limit', { count: MAX_TABS }));
-      return null;
-    }
-    const routeSession = this.browserSessionManager.sessionForRoute(ROUTE_CAMPUS);
-    if (!routeSession) return null;
-    return this.tabManager.createWorkspace(routeSession);
+    return this.tabCreationOwner.createWorkspaceTab();
   }
 
   async setTabRoute(id, route) {
