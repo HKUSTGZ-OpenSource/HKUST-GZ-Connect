@@ -199,6 +199,66 @@ class BrowserOpenOwner {
   }
 }
 
+// Admission selects existing Session/Tab owners; it never allocates a second
+// native resource registry, route policy or persistent Workspace authority.
+class BrowserTabCreationOwner {
+  constructor({ blankUrl, maxTabs, isContextCurrent, getWindow, getWorkspace,
+    getTabs, canAdd, normalizeUrl, getHomeUrl, getTranslator, getReportError,
+    sessionForRoute, resolveRoute, createPage, createWorkspace, createWorkspaceEntry, switchTab } = {}) {
+    const ports = { isContextCurrent, getWindow, getWorkspace, getTabs, canAdd,
+      normalizeUrl, getHomeUrl, getTranslator, getReportError, sessionForRoute,
+      resolveRoute, createPage, createWorkspace, createWorkspaceEntry, switchTab };
+    if (typeof blankUrl !== 'string' || !blankUrl || !Number.isSafeInteger(maxTabs) || maxTabs < 1 ||
+        Object.values(ports).some(port => typeof port !== 'function')) {
+      throw new TypeError('Browser tab creation dependencies are incomplete');
+    }
+    Object.assign(this, { blankUrl, maxTabs, ...ports });
+  }
+
+  createTab(rawUrl = null, route = null, options = {}) {
+    if (!this.isContextCurrent() || !this.getWindow() || this.getWindow().isDestroyed()) return null;
+    const targetWindow = this.getWindow();
+    if (!this.canAdd()) {
+      const report = this.getReportError();
+      if (report) report(this.getTranslator()('tab.limit', { count: this.maxTabs }));
+      return null;
+    }
+    let url;
+    try {
+      url = options.blankPage === true
+        ? this.blankUrl
+        : this.normalizeUrl(rawUrl, this.getHomeUrl(), this.getTranslator());
+    } catch (error) {
+      const report = this.getReportError();
+      if (report) report(error.message);
+      return null;
+    }
+    if (url === this.blankUrl && options.blankPage !== true) return this.createWorkspaceEntry();
+    const routeSession = this.sessionForRoute(ROUTE_CAMPUS);
+    if (!routeSession) return null;
+    const resolution = this.resolveRoute(url, null, route);
+    return this.createPage({ url, routeSession, resolution, route, options, targetWindow });
+  }
+
+  createWorkspaceTab() {
+    if (!this.isContextCurrent() || !this.getWorkspace() || !this.getWindow() || this.getWindow().isDestroyed()) return null;
+    const existing = this.getTabs().find(tab => tab.kind === 'workspace');
+    if (existing) {
+      this.switchTab(existing.id);
+      this.getWorkspace().sendState(existing.view.webContents);
+      return existing;
+    }
+    if (!this.canAdd()) {
+      const report = this.getReportError();
+      if (report) report(this.getTranslator()('tab.limit', { count: this.maxTabs }));
+      return null;
+    }
+    const routeSession = this.sessionForRoute(ROUTE_CAMPUS);
+    if (!routeSession) return null;
+    return this.createWorkspace(routeSession);
+  }
+}
+
 // A route command uses the existing rule transaction and page/navigation
 // authorities. Only admission is owned here: no second rule store or PAC state.
 class BrowserRouteCommandOwner {
@@ -1313,6 +1373,7 @@ class MyPortalDataRuntime {
 }
 
 module.exports = {
+  BrowserTabCreationOwner,
   BrowserOpenOwner,
   BrowserRouteCommandOwner,
   BrowserTeardownOwner,

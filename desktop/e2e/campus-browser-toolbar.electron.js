@@ -237,6 +237,33 @@ async function assertOpenRequestRetirement(browser) {
   process.stdout.write('native Browser open request retirement: PASS\n');
 }
 
+async function assertTabCreationAdmission(browser) {
+  const originalCapacity = browser.tabManager.canAdd, originalError = browser.onError, errors = [];
+  const sessionBefore = browser.campusSession;
+  try {
+    const workspace = browser.createWorkspaceTab();
+    assert.ok(workspace && workspace.kind === 'workspace');
+    const count = browser.tabs.length, nextId = browser.nextTabId;
+    browser.onError = message => errors.push(message);
+    browser.tabManager.canAdd = () => false;
+    assert.equal(browser.createWorkspaceTab(), workspace, 'existing Workspace precedes capacity');
+    assert.equal(browser.createTab('about:blank'), null, 'page entry preserves its earlier capacity check');
+    assert.deepEqual(errors, [browser.t('tab.limit', { count: 24 })]);
+    assert.equal(browser.tabs.length, count); assert.equal(browser.nextTabId, nextId);
+    browser.tabManager.canAdd = originalCapacity; errors.length = 0;
+    assert.equal(browser.createTab('file:///synthetic-invalid'), null);
+    assert.equal(errors.length, 1); assert.equal(browser.nextTabId, nextId);
+    const page = browser.createTab(CONFIGURED_HOME, ROUTE_DIRECT, { displayName: 'Synthetic entry' });
+    assert.ok(page); assert.equal(page.id, nextId); assert.equal(page.view.webContents.session, sessionBefore);
+    await waitForPage(page.view.webContents, 'location.href === ' + JSON.stringify(CONFIGURED_HOME), 'admitted synthetic page');
+    assert.equal(browser.campusSession, sessionBefore);
+    browser.closeTab(page.id);
+  } finally {
+    browser.tabManager.canAdd = originalCapacity; browser.onError = originalError;
+  }
+  process.stdout.write('native Browser tab creation admission: PASS\n');
+}
+
 async function assertManagerEntryPreparation(browser) {
   const originalRetired = browser.openOwner.onRetired, messages = [];
   let managedBrowser;
@@ -860,6 +887,7 @@ async function main() {
     await runStage('find bar', () => assertFindBar(browser));
     await runStage('viewport lifecycle', () => assertViewportLifecycle(browser));
     await runStage('browser screenshots', () => captureBrowserChrome(browser));
+    await runStage('tab creation admission', () => assertTabCreationAdmission(browser));
     await runStage('open request retirement', () => assertOpenRequestRetirement(browser));
     await runStage('Manager entry preparation', () => assertManagerEntryPreparation(browser));
     await runStage('teardown failure isolation', () => assertTeardownFailureIsolation(browser));
