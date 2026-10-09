@@ -101,9 +101,9 @@ AppImage 是独立文件，下载新版后请用它替换旧 AppImage；应用�
 如果校园 DNS 的 UDP 响应被截断，应用会在同一校园 DNS 上自动改用隧道内 TCP，
 不会回退到公共或系统 DNS。
 
-## 开发版本：其他 EasyConnect 网关
+## 其他 EasyConnect 网关（2.0.4 起）
 
-以下改动尚未进入已发布的 2.0.3 安装包。在登录页选择“其他学校”后，可填写
+在登录页选择“其他学校”后，可填写
 `主机:端口`、HTTPS 网关地址，或只用于跳转的 HTTP/HTTPS 入口。应用先检查入口，
 显示最终 HTTPS 网关；只有确认并切换到独立配置后，才向该网关提交登录凭据。
 
@@ -230,9 +230,9 @@ Host hkustgz-hpc
 - **会修改或抢占系统 DNS 吗？** 不会。校园内部 DNS 查询只在用户态校园隧道内
   完成。
 - **退出后需要恢复网络吗？** 不需要，应用没有修改系统代理、默认路由或 DNS。
-- **断网后会自动连接吗？** 开发版本在启用“自动重连”且重试次数大于 0 时，
+- **断网后会自动连接吗？** 2.0.4 起，在启用“自动重连”且重试次数大于 0 时，
   会在网络恢复后自动连接；网关暂时不可达时持续低频重试，无需再次点击开关。
-  手动断开或账号密码被明确拒绝后会停止。此修复尚未进入 2.0.3 安装包。
+  手动断开或账号密码被明确拒绝后会停止。
 - **连接成功但网站打不开怎么办？** 先确认网址完整且路径选择正确。校内网站选择
   “校园隧道”，Outlook、Canvas 等公网合作服务选择“直连”，然后重新加载。
 - **HPC 域名提示 DNS 失败怎么办？** 先断开并重新连接，让应用重新取得学校 DNS；
@@ -339,9 +339,9 @@ through the campus tunnel without changing operating-system DNS.
 If a campus DNS UDP response is truncated, the app retries that same campus
 resolver over tunnel TCP and never falls back to a public or system resolver.
 
-## Development builds: other EasyConnect gateways
+## Other EasyConnect gateways (2.0.4+)
 
-These changes are not in the published 2.0.3 installers. Select Other School on
+Select Other School on
 the login page and enter host:port, an HTTPS gateway, or an HTTP/HTTPS redirect
 entry. The app checks and displays the final HTTPS origin before creating and
 switching to an isolated Profile. Credentials are never sent to the entry or
@@ -487,10 +487,10 @@ edits `~/.ssh/config`, installs extensions, or launches VS Code automatically.
   the userspace campus tunnel.
 - **Must the network be repaired after quitting?** No system proxy, route, or
   DNS setting was changed.
-- **Will it reconnect after an outage?** Development builds reconnect when
+- **Will it reconnect after an outage?** Version 2.0.4 and later reconnect when
   Auto Reconnect is enabled and the retry count is above zero. A temporarily
   unreachable gateway keeps retrying at a low rate. Manual disconnect and an
-  explicit account/password rejection stop recovery. This fix is not in 2.0.3.
+  explicit account/password rejection stop recovery.
 - **Connected, but a page does not open?** Verify the full URL and route. Use
   Campus tunnel for internal sites and Direct for Outlook, Canvas, and other
   public partner services, then reload.
