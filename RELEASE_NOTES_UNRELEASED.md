@@ -1,15 +1,9 @@
-# 尚未发布的修复
+# 未发布修复索引
 
-- Status: Proposed
+- Status: Current source contract
 - Owner: project maintainers
 - Last verified: 2026-10-09
-- Applies to: #257 的源码修复；不改变已发布的 2.0.3 安装包
+- Applies to: 2.0.4 发布准备
 
-修复断网后登录请求的网络故障被误认为不可恢复认证结果，以及短期重试耗尽后
-永久停止自动连接的问题。启用自动重连且重试次数大于 0 时，断网保留连接意图，
-恢复联网后自动连接；网关仍不可达时持续低频重试。已关闭旧进程的断网恢复不再
-因远端注销无法确认而要求手动操作。
-
-明确的账号密码拒绝、未知认证协议和不支持的 MFA 继续停止重试。手动断开、退出
-和关闭自动重连继续生效。无需迁移设置或凭据。验证使用合成故障与本地测试，
-实际学校网关和发布安装包验收仍是独立步骤。
+本轮断网自动恢复等修复已整理到 [2.0.4 发布说明](RELEASE_NOTES_2.0.4.md)。
+正式安装包与验收结果以 [GitHub Release](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/tag/v2.0.4) 为准。
