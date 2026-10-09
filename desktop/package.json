@@ -32,7 +32,7 @@
     "test:main-school-onboarding": "node e2e/main-school-onboarding.electron.js",
     "test:main-profile-switch": "node e2e/main-profile-switch.electron.js",
     "test:main-engine-lifecycle": "electron e2e/main-engine-lifecycle.electron.js",
-    "test:main-network-startup": "electron e2e/main-network-startup.electron.js",
+    "test:main-network-startup": "electron e2e/main-network-startup.electron.js && electron e2e/main-network-recovery.electron.js",
     "test:persistence-migration": "electron e2e/persistence-migration.electron.js",
     "test:upgrade-compatibility": "node --test test/unit/persistence/upgrades/profile-workspace-upgrade.test.js && electron e2e/persistence-migration.electron.js",
     "test:profile-asar": "electron e2e/school-profile-asar.electron.js",

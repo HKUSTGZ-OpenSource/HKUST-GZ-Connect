@@ -401,15 +401,15 @@ class ConnectionOperationCoordinator {
       autoReconnect,
     })) return false;
     const stopped = await this.ensureEngineStopped();
-    if (!stopped.ok || stopped.cleanExit === false || !this.connectionState.canContinue(intent, {
+    // Offline/suspend can prevent remote logout even after the old child has
+    // closed. Local closure is the restart barrier for this physical outage;
+    // the new generation must authenticate independently before serving.
+    if (!stopped.ok || !this.connectionState.canContinue(intent, {
       isQuitting: this.isQuitting() === true,
     })) {
-      if ((!stopped.ok || stopped.cleanExit === false) &&
-          this.connectionState.isCurrentIntent(intent)) {
+      if (!stopped.ok && this.connectionState.isCurrentIntent(intent)) {
         this.connectionState.failIntent(intent);
-        this.getPresentation().lastError = this.getTranslator()(stopped.cleanExit === false
-          ? 'error.engineCleanupUnconfirmed'
-          : 'error.engineStuck');
+        this.getPresentation().lastError = this.getTranslator()('error.engineStuck');
         this.emit();
       }
       return false;

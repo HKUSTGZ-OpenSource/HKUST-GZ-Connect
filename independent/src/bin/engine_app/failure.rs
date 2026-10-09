@@ -58,9 +58,10 @@ fn authentication_error_code(error: &ProviderError) -> EngineErrorCode {
         ProviderError::Failed(error) => match error.kind() {
             ErrorKind::AuthenticationRejected => EngineErrorCode::AuthRejected,
             ErrorKind::GatewayPreloginUnavailable => EngineErrorCode::GatewayPreloginUnavailable,
-            ErrorKind::AuthenticationIndeterminate
-            | ErrorKind::GatewayHttp
-            | ErrorKind::GatewayHttpIndeterminate => EngineErrorCode::AuthIndeterminate,
+            ErrorKind::GatewayHttp | ErrorKind::GatewayHttpIndeterminate => {
+                EngineErrorCode::AuthNetworkUnavailable
+            }
+            ErrorKind::AuthenticationIndeterminate => EngineErrorCode::AuthIndeterminate,
             ErrorKind::AuthenticationProtocolInvalid | ErrorKind::GatewayProtocolInvalid => {
                 EngineErrorCode::AuthProtocolInvalid
             }
@@ -203,6 +204,14 @@ mod tests {
                 EngineErrorCode::AuthIndeterminate,
             ),
             (
+                ErrorKind::GatewayHttpIndeterminate,
+                EngineErrorCode::AuthNetworkUnavailable,
+            ),
+            (
+                ErrorKind::GatewayHttp,
+                EngineErrorCode::AuthNetworkUnavailable,
+            ),
+            (
                 ErrorKind::GatewayPreloginUnavailable,
                 EngineErrorCode::GatewayPreloginUnavailable,
             ),
@@ -266,6 +275,22 @@ mod tests {
         assert_eq!(failure.code, EngineErrorCode::AuthIndeterminate);
         assert_eq!(
             failure.secondary_code,
+            Some(EngineErrorCode::AuthCleanupUnconfirmed)
+        );
+
+        let network_failure = authentication_failure(ProviderError::Failed(
+            Error::classified(
+                ErrorKind::GatewayHttpIndeterminate,
+                "synthetic network loss",
+            )
+            .with_cleanup_unconfirmed(),
+        ));
+        assert_eq!(
+            network_failure.code,
+            EngineErrorCode::AuthNetworkUnavailable
+        );
+        assert_eq!(
+            network_failure.secondary_code,
             Some(EngineErrorCode::AuthCleanupUnconfirmed)
         );
     }

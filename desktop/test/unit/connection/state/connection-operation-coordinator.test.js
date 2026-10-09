@@ -277,17 +277,14 @@ test('connectivity recovery resumes the same intent only after a confirmed stop'
   assert.equal(f.launches, 1);
 });
 
-test('unclean connectivity stop fails closed with the distinct cleanup error', async () => {
-  for (const [stopResult, errorKey] of [
-    [{ ok: false }, 'error.engineStuck'],
-    [{ ok: true, cleanExit: false }, 'error.engineCleanupUnconfirmed'],
-  ]) {
+test('connectivity recovery waits for local process closure, but offline logout failure does not cancel intent', async () => {
+  for (const stopResult of [{ ok: false }, { ok: true, cleanExit: false }]) {
     const f = fixture(); const intent = f.fsm.beginConnectIntent();
     f.fsm.pauseForConnectivity(intent); f.stopResult = stopResult;
-    assert.equal(await f.owner.recoverConnectivity(intent, 'network-online'), false);
-    assert.equal(f.launches, 0);
-    assert.equal(f.state.lastError, errorKey);
-    assert.equal(f.fsm.snapshot().desiredConnected, false);
+    assert.equal(await f.owner.recoverConnectivity(intent, 'network-online'), stopResult.ok);
+    assert.equal(f.launches, stopResult.ok ? 1 : 0);
+    assert.equal(f.fsm.snapshot().desiredConnected, stopResult.ok);
+    if (!stopResult.ok) assert.equal(f.state.lastError, 'error.engineStuck');
   }
 });
 

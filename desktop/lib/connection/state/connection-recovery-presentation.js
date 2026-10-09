@@ -7,6 +7,7 @@ const AUTHENTICATION_CODES = new Set([
 const CONFIGURATION_CODES = new Set(['INVALID_ARGUMENTS', 'CONFIGURATION_INVALID']);
 const LOCAL_LISTENER_CODES = new Set(['LOCAL_LISTENER_FAILED', 'local_service_failed']);
 const NETWORK_CODES = new Set([
+  'AUTH_NETWORK_UNAVAILABLE',
   'GATEWAY_PRELOGIN_UNAVAILABLE', 'DATA_PLANE_SETUP_TRANSIENT', 'DATA_PLANE_SETUP_FAILED', 'NETWORK_DISCONNECTED',
   'network_unhealthy', 'startup_failed',
 ]);
@@ -34,7 +35,8 @@ function connectionRecoveryPresentation(state = {}, presentation = {}) {
   } else if (LOCAL_LISTENER_CODES.has(state.failureCode)) {
     category = 'local-listener';
     action = 'open-tower';
-  } else if (NETWORK_CODES.has(state.failureCode) || state.failureKind === 'gateway-transient') {
+  } else if (NETWORK_CODES.has(state.failureCode) ||
+      ['gateway-transient', 'network-transient'].includes(state.failureKind)) {
     category = 'network';
     action = 'reconnect';
   } else if (state.lastError) {

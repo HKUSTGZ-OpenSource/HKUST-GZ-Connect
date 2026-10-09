@@ -122,6 +122,13 @@ input.on('line', (line) => {
     credentialLines += 1;
     if (credentialLines !== 2) return;
     observe('credentials_received');
+    if (fs.existsSync(path.join(userData, 'synthetic-engine-network-failure.txt'))) {
+      state('connecting'); state('authenticating');
+      send({ type: 'fatal_error', code: 'AUTH_NETWORK_UNAVAILABLE',
+        secondaryCode: 'AUTH_CLEANUP_UNCONFIRMED' });
+      send({ type: 'stopped', reason: 'startup_failed', generation }, () => process.exit(23));
+      return;
+    }
     if (attempt === 1 && !stableFirstAttempt) {
       state('connecting');
       state('authenticating');

@@ -230,6 +230,9 @@ Host hkustgz-hpc
 - **会修改或抢占系统 DNS 吗？** 不会。校园内部 DNS 查询只在用户态校园隧道内
   完成。
 - **退出后需要恢复网络吗？** 不需要，应用没有修改系统代理、默认路由或 DNS。
+- **断网后会自动连接吗？** 开发版本在启用“自动重连”且重试次数大于 0 时，
+  会在网络恢复后自动连接；网关暂时不可达时持续低频重试，无需再次点击开关。
+  手动断开或账号密码被明确拒绝后会停止。此修复尚未进入 2.0.3 安装包。
 - **连接成功但网站打不开怎么办？** 先确认网址完整且路径选择正确。校内网站选择
   “校园隧道”，Outlook、Canvas 等公网合作服务选择“直连”，然后重新加载。
 - **HPC 域名提示 DNS 失败怎么办？** 先断开并重新连接，让应用重新取得学校 DNS；
@@ -484,6 +487,10 @@ edits `~/.ssh/config`, installs extensions, or launches VS Code automatically.
   the userspace campus tunnel.
 - **Must the network be repaired after quitting?** No system proxy, route, or
   DNS setting was changed.
+- **Will it reconnect after an outage?** Development builds reconnect when
+  Auto Reconnect is enabled and the retry count is above zero. A temporarily
+  unreachable gateway keeps retrying at a low rate. Manual disconnect and an
+  explicit account/password rejection stop recovery. This fix is not in 2.0.3.
 - **Connected, but a page does not open?** Verify the full URL and route. Use
   Campus tunnel for internal sites and Direct for Outlook, Canvas, and other
   public partner services, then reload.

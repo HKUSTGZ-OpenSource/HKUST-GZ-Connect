@@ -254,7 +254,7 @@ test('macOS packages verify every legacy and Retina icon layer has transparent c
 test('initially-offline Main recovery is a named ordinary and tag-build Electron gate', () => {
   assert.equal(
     manifest.scripts['test:main-network-startup'],
-    'electron e2e/main-network-startup.electron.js',
+    'electron e2e/main-network-startup.electron.js && electron e2e/main-network-recovery.electron.js',
   );
   assert.match(ciWorkflow, /npm run test:main-network-startup/u);
   const macIntegration = workflow.slice(

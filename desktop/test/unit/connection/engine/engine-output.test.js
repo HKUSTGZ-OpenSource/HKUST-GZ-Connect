@@ -72,16 +72,18 @@ test('structured engine error codes are stable, readable and classify retry safe
   assert.equal(engineFailureKindFromCode('AUTH_REJECTED'), 'terminal');
   assert.equal(engineFailureKindFromCode('AUTH_INDETERMINATE'), 'terminal');
   assert.match(classifyEngineCode('GATEWAY_PRELOGIN_UNAVAILABLE', 1080), /登录前.*网关/u);
-  assert.equal(engineFailureKindFromCode('GATEWAY_PRELOGIN_UNAVAILABLE'), 'gateway-transient');
+  assert.equal(engineFailureKindFromCode('GATEWAY_PRELOGIN_UNAVAILABLE'), 'network-transient');
   assert.equal(resolveEngineFailureKind({
     code: 'GATEWAY_PRELOGIN_UNAVAILABLE',
     stopReason: 'startup_failed',
-  }), 'gateway-transient');
+  }), 'network-transient');
   assert.equal(engineFailureKindFromCode('AUTH_PROTOCOL_INVALID'), 'terminal');
   assert.equal(engineFailureKindFromCode('AUTH_LIMIT_EXCEEDED'), 'terminal');
   assert.equal(engineFailureKindFromCode('DATA_PLANE_SETUP_TRANSIENT'), 'gateway-transient');
   assert.equal(engineFailureKindFromCode('DATA_PLANE_SETUP_FAILED'), 'terminal');
-  assert.equal(engineFailureKindFromCode('NETWORK_DISCONNECTED'), 'gateway-transient');
+  assert.equal(engineFailureKindFromCode('NETWORK_DISCONNECTED'), 'network-transient');
+  assert.equal(engineFailureKindFromCode('AUTH_NETWORK_UNAVAILABLE'), 'network-transient');
+  assert.match(classifyEngineCode('AUTH_NETWORK_UNAVAILABLE', 1080), /网络.*恢复/u);
   assert.equal(engineFailureKindFromCode('LOCAL_LISTENER_FAILED'), 'terminal');
   assert.match(classifyEngineCode('DATA_PLANE_SHUTDOWN_FAILED', 1080), /停止自动重连/);
   assert.equal(engineFailureKindFromCode('DATA_PLANE_SHUTDOWN_FAILED'), 'terminal');
@@ -123,7 +125,7 @@ test('structured stop reasons remain useful when a fatal event is unavailable', 
   assert.equal(classifyEngineStopReason('unknown_reason', 6180), null);
   assert.equal(engineFailureKindFromStopReason('local_service_failed'), 'terminal');
   assert.equal(engineFailureKindFromStopReason('logout_failed'), 'terminal');
-  assert.equal(engineFailureKindFromStopReason('network_unhealthy'), 'gateway-transient');
+  assert.equal(engineFailureKindFromStopReason('network_unhealthy'), 'network-transient');
   assert.equal(engineFailureKindFromStopReason('startup_failed'), 'unknown');
 });
 
@@ -136,7 +138,7 @@ test('failure classification trusts code, then stop reason, before English diagn
   assert.equal(resolveEngineFailureKind({
     stopReason: 'network_unhealthy',
     diagnosticText: 'gateway authentication failed',
-  }), 'gateway-transient');
+  }), 'network-transient');
   assert.equal(resolveEngineFailureKind({
     stopReason: 'startup_failed',
     diagnosticText: 'gateway authentication failed',

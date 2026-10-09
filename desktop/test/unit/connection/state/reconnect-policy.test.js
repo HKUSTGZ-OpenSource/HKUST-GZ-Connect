@@ -41,3 +41,17 @@ test('gateway transients settle longer than ordinary failures', () => {
     failureKind: 'unknown',
   }).delayMs, 2000);
 });
+
+test('network outages retain recovery beyond the short retry budget with a capped delay', () => {
+  for (const failureKind of ['network-transient', 'gateway-transient']) {
+    let attempts = 0;
+    for (let outage = 0; outage < 20; outage += 1) {
+      const plan = planReconnect({ attempts, maxAttempts: 3, failureKind });
+      assert.ok(plan, 'a long outage must not require a manual reconnect');
+      attempts = plan.attempt;
+      if (outage >= 3) assert.ok(plan.delayMs >= 5000 && plan.delayMs <= 30_000);
+    }
+    assert.equal(attempts, 3, 'the backoff counter saturates instead of growing without bound');
+    assert.equal(planReconnect({ attempts, maxAttempts: 0, failureKind }), null);
+  }
+});

@@ -82,6 +82,7 @@ function classifyEngineCode(code, socksPort, t = createT('zh'), secondaryCode = 
     case 'AUTH_FAILED': message = t('engine.authFailed'); break;
     case 'AUTH_REJECTED': message = t('engine.authRejected'); break;
     case 'AUTH_INDETERMINATE': message = t('engine.authIndeterminate'); break;
+    case 'AUTH_NETWORK_UNAVAILABLE': message = t('engine.authNetworkUnavailable'); break;
     case 'GATEWAY_PRELOGIN_UNAVAILABLE': message = t('engine.gatewayPreloginUnavailable'); break;
     case 'AUTH_PROTOCOL_INVALID': message = t('engine.authProtocolInvalid'); break;
     case 'AUTH_EXPIRED': message = t('engine.authExpired'); break;
@@ -123,7 +124,10 @@ function engineFailureKindFromCode(code) {
     'EVENT_OUTPUT_FAILED',
   ]
     .includes(code)) return 'terminal';
-  if (['GATEWAY_PRELOGIN_UNAVAILABLE', 'DATA_PLANE_SETUP_TRANSIENT', 'NETWORK_DISCONNECTED'].includes(code)) {
+  if (['AUTH_NETWORK_UNAVAILABLE', 'GATEWAY_PRELOGIN_UNAVAILABLE', 'NETWORK_DISCONNECTED'].includes(code)) {
+    return 'network-transient';
+  }
+  if (code === 'DATA_PLANE_SETUP_TRANSIENT') {
     return 'gateway-transient';
   }
   return 'unknown';
@@ -145,7 +149,7 @@ function classifyEngineStopReason(reason, socksPort, t = createT('zh')) {
 function engineFailureKindFromStopReason(reason) {
   if (['local_service_failed', 'logout_failed', 'shutdown_failed', 'event_output_failed']
     .includes(reason)) return 'terminal';
-  if (reason === 'network_unhealthy') return 'gateway-transient';
+  if (reason === 'network_unhealthy') return 'network-transient';
   return 'unknown';
 }
 
