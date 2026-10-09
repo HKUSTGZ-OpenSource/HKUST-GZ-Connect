@@ -715,8 +715,8 @@ fn classify_auth_gateway_error(error: Error) -> Error {
             "gateway authentication response violates the expected protocol",
         ),
         ErrorKind::GatewayHttpIndeterminate | ErrorKind::GatewayHttp => Error::classified(
-            ErrorKind::AuthenticationIndeterminate,
-            "gateway authentication result is indeterminate",
+            error.kind(),
+            "gateway authentication request was unavailable",
         ),
         _ => Error::classified(
             ErrorKind::AuthenticationIndeterminate,
@@ -891,7 +891,7 @@ mod tests {
             ),
         ] {
             let classified = classify_auth_gateway_error(failure);
-            assert_eq!(classified.kind(), ErrorKind::AuthenticationIndeterminate);
+            assert_eq!(classified.kind(), ErrorKind::GatewayHttpIndeterminate);
             assert!(!classified.to_string().contains("password"));
         }
         let malformed = classify_auth_gateway_error(Error::classified(
@@ -899,6 +899,8 @@ mod tests {
             "synthetic malformed response",
         ));
         assert_eq!(malformed.kind(), ErrorKind::AuthenticationProtocolInvalid);
+        let unknown = classify_auth_gateway_error(Error::new("synthetic unknown failure".into()));
+        assert_eq!(unknown.kind(), ErrorKind::AuthenticationIndeterminate);
     }
 
     #[test]
@@ -922,7 +924,7 @@ mod tests {
                 "synthetic password POST timeout",
             ))
             .kind(),
-            ErrorKind::AuthenticationIndeterminate,
+            ErrorKind::GatewayHttpIndeterminate,
         );
     }
 

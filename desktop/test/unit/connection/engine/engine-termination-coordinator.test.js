@@ -62,7 +62,7 @@ test('exit revokes serving before cleanup and close retains stable-session retry
   f.calls.length = 0;
   f.owner.close({ code: 1, generation: 7 }, '', null, 'network_unhealthy', 6180);
   assert.equal(f.machine.snapshot().phase, CONNECTION_PHASE.RETRY_WAIT);
-  assert.equal(f.presentation.failureKind, 'gateway-transient');
+  assert.equal(f.presentation.failureKind, 'network-transient');
   assert.equal(f.presentation.lastError, 'error.reconnecting');
   const retry = f.calls.find(([name]) => name === 'schedule');
   assert.deepEqual(retry.slice(0, 3), ['schedule', 7, 5000]);
@@ -78,6 +78,26 @@ test('terminal structured failure overrides retryable diagnostics and never sche
   assert.equal(f.machine.snapshot().phase, 'idle');
   assert.equal(f.machine.snapshot().desiredConnected, false);
   assert.equal(f.calls.some(([name]) => name === 'schedule'), false);
+});
+
+test('a network failure during password login retains the intent and schedules automatic recovery', () => {
+  const f = fixture();
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    if (attempt > 0) {
+      f.machine.beginConnectAttempt(f.intent, { isRetry: true });
+      f.machine.bindEngineGeneration(7);
+    }
+    f.presentation.lastError = 'engine.authNetworkUnavailable';
+    f.owner.close({ code: 1, generation: 7 }, '', 'AUTH_NETWORK_UNAVAILABLE', 'startup_failed');
+    assert.equal(f.machine.snapshot().phase, CONNECTION_PHASE.RETRY_WAIT);
+    assert.equal(f.machine.snapshot().desiredConnected, true);
+    assert.equal(f.machine.snapshot().intent, f.intent);
+  }
+  assert.equal(f.calls.filter(([name]) => name === 'schedule').length, 12);
+  assert.equal(f.presentation.lastError, 'error.networkRetrying');
+  f.machine.beginStop(false);
+  f.owner.close({ code: 1, generation: 7 }, '', 'AUTH_NETWORK_UNAVAILABLE', 'startup_failed');
+  assert.equal(f.calls.filter(([name]) => name === 'schedule').length, 12);
 });
 
 test('unreadable retry settings settle fail-closed after revocation', () => {
@@ -96,7 +116,7 @@ test('disabled or exhausted automatic retry remains stopped', () => {
     const f = fixture({ settings });
     f.owner.close({ code: 1, generation: 7 }, '', null, 'network_unhealthy');
     assert.equal(f.machine.snapshot().desiredConnected, false);
-    assert.equal(f.presentation.lastError, 'error.gatewayRejected');
+    assert.equal(f.presentation.lastError, 'engine.channelClosed');
     assert.equal(f.calls.some(([name]) => name === 'schedule'), false);
   }
 });

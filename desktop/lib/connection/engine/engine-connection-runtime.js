@@ -370,13 +370,15 @@ class EngineTerminationCoordinator {
       this.emit();
       return;
     }
-    // Only a genuinely stable session earns a fresh retry budget. Merely
-    // opening SOCKS and then losing the data plane must keep counting, or a
-    // rejecting gateway can drive the app into an infinite login loop.
+    // Only a stable session resets the fast retry burst. A short-lived
+    // listener keeps counting so persistent network recovery reaches its
+    // low-frequency backoff instead of repeatedly restarting a fast burst.
     if (decision.action === 'retry') {
       this.presentation.lastError = wasConnected
         ? this.t('error.reconnecting')
-        : (failureKind === 'gateway-transient'
+        : (failureKind === 'network-transient'
+          ? this.t('error.networkRetrying')
+          : failureKind === 'gateway-transient'
           ? this.t('error.gatewayRetrying')
           : null);
       this.emit();

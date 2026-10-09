@@ -88,6 +88,7 @@ pub enum EngineErrorCode {
     AuthFailed,
     AuthRejected,
     AuthIndeterminate,
+    AuthNetworkUnavailable,
     GatewayPreloginUnavailable,
     AuthProtocolInvalid,
     AuthCleanupUnconfirmed,
@@ -305,6 +306,17 @@ mod tests {
                     secondary_code: None,
                 },
                 json!({"type": "fatal_error", "code": "UNSUPPORTED_AUTHENTICATION"}),
+            ),
+            (
+                EngineEvent::FatalError {
+                    code: EngineErrorCode::AuthNetworkUnavailable,
+                    secondary_code: Some(EngineErrorCode::AuthCleanupUnconfirmed),
+                },
+                json!({
+                    "type": "fatal_error",
+                    "code": "AUTH_NETWORK_UNAVAILABLE",
+                    "secondaryCode": "AUTH_CLEANUP_UNCONFIRMED",
+                }),
             ),
             (
                 EngineEvent::FatalError {

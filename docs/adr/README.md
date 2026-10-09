@@ -29,6 +29,7 @@ records for review and recovery evidence; future procedural notes belong under `
 | 0034 | Explicit compatibility laboratory build boundary | Proposed | Compiler/dependency boundary | M4 review candidate |
 | [0035](0035-gateway-locators-and-explicit-tls-trust.md) | Gateway locators and explicit TLS trust | Proposed | Security/protocol boundary | Source candidate; public probes only |
 | [0036](0036-explicit-gateway-default-export.md) | Explicit gateway-default export | Proposed | Integration/export boundary | Source candidate; isolated routing evidence only |
+| [0037](0037-persistent-network-recovery.md) | 断网后的持续自动恢复 | Proposed | 认证错误类型与连接恢复策略 | 合成网络故障验证；尚未发布 |
 
 No ADR type, fixture or design text promotes an unsupported provider. Current capability truth remains the
 intersection of compiled providers, active Profile policy and runtime evidence.

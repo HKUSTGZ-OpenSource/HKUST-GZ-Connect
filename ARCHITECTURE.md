@@ -214,6 +214,10 @@ connectedUptimeBeforeStop
 不可恢复或已耗尽的失败最终进入 `idle` 并保留 `lastOutcome`。不要建立会永久占有资源的
 模糊 `failed` 状态。
 
+已归类的网络故障保留用户连接意图：短期预算耗尽后低频持续重试；明确认证拒绝及
+未知认证结果仍停止。断网/休眠恢复必须等旧进程关闭，但不以不可达网关的注销结果
+取消连接意图。错误分类与边界见 [ADR-0037](docs/adr/0037-persistent-network-recovery.md)。
+
 ### 5.3 事件与转换
 
 所有转换必须由 allowlist 执行；非法事件是 no-op 或 typed internal error，不能偷偷修正
