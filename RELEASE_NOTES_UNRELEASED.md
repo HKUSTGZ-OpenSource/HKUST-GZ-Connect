@@ -25,3 +25,11 @@
   cleanup retry. Independent cleanup steps are attempted without dropping their failure causes;
   retained pages cannot borrow proxy credentials or initiate certificate trust. Ordinary window
   closing and account-switch contracts remain unchanged.
+
+## 浏览器会话 / Browser Sessions
+
+- 修复重新创建浏览器后，持久化会话仍调用旧请求检查或被旧代理配置覆盖的问题。
+  新浏览器接管会话后，旧配置和旧请求不会干扰新路径；Cookie 与网站登录状态保持不变。
+- Persistent Session replacement binds the current request check and serializes native proxy
+  writes across runtimes. Retired work cannot overwrite the current path or stall it during
+  read-only policy preparation; cookies and website login state are preserved.

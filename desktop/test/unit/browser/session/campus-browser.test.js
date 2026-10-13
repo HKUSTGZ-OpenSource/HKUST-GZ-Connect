@@ -282,6 +282,40 @@ test('unconfirmed preparation retains its Browser ownership and never begins a n
   assert.deepEqual(state.errors, [null, result.error]);
 });
 
+test('explicit disposal retires Session authority without requiring native closure to succeed', async t => {
+  const { browser } = createFakeBrowser({ browserWindowClose: () => {} });
+  await browser.open('https://synthetic.example.invalid/', 1080, 'direct');
+  const window = browser.window;
+  t.after(() => { window.close = () => { window.destroyed = true; window.emit('closed'); }; browser.close(); });
+  assert.equal(browser.routingRequestsBlocked, false);
+  browser.retireForDisposal(); browser.retireForDisposal();
+  assert.equal(browser.windowOwner.contextRetired, true);
+  assert.equal(browser.browserSessionManager.retired, true);
+  assert.equal(browser.routingRequestsBlocked, true);
+  assert.equal(await browser.resumeRoutingPolicy(1080), null);
+  assert.equal(window.isDestroyed(), false);
+});
+
+test('context-switch admission retires Session authority even if the native close is vetoed', async t => {
+  const { browser } = createFakeBrowser({ browserWindowClose: () => {} });
+  await browser.open('https://synthetic.example.invalid/', 1080, 'direct');
+  const window = browser.window; let expire;
+  t.after(() => { expire?.(); window.close = () => { window.destroyed = true; window.emit('closed'); }; browser.close(); });
+  const closing = browser.closeForContextSwitch({ timeoutMs: 100,
+    setTimeoutFn: callback => { expire = callback; return {}; }, clearTimeoutFn: () => {} });
+  assert.equal(browser.browserSessionManager.retired, true);
+  assert.equal(browser.routingRequestsBlocked, true);
+  expire(); assert.equal(await closing, false);
+});
+
+test('invalid context-close options do not retire the active Session', async t => {
+  const { browser } = createFakeBrowser(); t.after(() => browser.close());
+  await browser.open('https://synthetic.example.invalid/', 1080, 'direct');
+  await assert.rejects(browser.closeForContextSwitch({ timeoutMs: 0 }), /deadline is invalid/u);
+  assert.equal(browser.browserSessionManager.retired, false);
+  assert.equal(browser.routingRequestsBlocked, false);
+});
+
 test('Campus Browser createWindow keeps its existing void-return contract', async t => {
   const { browser } = createFakeBrowser();
   t.after(() => browser.close());

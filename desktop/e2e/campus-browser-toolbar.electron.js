@@ -20,6 +20,7 @@ const { createDefaultCardBoardLayout } = require('../lib/card-board/runtime/card
 const { applyCardBoardOperations } = require('../lib/card-board/runtime/card-board-runtime');
 const { CAMPUS_PARTITION, ROUTE_CAMPUS, ROUTE_DIRECT } = require('../lib/routing/policy/campus-route');
 const { scheduleTemporaryProfileCleanup } = require('../scripts/temp-profile-cleanup');
+const { assertNativeSessionOwnership } = require('./support/browser-session-ownership');
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-browser-toolbar-'));
 fs.chmodSync(profile, 0o700);
@@ -1020,6 +1021,7 @@ async function main() {
     await runStage('open request retirement', () => assertOpenRequestRetirement(browser));
     await runStage('Manager entry preparation', () => assertManagerEntryPreparation(browser));
     await runStage('Manager disposal retention', () => assertManagerDisposalRetention(browser));
+    await runStage('Session replacement ownership', () => assertNativeSessionOwnership({ session, BrowserWindow }));
     await runStage('teardown failure isolation', () => assertTeardownFailureIsolation(browser));
     assert.deepEqual(errors, [], `unexpected campus browser errors: ${errors.join('; ')}`);
     process.stdout.write('campus browser toolbar: PASS\n');

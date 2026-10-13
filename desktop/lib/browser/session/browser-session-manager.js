@@ -506,16 +506,18 @@ function applyCampusSessionPolicy(campusSession, ensureRequestReady = null) {
 }
 
 function applyCampusRequestBoundary(campusSession, ensureRequestReady = null) {
-  if (!campusSession || typeof campusSession !== 'object' ||
-      typeof campusSession.webRequest?.onBeforeRequest !== 'function' ||
-      requestBoundaryGates.has(campusSession)) {
-    return campusSession;
+  if (!campusSession || typeof campusSession !== 'object') return campusSession;
+  let gate = requestBoundaryGates.get(campusSession);
+  if (!gate) {
+    gate = {
+      blocked: false,
+      epoch: 1,
+      ensureRequestReady: typeof ensureRequestReady === 'function' ? ensureRequestReady : null,
+      owner: null, operationChain: Promise.resolve(), installed: false,
+    };
+    requestBoundaryGates.set(campusSession, gate);
   }
-  const gate = {
-    blocked: false,
-    epoch: 1,
-    ensureRequestReady: typeof ensureRequestReady === 'function' ? ensureRequestReady : null,
-  };
+  if (gate.installed || typeof campusSession.webRequest?.onBeforeRequest !== 'function') return campusSession;
   campusSession.webRequest.onBeforeRequest(CAMPUS_REQUEST_FILTER, (details, callback) => {
     if (gate.blocked || isUnsafeBrowserTargetUrl(details?.url)) {
       callback({ cancel: true });
@@ -526,14 +528,16 @@ function applyCampusRequestBoundary(campusSession, ensureRequestReady = null) {
       return;
     }
     const epoch = gate.epoch;
-    Promise.resolve().then(() => gate.ensureRequestReady(details?.url)).then(
+    const readiness = gate.ensureRequestReady;
+    Promise.resolve().then(() => gate.blocked || gate.epoch !== epoch ? false
+      : readiness.call(gate, details?.url)).then(
       (ready) => callback({
         cancel: ready !== true || gate.blocked || gate.epoch !== epoch,
       }),
       () => callback({ cancel: true }),
     );
   });
-  requestBoundaryGates.set(campusSession, gate);
+  gate.installed = true;
   return campusSession;
 }
 
@@ -581,6 +585,8 @@ class BrowserSessionManager {
     this.suspended = false;
     this.intentEpoch = 0;
     this.operationChain = Promise.resolve();
+    this.sessionBoundary = null;
+    this.retired = false;
   }
 
   serialize(operation) {
@@ -602,11 +608,45 @@ class BrowserSessionManager {
   }
 
   isCurrentIntent(epoch) {
-    return epoch === this.intentEpoch;
+    return epoch === this.intentEpoch && this.ownsSession();
+  }
+
+  ownsSession() {
+    return !this.retired && (!this.sessionBoundary || this.sessionBoundary.gate.owner === this);
+  }
+
+  bindSession(browserSession) {
+    if (this.sessionBoundary) return this.ownsSession();
+    const gate = requestBoundaryGates.get(browserSession);
+    if (!gate) throw Object.assign(new Error('Browser Session request boundary is unavailable'),
+      { code: 'BROWSER_SESSION_BOUNDARY_UNAVAILABLE' });
+    this.sessionBoundary = { session: browserSession, gate };
+    gate.owner = this;
+    gate.ensureRequestReady = this.ensureRequestReady;
+    setCampusRequestBlocked(browserSession, true);
+    return true;
+  }
+
+  serializeSession(operation) {
+    const gate = this.sessionBoundary.gate;
+    const next = gate.operationChain.then(operation, operation);
+    gate.operationChain = next.catch(() => {});
+    return next;
+  }
+
+  retire() {
+    if (this.retired) return false;
+    this.retired = true; this.intentEpoch++;
+    if (this.sessionBoundary?.gate.owner === this) {
+      setCampusRequestBlocked(this.sessionBoundary.session, true);
+      this.sessionBoundary.gate.owner = null;
+      this.sessionBoundary.gate.ensureRequestReady = null;
+    }
+    return true;
   }
 
   get requestsBlocked() {
-    return !this.campusSession || campusRequestsBlocked(this.campusSession);
+    return !this.ownsSession() || !this.campusSession || campusRequestsBlocked(this.campusSession);
   }
 
   async applyFailClosed(browserSession, epoch) {
@@ -636,21 +676,28 @@ class BrowserSessionManager {
       throw new Error('校园浏览器 Session 不可用');
     }
 
-    let browserSession = this.campusSession;
+    let browserSession = this.sessionBoundary?.session || this.campusSession;
     if (!browserSession) {
       browserSession = applyCampusSessionPolicy(
         this.electronSession.fromPartition(this.partition),
         this.ensureRequestReady,
       );
-      this.onSessionReady?.(browserSession);
     }
+    const fresh = !this.sessionBoundary;
+    if (!this.bindSession(browserSession)) return null;
+    if (fresh) this.onSessionReady?.(browserSession);
+    const proxyConfig = await this.policyProxyConfig(value);
+    if (!this.isCurrentIntent(epoch)) return null;
+    return this.serializeSession(() => this.configureSessionNow(browserSession, value, { force, epoch, proxyConfig }));
+  }
+
+  async configureSessionNow(browserSession, value, { force, epoch, proxyConfig }) {
+    if (!this.isCurrentIntent(epoch)) return null;
 
     // The in-process request gate is authoritative. Keep it closed for the
     // whole activation and open it only after every async step confirms that
     // no newer suspend/activation intent superseded this one.
     setCampusRequestBlocked(browserSession, true);
-    const proxyConfig = await this.policyProxyConfig(value);
-    if (!this.isCurrentIntent(epoch)) return null;
     const key = JSON.stringify(proxyConfig);
     if (force || this.sessionKey !== key) {
       if (typeof browserSession.setProxy !== 'function') {
@@ -684,17 +731,21 @@ class BrowserSessionManager {
 
   configure(port, options = {}) {
     const value = normalizeProxyPort(port);
+    if (!this.ownsSession()) return Promise.resolve(null);
     const epoch = ++this.intentEpoch;
-    if (this.campusSession) setCampusRequestBlocked(this.campusSession, true);
+    if (this.sessionBoundary) setCampusRequestBlocked(this.sessionBoundary.session, true);
     return this.serialize(async () => {
       if (!this.isCurrentIntent(epoch)) return null;
       try {
         return await this.configureNow(value, { ...options, epoch });
       } catch (error) {
+        if (!this.ownsSession()) return null;
         if (this.isCurrentIntent(epoch)) {
           this.suspended = true;
           if (this.campusSession) setCampusRequestBlocked(this.campusSession, true);
-          try { await this.applyFailClosed(this.campusSession, epoch); } catch {}
+          if (this.sessionBoundary) {
+            try { await this.serializeSession(() => this.applyFailClosed(this.sessionBoundary.session, epoch)); } catch {}
+          }
         }
         throw error;
       }
@@ -706,17 +757,18 @@ class BrowserSessionManager {
   // The serialized PAC update is the actual hand-off barrier: callers await it
   // before allowing the engine to release its loopback listener.
   suspend() {
+    if (!this.ownsSession()) return Promise.resolve(null);
     const epoch = ++this.intentEpoch;
     this.suspended = true;
-    if (this.campusSession) setCampusRequestBlocked(this.campusSession, true);
+    if (this.sessionBoundary) setCampusRequestBlocked(this.sessionBoundary.session, true);
     return this.serialize(async () => {
       if (!this.isCurrentIntent(epoch)) return null;
-      const browserSession = this.campusSession;
+      const browserSession = this.sessionBoundary?.session || this.campusSession;
       if (!browserSession) {
         this.sessionKey = '';
         return null;
       }
-      return this.applyFailClosed(browserSession, epoch);
+      return this.serializeSession(() => this.applyFailClosed(browserSession, epoch));
     });
   }
 

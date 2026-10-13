@@ -72,6 +72,7 @@ class CampusBrowserWindowOwner {
     onToolbarCommand,
     onResize,
     onBeforeCreate = () => {},
+    onRetireAdmission = () => {},
     onClosed,
     onMissingWindow,
   } = {}) {
@@ -81,14 +82,14 @@ class CampusBrowserWindowOwner {
         typeof getTranslator !== 'function' || typeof parentWindow !== 'function' ||
         typeof platform !== 'string' || typeof windowChrome !== 'function' ||
         typeof onToolbarCommand !== 'function' || typeof onResize !== 'function' ||
-        typeof onBeforeCreate !== 'function' ||
+        typeof onBeforeCreate !== 'function' || typeof onRetireAdmission !== 'function' ||
         typeof onClosed !== 'function' || typeof onMissingWindow !== 'function') {
       throw new TypeError('Campus Browser window owner dependencies are incomplete');
     }
     Object.assign(this, {
       BrowserWindow, toolbarFile, toolbarPreload, getProfilePresentation, getLocale,
       getTranslator, parentWindow, platform, windowChrome,
-      onToolbarCommand, onResize, onBeforeCreate, onClosed, onMissingWindow,
+      onToolbarCommand, onResize, onBeforeCreate, onRetireAdmission, onClosed, onMissingWindow,
     });
     this.current = null;
     this.contextRetired = false;
@@ -96,7 +97,7 @@ class CampusBrowserWindowOwner {
 
   get window() { return this.current?.window || null; }
 
-  retireAdmission() { this.contextRetired = true; }
+  retireAdmission() { this.contextRetired = true; this.onRetireAdmission(); }
 
   assertContextCurrent(value) {
     if (this.contextRetired) throw new Error('Campus Browser context is retired');
