@@ -98,3 +98,13 @@ test('the teardown coordinator remains below the M2 per-owner ceiling', () => {
   assert.ok(start >= 0 && end > start);
   assert.ok(source.slice(start, end).split('\n').length <= 600);
 });
+
+test('toolbar command cleanup is attempted independently and remains retryable', () => {
+  const f = fixture(); let calls = 0, failed = true;
+  const toolbarCommands = { reset: () => { calls++; if (failed) throw new Error('synthetic toolbar cleanup'); } };
+  const owner = new BrowserTeardownOwner({ ...f.options, toolbarCommands });
+  assert.throws(() => owner.closed(), /cleanup is unconfirmed/u);
+  assert.equal(f.calls.includes('popups'), true); assert.equal(f.calls.includes('tabs.clear'), false);
+  failed = false; owner.closed(); owner.closed(); assert.equal(calls, 3);
+  assert.throws(() => new BrowserTeardownOwner({ ...f.options, toolbarCommands: {} }), /dependencies/u);
+});

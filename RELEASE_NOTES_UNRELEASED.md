@@ -33,3 +33,10 @@
 - Persistent Session replacement binds the current request check and serializes native proxy
   writes across runtimes. Retired work cannot overwrite the current path or stall it during
   read-only policy preparation; cookies and website login state are preserved.
+
+## 工具栏命令 / Toolbar commands
+
+- 修复旧浏览器窗口关闭后，迟到的网站打开结果仍刷新新窗口或显示过期错误的问题。
+  查找状态随窗口清理；当前窗口的正常操作和错误反馈保持不变。
+- Late toolbar/resource results no longer refresh replacement windows or publish retired-window
+  errors. Find state is cleared with window cleanup; current commands and feedback are preserved.

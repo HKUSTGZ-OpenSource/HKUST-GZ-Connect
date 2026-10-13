@@ -6,6 +6,8 @@ const { BrowserToolbarCommandOwner } = require('../../../../lib/browser/toolbar/
 
 function fixture() {
   const calls = [];
+  const state = { window: { isDestroyed: () => false,
+    webContents: { send: (...args) => calls.push(['send', ...args]) } }, current: true };
   const contents = {
     destroyed: false,
     isDestroyed() { return this.destroyed; },
@@ -25,7 +27,8 @@ function fixture() {
   const owner = new BrowserToolbarCommandOwner({
     getActiveTab: () => tab,
     getTabs: () => [tab],
-    getWindow: () => ({ webContents: { send: (...args) => calls.push(['send', ...args]) } }),
+    getWindow: () => state.window,
+    isContextCurrent: () => state.current,
     getBookmarkBarState: () => [],
     getBookmarkMenu: () => null,
     getOpenResource: () => null,
@@ -40,8 +43,85 @@ function fixture() {
     actions,
     platform: 'darwin',
   });
-  return { owner, calls, tab, contents };
+  return { owner, calls, tab, contents, state };
 }
+
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+for (const retirement of ['closed', 'replacement', 'context', 'reset']) {
+  for (const outcome of ['success', 'failure']) {
+    test(`resource ${outcome} cannot publish after toolbar ${retirement}`, async () => {
+      const f = fixture(), pending = deferred();
+      f.owner.getOpenResource = () => () => pending.promise;
+      assert.equal(f.owner.handleCommand({ command: 'open-resource', value: 'synthetic-resource' }), true);
+      if (retirement === 'closed') f.state.window = null;
+      else if (retirement === 'replacement') f.state.window = { isDestroyed: () => false };
+      else if (retirement === 'context') f.state.current = false;
+      else f.owner.reset();
+      if (outcome === 'success') pending.resolve({ ok: true });
+      else pending.reject(new Error('synthetic old-window error'));
+      await new Promise(setImmediate);
+      assert.deepEqual(f.calls, []);
+    });
+  }
+}
+
+for (const [command, method, value] of [
+  ['new-tab', 'openNewTab', ''], ['home', 'openHome', ''], ['set-route', 'setTabRoute', 'direct'],
+  ['toggle-favorite', 'toggleFavorite', ''], ['reload', 'reloadWhenReady', ''],
+  ['navigate', 'navigateWhenReady', 'https://synthetic.example.test/'],
+]) {
+  test(`${command} errors remain quiet after its toolbar window retires`, async () => {
+    const f = fixture(), pending = deferred();
+    f.owner.actions[method] = () => pending.promise;
+    f.owner.handleCommand({ command, value });
+    f.state.window = null; pending.reject(new Error('synthetic retired command'));
+    await new Promise(setImmediate); assert.deepEqual(f.calls, []);
+  });
+}
+
+for (const key of ['t', 'r']) {
+  test(`keyboard ${key} errors cannot publish after context retirement`, async () => {
+    const f = fixture(), pending = deferred();
+    f.owner.actions[key === 't' ? 'openNewTab' : 'reloadWhenReady'] = () => pending.promise;
+    f.owner.handleKeyboard(f.tab, { preventDefault() {} }, { meta: true, key, type: 'keyDown' });
+    f.state.current = false; pending.reject(new Error('synthetic retired shortcut'));
+    await new Promise(setImmediate); assert.deepEqual(f.calls, []);
+  });
+}
+
+test('reset is repeatable and clears the previous window find query without changing current feedback', async () => {
+  const f = fixture(); f.owner.handleCommand({ command: 'find', value: 'synthetic search' });
+  assert.equal(f.owner.reset(), true); assert.equal(f.owner.reset(), false);
+  f.calls.length = 0;
+  f.owner.handleCommand({ command: 'find-next', value: '' }); assert.deepEqual(f.calls, []);
+  f.owner.getOpenResource = () => async () => ({ ok: true });
+  f.owner.handleCommand({ command: 'open-resource', value: 'synthetic-resource' });
+  await new Promise(setImmediate); assert.deepEqual(f.calls, [['updateToolbar']]);
+});
+
+test('retired contexts reject commands and keyboard before invoking any effect', () => {
+  const f = fixture(); f.state.current = false;
+  assert.equal(f.owner.handleCommand({ command: 'new-tab' }), false);
+  f.owner.handleKeyboard(f.tab, { preventDefault: () => assert.fail('retired shortcut') },
+    { meta: true, key: 't' }); assert.deepEqual(f.calls, []);
+});
+
+test('current synchronous action failures retain their original identity', () => {
+  const f = fixture(), failure = new Error('synthetic synchronous action failure');
+  f.owner.actions.openNewTab = () => { throw failure; };
+  assert.throws(() => f.owner.handleCommand({ command: 'new-tab' }), error => error === failure);
+});
+
+test('current windowless value-free commands retain their existing facade contract', () => {
+  const f = fixture(); f.state.window = null;
+  assert.equal(f.owner.handleCommand({ command: 'open-settings' }), true);
+  assert.deepEqual(f.calls, [['openSettings']]);
+});
 
 test('toolbar commands reject untrusted payloads and dispatch bounded tab actions', () => {
   const f = fixture();
