@@ -172,6 +172,7 @@ class CampusBrowser {
         onToolbarCommand: payload => this.handleToolbarCommand(payload),
         onResize: () => this.scheduleLayout(),
         onBeforeCreate: () => this.teardownOwner.beforeCreate(),
+        onRetireAdmission: () => this.browserSessionManager.retire(),
         onClosed: () => this.handleWindowClosed(),
         onMissingWindow: () => this.close(),
       })
@@ -713,12 +714,11 @@ class CampusBrowser {
   }
 
   close() { this.teardownOwner.close(); }
-
-  retireForDisposal() { this.windowOwner?.retireAdmission(); }
+  retireForDisposal() { if (this.windowOwner) this.windowOwner.retireAdmission(); else this.browserSessionManager.retire(); }
 
   closeForContextSwitch(options = {}) {
     if (!this.windowOwner) {
-      this.close();
+      this.retireForDisposal(); this.close();
       return Promise.resolve(true);
     }
     return this.windowOwner.closeForContextSwitch(options);
