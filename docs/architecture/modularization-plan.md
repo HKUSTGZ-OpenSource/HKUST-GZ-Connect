@@ -2,8 +2,8 @@
 
 - Status: Active execution plan; M3/M4 source outcomes completed, M1/M2/M5 open
 - Owner: architecture maintainers
-- Last verified: 2026-10-04 (`main@52479ca69c721133df9280eea6b314610eb44210`)
-- Applies to: development `main` after published 2.0.3; merged source is not a new release
+- Last verified: 2026-10-13 (`main@d14e10e78756678f73f1120ab086cbe7ccb5be26`)
+- Applies to: development `main` after published 2.0.4; merged source is not a new release
 - Supersedes: ad-hoc file-by-file extraction without an ownership receipt
 
 ## Purpose
@@ -20,14 +20,18 @@ exhausted: Main has 36 direct dependencies, 170 transitive dependencies and 1,71
 Renderer has 563 lines. At that baseline, the gate could not see the main Renderer page's ordered
 global-script graph; #110 later added a static boundary policy for new changes.
 
-At the verification commit, Renderer `app.js` is 420 lines, Campus Browser 1,122,
+At the verification commit, Renderer `app.js` is 420 lines, Campus Browser 751 source lines
+(592 root-class lines),
 Desktop Main 662 (20 direct / 35 effective / 170 transitive dependencies) and
 `ec-engine.rs` 498. M3's [whole-root receipt](../engineering/desktop-main-m3-exit.md)
 accepts its source outcome; M4/#82 is closed through #148. M1/M2/M5 remain open.
 Counts are debt evidence, not a substitute for ownership/lifecycle gates.
 Per-wave size counts below are historical extraction receipts, not competing current totals.
 All three M3 numerical stages and semantic/platform criteria are met at the receipt checkpoint.
-Current static-JS debt inventory/cap is 89 (90 at the M3 checkpoint above), and the frozen legacy Renderer list has 24 files.
+Current static-JS debt inventory/cap is 89 (90 at the earlier M3 checkpoint), and the frozen legacy Renderer list has 24 files.
+The [current convergence checkpoint](../engineering/2026-10-13-convergence-checkpoint.md)
+records the latest release/source evidence and outstanding M1/M2/M5 requirements. A sub-600-line
+Browser root class does not by itself establish independent lifecycle ownership or whole-module completion.
 
 Primary concurrency hot spots:
 

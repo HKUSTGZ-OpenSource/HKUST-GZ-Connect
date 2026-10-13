@@ -1,9 +1,13 @@
 # HKUST(GZ) Connect 2.0.4
 
-- Status: Release candidate — 正式发布及安装包验收记录在 GitHub Release
+- Status: Published — 发布、源码及安装包回执已从 GitHub Release 核对
 - Owner: project maintainers
-- Last verified: 2026-10-09
-- Applies to: 2.0.4
+- Last verified: 2026-10-13 (release metadata and receipt readback, not a repeat package verification)
+- Applies to: immutable `v2.0.4` at `50731a94664464d5910375f4f6832e8f069d3937`
+
+Native build `37914773313` published four installers. The release receipt records ad-hoc macOS
+signing without notarization and unsigned Windows; no real-school acceptance is claimed.
+Later dependency updates on main are not part of these immutable artifacts.
 
 ## 中文
 

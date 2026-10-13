@@ -4,8 +4,8 @@
 - Authority: project maintainer
 - Baseline: `main@15738338ff2a280300b66e98a1823659f24630a4`
 - Started: 2026-09-04
-- Last verified: 2026-10-04 (source/M3 acceptance; repository settings retain their separately dated evidence)
-- Development main at verification: `52479ca69c721133df9280eea6b314610eb44210`
+- Last verified: 2026-10-13 (release/source readback; repository settings retain their separately dated evidence)
+- Development main at verification: `d14e10e78756678f73f1120ab086cbe7ccb5be26`
 - Scope: repository governance, documentation truth, agent instructions, module boundaries,
   contributor workflow, GitHub protections and organization migration
 
@@ -44,7 +44,7 @@ high-risk rules. No instruction file is treated as a substitute for review or te
    specified in ADR-0034. The additional config/tunnel ownership ambiguity remains M5 work.
 3. Legacy Renderer globals and HTML script order remain migration debt. The merged static policy
    and feature host enforce new boundaries, but `app.js` is not yet only a composition root.
-4. Stable `v2.0.3` is published from `main@b57c394c73e0b07a0076e26f58e1666e29f00135`.
+4. Historical stable `v2.0.3` is published from `main@b57c394c73e0b07a0076e26f58e1666e29f00135`.
    Four platform installers, a build receipt and SHA-256
    manifest are uploaded. The repository-ID updater is shipped; the historical 2.0.1 bridge
    requirement is satisfied. Published packages, the installed Mac copy and development
@@ -64,10 +64,11 @@ high-risk rules. No instruction file is treated as a substitute for review or te
    #215 owns ordered ready startup and removes unused App composition exports.
    Later #219-#239 finish Main assembly, status, credential/locale/recovery/resource/admission/
    diagnostic/portal ownership and the zero-exception direct-entrypoint contract. Main is
-   662 lines with 20 direct / 35 effective / 170 transitive dependencies; Browser is 1,122,
+   662 lines with 20 direct / 35 effective / 170 transitive dependencies; Browser was 1,122
+   at that earlier checkpoint (now 751 source lines / 592 root-class lines),
    Renderer bootstrap 420 and Engine root 498. All M3 numerical stages and whole-root semantic/
    ownership/platform gates are satisfied. M2's full ownership target is not met.
-   Static-JS private-edge inventory/cap is 90; 24 legacy Renderer files remain.
+   Static-JS private-edge inventory/cap is now 89; 24 legacy Renderer files remain.
    #162's reproduced window cleanup is merged; #178 fixes the reproduced calendar source query,
    but #177 still requires a sanitized reporter retest. #200 closes custom-Profile credential
    retirement failure #199; #198 closes #197's bounded Gateway locator/explicit TLS source scope.
@@ -96,6 +97,15 @@ high-risk rules. No instruction file is treated as a substitute for review or te
    inherits admin alongside `heeh02`; no membership was created. Ownership transfer is complete,
    while team/reviewer and post-transfer governance convergence remain open. See the
    [migration receipt](docs/governance/2026-09-12-organization-transfer-receipt.md).
+7. Latest stable is now `v2.0.4`, published from `50731a94664464d5910375f4f6832e8f069d3937`
+   on 2026-10-09. The annotated tag, successful native build `37914773313`, four installer
+   metadata digests and the downloaded build/checksum receipts were read back. This is not a new
+   byte-level re-verification of the installers. The release receipt records ad-hoc, non-notarized
+   macOS signing and unsigned Windows. #258's persistent network-recovery change is in that release;
+   #261-#263 are later dependency/Action updates and are not in the immutable 2.0.4 assets.
+   Browser #252/#254/#255/#256 complete bounded entry/tab/configuration/retirement outcomes,
+   not full M2 acceptance. Seven issues (#60/#79/#80/#83/#84/#127/#177) remain open.
+   See the [current checkpoint and remaining acceptance](docs/engineering/2026-10-13-convergence-checkpoint.md).
 
 ## Completion outcomes
 
