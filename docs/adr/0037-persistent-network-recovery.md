@@ -1,9 +1,9 @@
 # ADR-0037：断网后的持续自动恢复
 
-- Status: Proposed
+- Status: Accepted (merged through #258; shipped in 2.0.4)
 - Owner: project maintainers
-- Last verified: 2026-10-09
-- Applies to: Desktop 连接状态机、Engine 密码认证网络错误；尚未进入 2.0.3 安装包
+- Last verified: 2026-10-13 (source and published release readback)
+- Applies to: Desktop 连接状态机、Engine 密码认证网络错误；2.0.4 已包含，2.0.3 不包含
 
 ## 问题与决定
 
