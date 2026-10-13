@@ -13,6 +13,7 @@ const { DesktopPersistenceRuntime } = require('../lib/persistence/runtime/deskto
 const { createT } = require('../lib/platform/i18n/i18n');
 const diagnostics = require('../lib/diagnostics/logging/log-writer');
 const portalRuntime = require('../lib/browser/session/browser-session-manager');
+const { assertPortalResponseDeadline } = require('./support/portal-response-deadline');
 const OriginalPortalRuntime = portalRuntime.MyPortalDataRuntime;
 let portalDataSources;
 portalRuntime.MyPortalDataRuntime = class FixturePortalRuntime extends OriginalPortalRuntime {
@@ -422,6 +423,7 @@ async function run() {
   assert.equal(rules.rules[0].host, 'login.microsoftonline.com');
   assert.ok(fs.readFileSync(persistence.paths.externalPac, 'utf8').includes('127.0.0.1:6180'));
   assert.ok(admissionCalls.resume > 0, 'actual routing transactions must use the Connection admission owner');
+  await assertPortalResponseDeadline(require('electron').session);
   process.stdout.write('main Connection admission owner: PASS\n');
   process.stdout.write('main integration: PASS\n');
   diagnosticsArmed = true;
