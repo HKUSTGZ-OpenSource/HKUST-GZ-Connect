@@ -59,34 +59,54 @@ function parsePayload(value) {
   }
 }
 
+async function readPortalResponseWithinDeadline(context, target, consumeResponse) {
+  const controller = new AbortController();
+  let timer;
+  const timedOut = () => sourceError('PORTAL_SOURCE_TIMEOUT', 'portal source request timed out');
+  const deadline = new Promise((_resolve, reject) => {
+    timer = setTimeout(() => {
+      // Settle independently of transport cancellation: a late or non-cooperative
+      // body must not keep a public source read and its single-flight slot alive.
+      reject(timedOut());
+      controller.abort();
+    }, context.timeoutMs || 8_000);
+    timer.unref?.();
+  });
+  const operation = (async () => {
+    const response = await context.session.fetch(target.href, {
+      method: 'GET', credentials: 'include', redirect: 'follow', cache: 'no-store',
+      headers: { Accept: '*/*' }, signal: controller.signal,
+    });
+    if (controller.signal.aborted) throw timedOut();
+    const result = await consumeResponse(response);
+    if (controller.signal.aborted) throw timedOut();
+    return result;
+  })();
+  try {
+    return await Promise.race([operation, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchPayload(context, pathname, query, callback = null) {
   const target = new URL(pathname, context.portalUrl);
   for (const [key, value] of Object.entries(query)) target.searchParams.set(key, String(value));
   if (callback) target.searchParams.set('callback', callback);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), context.timeoutMs || 8_000);
-  timer.unref?.();
-  let response;
-  try {
-    response = await context.session.fetch(target.href, {
-      method: 'GET', credentials: 'include', redirect: 'follow', cache: 'no-store',
-      headers: { Accept: '*/*' }, signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-  if (response.status === 401) throw sourceError('PORTAL_SESSION_EXPIRED', 'portal session expired');
-  if (response.status === 403) throw sourceError('PORTAL_FORBIDDEN', 'portal catalog is forbidden');
-  if (response.status < 200 || response.status >= 300) {
-    throw sourceError('PORTAL_RESPONSE_INVALID', 'portal catalog returned an unsupported status');
-  }
-  const length = Number(response.headers?.get?.('content-length') || 0);
-  if (length > MAX_RESPONSE_BYTES) throw sourceError('PORTAL_RESPONSE_INVALID', 'portal catalog is oversized');
-  const text = await response.text();
-  if (Buffer.byteLength(text, 'utf8') > MAX_RESPONSE_BYTES) {
-    throw sourceError('PORTAL_RESPONSE_INVALID', 'portal catalog is oversized');
-  }
-  return parsePayload(text);
+  return readPortalResponseWithinDeadline(context, target, async response => {
+    if (response.status === 401) throw sourceError('PORTAL_SESSION_EXPIRED', 'portal session expired');
+    if (response.status === 403) throw sourceError('PORTAL_FORBIDDEN', 'portal catalog is forbidden');
+    if (response.status < 200 || response.status >= 300) {
+      throw sourceError('PORTAL_RESPONSE_INVALID', 'portal catalog returned an unsupported status');
+    }
+    const length = Number(response.headers?.get?.('content-length') || 0);
+    if (length > MAX_RESPONSE_BYTES) throw sourceError('PORTAL_RESPONSE_INVALID', 'portal catalog is oversized');
+    const text = await response.text();
+    if (Buffer.byteLength(text, 'utf8') > MAX_RESPONSE_BYTES) {
+      throw sourceError('PORTAL_RESPONSE_INVALID', 'portal catalog is oversized');
+    }
+    return parsePayload(text);
+  });
 }
 
 function groupId(prefix, value) {
@@ -280,4 +300,5 @@ module.exports = {
   normalizePortalCatalog,
   portalCatalogState,
   projectCatalog,
+  readPortalResponseWithinDeadline,
 };

@@ -12,6 +12,7 @@ const {
   hkustPortalCatalogSource,
   normalizePortalCatalog,
   portalCatalogState,
+  readPortalResponseWithinDeadline,
 } = require('./myportal-catalog');
 
 const requestBoundaryGates = new WeakMap();
@@ -1061,35 +1062,25 @@ async function fetchPortalJsonp(context, pathname, query, callback) {
   const target = new URL(pathname, context.portalUrl);
   for (const [name, value] of Object.entries(query)) target.searchParams.set(name, String(value));
   target.searchParams.set('callback', callback);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), context.timeoutMs || 8_000);
-  timer.unref?.();
-  let response;
-  try {
-    response = await context.session.fetch(target.href, {
-      method: 'GET', credentials: 'include', redirect: 'follow', cache: 'no-store',
-      headers: { Accept: '*/*' }, signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-  if (response.status === 401) throw portalSourceError('PORTAL_SESSION_EXPIRED', 'portal session expired');
-  if (response.status === 403) throw portalSourceError('PORTAL_FORBIDDEN', 'portal source is forbidden');
-  if (response.status === 0 || (response.status >= 300 && response.status < 400)) {
-    throw portalSourceError('PORTAL_SESSION_EXPIRED', 'portal source redirected outside the portal');
-  }
-  if (response.status < 200 || response.status >= 300) {
-    throw portalSourceError('PORTAL_RESPONSE_INVALID', 'portal source returned an unsupported status');
-  }
-  const length = Number(response.headers?.get?.('content-length') || 0);
-  if (length > MAX_PORTAL_RESPONSE_BYTES) {
-    throw portalSourceError('PORTAL_RESPONSE_INVALID', 'portal response is oversized');
-  }
-  const text = await response.text();
-  if (Buffer.byteLength(text, 'utf8') > MAX_PORTAL_RESPONSE_BYTES) {
-    throw portalSourceError('PORTAL_RESPONSE_INVALID', 'portal response is oversized');
-  }
-  return parsePortalJsonp(text);
+  return readPortalResponseWithinDeadline(context, target, async response => {
+    if (response.status === 401) throw portalSourceError('PORTAL_SESSION_EXPIRED', 'portal session expired');
+    if (response.status === 403) throw portalSourceError('PORTAL_FORBIDDEN', 'portal source is forbidden');
+    if (response.status === 0 || (response.status >= 300 && response.status < 400)) {
+      throw portalSourceError('PORTAL_SESSION_EXPIRED', 'portal source redirected outside the portal');
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw portalSourceError('PORTAL_RESPONSE_INVALID', 'portal source returned an unsupported status');
+    }
+    const length = Number(response.headers?.get?.('content-length') || 0);
+    if (length > MAX_PORTAL_RESPONSE_BYTES) {
+      throw portalSourceError('PORTAL_RESPONSE_INVALID', 'portal response is oversized');
+    }
+    const text = await response.text();
+    if (Buffer.byteLength(text, 'utf8') > MAX_PORTAL_RESPONSE_BYTES) {
+      throw portalSourceError('PORTAL_RESPONSE_INVALID', 'portal response is oversized');
+    }
+    return parsePortalJsonp(text);
+  });
 }
 
 function scheduleProjection(payload, context) {
