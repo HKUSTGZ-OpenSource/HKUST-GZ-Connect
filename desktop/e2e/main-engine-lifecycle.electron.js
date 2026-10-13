@@ -32,7 +32,9 @@ CampusBrowserManager.prototype.open = function openWithRetirementInjection(reque
   if (request?.url !== 'https://feedback-retirement.example.invalid/') return opening;
   return opening.then(result => {
     if (result?.ok) {
-      this.close();
+      // A native close request may still await its confirmed closed event.
+      // Retire the command even when disposal correctly retains that owner.
+      try { this.close(); } catch (error) { assert.equal(error.code, 'BROWSER_CLOSE_UNCONFIRMED'); }
       this.reportError('synthetic replacement Browser feedback');
     }
     return result;

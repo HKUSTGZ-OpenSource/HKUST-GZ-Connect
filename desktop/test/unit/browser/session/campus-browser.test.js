@@ -214,7 +214,7 @@ function rootedEntryManager(overrides = {}) {
     showItemInFolder: noop, showRoutingRules: noop, showSettings: noop,
     reportError: message => state.errors.push(message), CredentialVaultClass: class Vault {},
     CampusBrowserClass: function Root({ onOpenRetired }) {
-      state.fixture = createFakeBrowser({ onOpenRetired });
+      state.fixture = createFakeBrowser({ onOpenRetired, emitWindowClosedOnClose: true });
       return state.fixture.browser;
     }, ...overrides,
   });
@@ -263,7 +263,11 @@ test('unconfirmed preparation retains its Browser ownership and never begins a n
   await manager.open('about:blank');
   const browser = state.fixture.browser, window = browser.window, tab = browser.activeTab();
   const reset = browser.pagePresentationOwner.reset;
-  t.after(() => { browser.pagePresentationOwner.reset = reset; browser.handleWindowClosed(); manager.close(); });
+  t.after(() => {
+    browser.pagePresentationOwner.reset = reset; browser.handleWindowClosed();
+    assert.throws(() => manager.close(), { code: 'BROWSER_CLOSE_UNCONFIRMED' });
+    assert.equal(manager.browser, browser, 'the failed native cleanup record still needs its owner');
+  });
   window.destroyed = true;
   browser.pagePresentationOwner.reset = () => { throw new Error('synthetic unconfirmed preparation'); };
   const result = await manager.openWithFeedback('https://entry.example.invalid/campus');
