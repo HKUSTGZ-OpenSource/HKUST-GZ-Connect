@@ -389,6 +389,60 @@ async function assertManagerEntryPreparation(browser) {
   process.stdout.write('native Browser Manager entry preparation: PASS\n');
 }
 
+async function assertManagerDisposalRetention(browser) {
+  const noop = () => {}; let connections = 0;
+  const manager = new CampusBrowserManager({
+    BrowserWindow, WebContentsView, session, dialog: {}, safeStorage: {},
+    certificateTrust: { isTrusted: () => false, trust: () => {} },
+    routingPolicy: browser.routingPolicy, platform: process.platform,
+    credentialFile: path.join(profile, 'synthetic-disposal-vault.json'),
+    toolbarFile: browser.toolbarFile, toolbarPreload: browser.toolbarPreload, campusPreload: browser.campusPreload,
+    workspaceFile: path.join(__dirname, '../renderer/campus-workspace.html'),
+    workspacePreload: path.join(__dirname, '../lib/browser/workspace/campus-workspace-preload.js'),
+    browserPartition: 'persist:synthetic-manager-disposal',
+    parentWindow: () => null, ensureCampusReady: async () => true,
+    ensureConnected: async () => { connections++; return { ok: true }; },
+    resolveRoute: url => ({ route: url === 'about:blank' ? ROUTE_DIRECT : ROUTE_CAMPUS }),
+    getSocksPort: () => 11080, getLocale: () => 'zh', getTranslator: () => (key, vars) => vars?.message || key,
+    getProfilePresentation: () => browser.profilePresentation, getWorkspaceResources: () => [],
+    onOpenResource: noop, onWorkspaceMutation: noop, showItemInFolder: noop,
+    showRoutingRules: noop, showSettings: noop, reportError: noop, CredentialVaultClass: class SyntheticVault {},
+  });
+  for (const fault of ['throw', 'veto']) {
+    const opened = await manager.open('about:blank');
+    assert.equal(opened.ok, true, JSON.stringify(opened));
+    const root = manager.browser, window = root.window, nativeClose = window.close;
+    const page = root.activeTab().view.webContents;
+    let commands = 0;
+    const handle = root.handleToolbarCommand;
+    root.handleToolbarCommand = () => { commands++; };
+    const veto = event => event.preventDefault();
+    if (fault === 'throw') window.close = () => { throw new Error('synthetic native close failure'); };
+    else window.on('close', veto);
+    try {
+      assert.throws(() => manager.close(), { code: 'BROWSER_CLOSE_UNCONFIRMED' });
+      assert.equal(manager.browser, root); assert.equal(window.isDestroyed(), false);
+      assert.equal(root.ownsWebContents(page), true, 'native resources retain their owner');
+      assert.equal(manager.ownsWebContents(page), false, 'retired pages cannot borrow serving authority');
+      assert.equal(manager.ownsWebContents(window.webContents), false, 'chrome remains outside page authority');
+      assert.equal(root.windowOwner.contextRetired, true);
+      window.webContents.emit('ipc-message', {}, 'campus-toolbar-command', { command: 'new-tab' });
+      assert.equal(commands, 0, 'a surviving native window cannot admit a toolbar command');
+      assert.equal((await manager.open('https://campus.example.invalid/')).ok, false);
+      assert.equal((await manager.openBookmarkManager()).ok, false);
+      assert.equal(connections, 0, 'unconfirmed disposal cannot start Engine');
+      assert.throws(() => manager.getOrCreate(), { code: 'BROWSER_CLOSE_UNCONFIRMED' });
+    } finally {
+      root.handleToolbarCommand = handle; window.close = nativeClose; window.removeListener('close', veto);
+      try { manager.close(); } catch (error) { assert.equal(error.code, 'BROWSER_CLOSE_UNCONFIRMED'); }
+      await waitForMain(() => window.isDestroyed() && root.window === null, 'confirmed disposal retry');
+      manager.close();
+    }
+    assert.equal(manager.browser, null);
+  }
+  process.stdout.write('native Browser Manager disposal retention: PASS\n');
+}
+
 function assertOnlyActiveTabAttached(browser) {
   const tabViews = browser.window.contentView.children.filter((child) => (
     browser.tabs.some((tab) => tab.view === child)
@@ -965,6 +1019,7 @@ async function main() {
     await runStage('tab creation admission', () => assertTabCreationAdmission(browser));
     await runStage('open request retirement', () => assertOpenRequestRetirement(browser));
     await runStage('Manager entry preparation', () => assertManagerEntryPreparation(browser));
+    await runStage('Manager disposal retention', () => assertManagerDisposalRetention(browser));
     await runStage('teardown failure isolation', () => assertTeardownFailureIsolation(browser));
     assert.deepEqual(errors, [], `unexpected campus browser errors: ${errors.join('; ')}`);
     process.stdout.write('campus browser toolbar: PASS\n');

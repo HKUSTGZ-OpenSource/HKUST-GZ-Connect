@@ -26,6 +26,7 @@ class FakeBrowser {
   suspendRoutingPolicy() { this.routingSuspended = true; return 'suspended'; }
   resumeRoutingPolicy(port) { this.routingSuspended = false; return port; }
   close() { return 'closed'; }
+  retireForDisposal() { this.admissionRetired = true; }
   closeForContextSwitch() { this.contextClosed = true; return Promise.resolve(true); }
   ownsWebContents(value) { return value === 'owned'; }
   handleCertificateError(value) { return value; }
@@ -632,6 +633,61 @@ test('confirmed context closure retires downloads but a veto retains them', asyn
   assert.equal(workspaceRetired, 1);
 });
 
+test('failed explicit disposal retains the Browser and blocks reuse until cleanup succeeds', () => {
+  const f = fixture(), browser = f.manager.getOrCreate();
+  const failure = new Error('synthetic native close failure');
+  let closes = 0;
+  browser.close = () => { closes++; throw failure; };
+  assert.throws(() => f.manager.close());
+  assert.equal(f.manager.browser, browser, 'unconfirmed native resources retain their original owner');
+  assert.equal(browser.ownsWebContents('owned'), true, 'resource ownership is retained');
+  assert.equal(f.manager.ownsWebContents('owned'), false, 'retired pages cannot borrow active proxy authority');
+  assert.throws(() => f.manager.getOrCreate(), { code: 'BROWSER_CLOSE_UNCONFIRMED' },
+    'a partially disposed owner cannot be reused or silently replaced');
+  assert.equal(closes, 1);
+  browser.close = () => { closes++; return 'closed'; };
+  assert.equal(f.manager.close(), 'closed');
+  assert.equal(f.manager.browser, null);
+  assert.equal(closes, 2);
+  assert.notEqual(f.manager.getOrCreate(), browser);
+});
+
+test('one failed disposal owner cannot skip other retirement or native close', () => {
+  const f = fixture(), browser = f.manager.getOrCreate(), calls = [];
+  const failure = new Error('synthetic download retirement failure');
+  browser.downloadController = { retire: () => { calls.push('download'); throw failure; } };
+  browser.workspaceOwner = { retire: () => { calls.push('workspace'); } };
+  browser.close = () => { calls.push('native.close'); return 'closed'; };
+  assert.throws(() => f.manager.close());
+  assert.deepEqual(calls, ['download', 'workspace', 'native.close']);
+  assert.equal(f.manager.browser, browser);
+});
+
+test('a surviving native window cannot be orphaned by successful-looking explicit disposal', () => {
+  const f = fixture(), browser = f.manager.getOrCreate();
+  browser.window = { isDestroyed: () => false };
+  browser.close = () => undefined;
+  assert.throws(() => f.manager.close(), /cleanup is unconfirmed/u);
+  assert.equal(f.manager.browser, browser);
+  assert.throws(() => f.manager.getOrCreate(), { code: 'BROWSER_CLOSE_UNCONFIRMED' });
+  browser.window = null;
+  f.manager.close();
+  assert.equal(f.manager.browser, null);
+});
+
+test('explicit disposal cannot erase a reentrant replacement Browser or portal hint', () => {
+  const f = fixture(), browser = f.manager.getOrCreate();
+  const replacement = new FakeBrowser({});
+  browser.close = () => {
+    f.manager.browser = replacement;
+    f.manager.lastPortalSessionUrl = 'https://replacement.example.test/';
+    return 'closed';
+  };
+  assert.equal(f.manager.close(), 'closed');
+  assert.equal(f.manager.browser, replacement);
+  assert.equal(f.manager.lastPortalSessionUrl, 'https://replacement.example.test/');
+});
+
 test('explicit manager disposal retires the download owner', () => {
   const f = fixture();
   const browser = f.manager.getOrCreate();
@@ -642,6 +698,79 @@ test('explicit manager disposal retires the download owner', () => {
   f.manager.close();
   assert.equal(retired, true);
   assert.equal(workspaceRetired, true);
+});
+
+test('disposal fences admission before effects and preserves every independent failure', async () => {
+  let connections = 0, mutations = 0;
+  const f = fixture({ ensureConnected: async () => { connections++; return { ok: true }; },
+    onWorkspaceMutation: async () => { mutations++; return { ok: true }; } });
+  const browser = f.manager.getOrCreate(), failures = [new Error('download'), new Error('workspace'), new Error('native')];
+  browser.downloadController = { retire: () => { assert.equal(browser.admissionRetired, true); throw failures[0]; } };
+  browser.workspaceOwner = { retire: () => { throw failures[1]; } };
+  browser.close = () => { throw failures[2]; };
+  assert.throws(() => f.manager.close(), error => error.code === 'BROWSER_CLOSE_UNCONFIRMED' &&
+    failures.every(failure => error.errors.includes(failure)));
+  for (const command of ['open', 'feedback', 'organize']) {
+    const result = command === 'open' ? await f.manager.open('https://campus.example.invalid/')
+      : command === 'feedback' ? await f.manager.openWithFeedback('https://campus.example.invalid/')
+      : await f.manager.openBookmarkManager();
+    assert.equal(result.ok, false);
+  }
+  assert.deepEqual(await browser.options.workspaceController.onCommand({ command: 'rename' }), { ok: false, stale: true });
+  assert.equal(connections, 0); assert.equal(mutations, 0); assert.deepEqual(browser.opens, []);
+});
+
+test('retained disposal resources cannot obtain proxy credentials or a queued certificate decision', () => {
+  const f = fixture(), browser = f.manager.getOrCreate();
+  browser.close = () => { throw new Error('synthetic close failure'); };
+  assert.throws(() => f.manager.close());
+  const boundary = CampusBrowserManager.createRequestSecurityBoundary({
+    getBrowser: () => f.manager, getEngineGeneration: () => 1,
+    proxyAccess: { matchesProxyChallenge: () => assert.fail('retired pages cannot query proxy credentials'),
+      answerProxyChallenge: () => assert.fail('retired pages cannot borrow proxy credentials') },
+  });
+  boundary.proxyLogin({ preventDefault: () => assert.fail('retired proxy admission') }, 'owned', {}, {}, () => {});
+  const answers = [];
+  browser.handleCertificateError = () => assert.fail('retired certificate admission');
+  assert.equal(f.manager.handleCertificateError({ callback: value => answers.push(value) }), false);
+  assert.deepEqual(answers, [false]);
+});
+
+test('failed old disposal retries its own Browser instead of closing a reentrant replacement', () => {
+  const f = fixture(), old = f.manager.getOrCreate(), replacement = new FakeBrowser({});
+  let replacementCloses = 0;
+  replacement.close = () => { replacementCloses++; };
+  old.close = () => { f.manager.browser = replacement; throw new Error('synthetic old failure'); };
+  assert.throws(() => f.manager.close());
+  assert.throws(() => f.manager.getOrCreate(), { code: 'BROWSER_CLOSE_UNCONFIRMED' });
+  old.close = () => 'old closed';
+  assert.equal(f.manager.close(), 'old closed');
+  assert.equal(replacementCloses, 0);
+  assert.equal(f.manager.browser, replacement);
+  assert.equal(f.manager.getOrCreate(), replacement);
+});
+
+test('successful context-switch cleanup releases a prior failed disposal fence', async () => {
+  const f = fixture(), browser = f.manager.getOrCreate();
+  browser.close = () => { throw new Error('synthetic failure'); };
+  assert.throws(() => f.manager.close());
+  assert.equal(await f.manager.closeForContextSwitch(), true);
+  assert.notEqual(f.manager.getOrCreate(), browser);
+});
+
+test('reentrant explicit disposal does not repeat its effects', () => {
+  const f = fixture(), browser = f.manager.getOrCreate();
+  let closes = 0;
+  browser.close = () => { closes++; if (closes < 3) f.manager.close(); return 'closed'; };
+  assert.equal(f.manager.close(), 'closed');
+  assert.equal(closes, 1);
+});
+
+test('a destroyed native window with unconfirmed cleanup remains owned', () => {
+  const f = fixture(), browser = f.manager.getOrCreate();
+  browser.window = { isDestroyed: () => true }; browser.close = () => undefined;
+  assert.throws(() => f.manager.close(), { code: 'BROWSER_CLOSE_UNCONFIRMED' });
+  assert.equal(f.manager.browser, browser);
 });
 
 test('late old-context close preserves the replacement Browser and its portal URL', async () => {

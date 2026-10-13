@@ -712,9 +712,9 @@ class CampusBrowser {
     return this.openOwner.openWorkspace(port);
   }
 
-  close() {
-    this.teardownOwner.close();
-  }
+  close() { this.teardownOwner.close(); }
+
+  retireForDisposal() { this.windowOwner?.retireAdmission(); }
 
   closeForContextSwitch(options = {}) {
     if (!this.windowOwner) {

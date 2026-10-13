@@ -96,6 +96,8 @@ class CampusBrowserWindowOwner {
 
   get window() { return this.current?.window || null; }
 
+  retireAdmission() { this.contextRetired = true; }
+
   assertContextCurrent(value) {
     if (this.contextRetired) throw new Error('Campus Browser context is retired');
     return value;
@@ -217,7 +219,7 @@ class CampusBrowserWindowOwner {
       if (this.current !== record || record.retired || record.state !== 'loading' ||
           record.window.isDestroyed()) return;
       record.ipcListener = (_event, channel, payload) => {
-        if (this.current === record && !record.retired && record.state === 'ready' &&
+        if (!this.contextRetired && this.current === record && !record.retired && record.state === 'ready' &&
             channel === 'campus-toolbar-command') this.onToolbarCommand(payload);
       };
       record.resizeListener = () => {
@@ -367,7 +369,7 @@ class CampusBrowserWindowOwner {
         typeof setTimeoutFn !== 'function' || typeof clearTimeoutFn !== 'function') {
       return Promise.reject(new TypeError('Campus Browser close deadline is invalid'));
     }
-    this.contextRetired = true;
+    this.retireAdmission();
     const record = this.current;
     if (!record) {
       this.onMissingWindow();
@@ -442,6 +444,8 @@ function createCampusBrowserWindowOwner(options) {
 
 class CampusBrowserManager {
   #openEpoch = 0;
+  #disposingBrowser = null;
+  #closeInProgress = false;
 
   static createRequestSecurityBoundary(options) {
     return new BrowserRequestSecurityBoundary(options);
@@ -538,6 +542,9 @@ class CampusBrowserManager {
   get hasBrowser() { return this.browser !== null; }
 
   getOrCreate() {
+    if (this.#disposingBrowser) {
+      throw Object.assign(new Error('Browser cleanup is unconfirmed'), { code: 'BROWSER_CLOSE_UNCONFIRMED' });
+    }
     if (this.browser) return this.browser;
     let browser;
     const credentialVault = new this.CredentialVaultClass({
@@ -553,12 +560,12 @@ class CampusBrowserManager {
       getGroups: () => this.getWorkspaceGroups(),
       getLocale: this.getLocale,
       onCommand: async (command) => {
-        if (!browser || this.browser !== browser) return { ok: false, stale: true };
+        if (!browser || this.browser !== browser || this.#disposingBrowser) return { ok: false, stale: true };
         if (command.command === 'focus-address') return { ok: browser.focusAddressBar() === true };
         if (command.command === 'open-resource') return this.onOpenResource(command.resourceId);
         if (command.command === 'manage-rules') return this.showRoutingRules();
         const result = await this.onWorkspaceMutation(command);
-        if (this.browser !== browser) return { ok: false, stale: true };
+        if (this.browser !== browser || this.#disposingBrowser) return { ok: false, stale: true };
         browser.updateToolbar();
         return result;
       },
@@ -606,7 +613,12 @@ class CampusBrowserManager {
   #beginOpen() {
     const browser = this.browser;
     let error = null;
-    try { browser?.prepareOpen?.(); } catch (cause) { error = cause; }
+    try {
+      if (this.#disposingBrowser) {
+        throw Object.assign(new Error('Browser cleanup is unconfirmed'), { code: 'BROWSER_CLOSE_UNCONFIRMED' });
+      }
+      browser?.prepareOpen?.();
+    } catch (cause) { error = cause; }
     return { epoch: this.#openEpoch, error,
       stale: this.browser !== browser || error?.code === 'BROWSER_OPEN_RETIRED' };
   }
@@ -732,13 +744,27 @@ class CampusBrowserManager {
   }
 
   close() {
+    if (this.#closeInProgress) return null;
     this.#openEpoch += 1;
-    const browser = this.browser;
-    browser?.downloadController?.retire();
-    browser?.workspaceOwner?.retire();
-    this.browser = null;
-    this.lastPortalSessionUrl = '';
-    return browser?.close() ?? null;
+    const browser = this.#disposingBrowser || this.browser;
+    if (!browser) { this.lastPortalSessionUrl = ''; return null; }
+    this.#disposingBrowser = browser;
+    this.#closeInProgress = true;
+    const failures = [];
+    let result;
+    for (const operation of [() => browser.retireForDisposal(), () => browser.downloadController?.retire(),
+      () => browser.workspaceOwner?.retire(), () => { result = browser.close(); },
+      () => { if (browser.window) {
+        throw new Error('Browser native window cleanup is still pending');
+      } }]) {
+      try { operation(); } catch (error) { failures.push(error); }
+    }
+    this.#closeInProgress = false;
+    if (failures.length) throw Object.assign(new AggregateError(failures, 'Browser cleanup is unconfirmed'),
+      { code: 'BROWSER_CLOSE_UNCONFIRMED' });
+    if (this.browser === browser) { this.browser = null; this.lastPortalSessionUrl = ''; }
+    if (this.#disposingBrowser === browser) this.#disposingBrowser = null;
+    return result ?? null;
   }
 
   capturePortalSessionUrl(value) {
@@ -767,12 +793,13 @@ class CampusBrowserManager {
     // Retire pending opens before the first await, even if no window exists yet.
     // The Engine/Session retain their own lifetime; a later new open is allowed.
     this.#openEpoch += 1;
-    const browser = this.browser;
+    const browser = this.#disposingBrowser || this.browser;
     if (!browser) { this.lastPortalSessionUrl = ''; return true; }
     if (typeof browser.closeForContextSwitch !== 'function') return false;
     if (await browser.closeForContextSwitch() !== true) return false;
     browser.downloadController?.retire();
     browser.workspaceOwner?.retire();
+    if (this.#disposingBrowser === browser) this.#disposingBrowser = null;
     if (this.browser === browser) {
       this.browser = null;
       this.lastPortalSessionUrl = '';
@@ -792,10 +819,14 @@ class CampusBrowserManager {
   }
 
   ownsWebContents(contents) {
-    return this.browser?.ownsWebContents(contents) === true;
+    return !this.#disposingBrowser && this.browser?.ownsWebContents(contents) === true;
   }
 
   handleCertificateError(details) {
+    if (this.#disposingBrowser) {
+      try { details?.callback?.(false); } catch {}
+      return false;
+    }
     return this.browser?.handleCertificateError(details);
   }
 

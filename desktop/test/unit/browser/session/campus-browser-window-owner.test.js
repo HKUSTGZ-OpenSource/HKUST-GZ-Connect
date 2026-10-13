@@ -92,6 +92,16 @@ test('entry preparation does not construct, show, close or reload a missing or l
   assert.deepEqual(f.closed, []);
 });
 
+test('explicit admission retirement blocks surviving toolbar commands without discarding its window', async () => {
+  const f = createOwner(), window = await f.owner.createWindow();
+  f.owner.retireAdmission(); f.owner.retireAdmission();
+  window.webContents.emit('ipc-message', {}, 'campus-toolbar-command', { command: 'new-tab' });
+  assert.deepEqual(f.commands, []);
+  assert.equal(f.owner.window, window); assert.equal(window.closeCalls, 0);
+  assert.throws(() => f.owner.prepareOpen(), /context is retired/u);
+  assert.throws(() => f.owner.show(window), /no longer ready/u);
+});
+
 test('entry preparation retires an unobserved destroyed window exactly once without creating another', async () => {
   const f = createOwner(), window = await f.owner.createWindow();
   window.destroyed = true;
