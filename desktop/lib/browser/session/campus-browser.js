@@ -346,7 +346,7 @@ class CampusBrowser {
     });
     this.toolbarCommands = new BrowserToolbarCommandOwner({
       getActiveTab: () => this.activeTab(), getTabs: () => this.tabs,
-      getWindow: () => this.window, getBookmarkBarState: () => this.bookmarkBarState(),
+      getWindow: () => this.window, isContextCurrent: () => !this.windowOwner?.contextRetired, getBookmarkBarState: () => this.bookmarkBarState(),
       getBookmarkMenu: () => this.showBookmarkMenu,
       getOpenResource: () => this.onOpenResource,
       navigationForContents, workspaceSearchQuery, nextZoomFactor,
@@ -373,7 +373,7 @@ class CampusBrowser {
       windowOwner: this.windowOwner, tabs: this.tabManager, credentials: this.credentialController,
       commands: this.credentialCommands, pages: this.pagePresentationOwner,
       certificates: this.certificateController, popups: this.popupOwner,
-      routing: this.routingActivationOwner, viewport: this.viewportOwner, toolbar: this.toolbarOwner,
+      routing: this.routingActivationOwner, viewport: this.viewportOwner, toolbar: this.toolbarOwner, toolbarCommands: this.toolbarCommands,
       clearViewReferences: () => { this.view = null; this.attachedView = null; },
       retireOpenRequests: nativeClosed => this.openOwner.reset(nativeClosed ? this.windowOwner?.current?.failure : null),
     });

@@ -502,15 +502,16 @@ class BrowserToolbarOwner {
 }
 
 class BrowserToolbarCommandOwner {
+  #generation = 0;
   constructor({
     getActiveTab, getTabs, getWindow, getBookmarkBarState,
     getBookmarkMenu, getOpenResource, navigationForContents,
     workspaceSearchQuery, nextZoomFactor, translate, reportError,
-    actions, platform = process.platform,
+    actions, platform = process.platform, isContextCurrent = () => true,
   } = {}) {
     const ports = { getActiveTab, getTabs, getWindow, getBookmarkBarState,
       getBookmarkMenu, getOpenResource, navigationForContents, workspaceSearchQuery,
-      nextZoomFactor, translate, reportError };
+      nextZoomFactor, translate, reportError, isContextCurrent };
     const actionNames = [
       'openNewTab', 'openHome', 'focusWorkspace', 'updateToolbar', 'switchTab',
       'closeTab', 'setTabRoute', 'manageCredential', 'openSettings', 'toggleFavorite',
@@ -526,20 +527,37 @@ class BrowserToolbarCommandOwner {
     this.lastFindQuery = '';
   }
 
+  capture() { return { window: this.getWindow(), generation: this.#generation }; }
+
+  current(admission) {
+    return admission.generation === this.#generation && this.isContextCurrent() === true &&
+      this.getWindow() === admission.window && (!admission.window || admission.window.isDestroyed?.() !== true);
+  }
+
+  bound(admission, effect) { return (...args) => { if (this.current(admission)) return effect(...args); }; }
+
+  reset() {
+    const hadQuery = this.lastFindQuery !== '';
+    this.#generation++; this.lastFindQuery = '';
+    return hadQuery;
+  }
+
   handleCommand(input) {
     const normalized = input && typeof input === 'object'
       ? normalizeToolbarCommand(input.command, input.value) : null;
     if (!normalized) return false;
+    const admission = this.capture();
+    if (!this.current(admission)) return false;
     const { command, value } = normalized;
     const active = this.getActiveTab();
     const navigation = this.navigationForContents(active?.view.webContents);
     const action = this.actions;
 
     if (command === 'new-tab') {
-      Promise.resolve(action.openNewTab()).catch(() => this.reportError(this.translate('tab.createFailed')));
+      Promise.resolve(action.openNewTab()).catch(this.bound(admission, () => this.reportError(this.translate('tab.createFailed'))));
     }
     else if (command === 'home') {
-      Promise.resolve(action.openHome()).catch(() => this.reportError(this.translate('tab.createFailed')));
+      Promise.resolve(action.openHome()).catch(this.bound(admission, () => this.reportError(this.translate('tab.createFailed'))));
     }
     else if (command === 'manage-bookmarks') action.focusWorkspace('manage');
     else if (command === 'open-bookmark-menu' && this.getBookmarkMenu()) {
@@ -550,23 +568,23 @@ class BrowserToolbarCommandOwner {
       if (folder) this.getBookmarkMenu()(folder.children);
     }
     else if (command === 'open-resource' && this.getOpenResource()) {
-      Promise.resolve(this.getOpenResource()(value)).then(() => action.updateToolbar()).catch((error) => {
+      Promise.resolve(this.getOpenResource()(value)).then(this.bound(admission, () => action.updateToolbar())).catch(this.bound(admission, (error) => {
         this.reportError(error?.message || this.translate('browser.favoriteFailed'));
-      });
+      }));
     }
     else if (command === 'switch-tab') action.switchTab(Number(value));
     else if (command === 'close-tab') action.closeTab(Number(value));
     else if (command === 'set-route' && active) {
-      action.setTabRoute(active.id, value).catch((error) => {
+      action.setTabRoute(active.id, value).catch(this.bound(admission, (error) => {
         this.reportError(this.translate('route.switchFailed', { message: error.message }));
-      });
+      }));
     }
     else if (command === 'manage-credential' && active) action.manageCredential(active);
     else if (command === 'open-settings') action.openSettings();
     else if (command === 'toggle-favorite' && active) {
-      action.toggleFavorite(active).catch((error) => {
+      action.toggleFavorite(active).catch(this.bound(admission, (error) => {
         this.reportError(error.message || this.translate('browser.favoriteFailed'));
-      });
+      }));
     }
     else if (command === 'focus-workspace') action.focusWorkspaceSearch();
     else if (command === 'back' && navigation.canGoBack()) {
@@ -576,15 +594,15 @@ class BrowserToolbarCommandOwner {
       action.beginNavigationIntent(active);
       navigation.goForward();
     } else if (command === 'reload' && active) {
-      Promise.resolve(action.reloadWhenReady(active)).catch((error) => {
+      Promise.resolve(action.reloadWhenReady(active)).catch(this.bound(admission, (error) => {
         this.reportError(error?.message || this.translate('error.connectTimeout'));
-      });
+      }));
     } else if (command === 'navigate' && active) {
       const query = this.workspaceSearchQuery(value);
       if (query) action.focusWorkspace('search', query);
-      else Promise.resolve(action.navigateWhenReady(value, active)).catch((error) => {
+      else Promise.resolve(action.navigateWhenReady(value, active)).catch(this.bound(admission, (error) => {
         this.reportError(error?.message || this.translate('error.connectTimeout'));
-      });
+      }));
     } else if (command === 'find-open') action.setFindBar(true);
     else if (command === 'find-close') action.setFindBar(false);
     else if (command === 'find' && active) {
@@ -606,6 +624,8 @@ class BrowserToolbarCommandOwner {
   }
 
   handleKeyboard(tab, event, input) {
+    const admission = this.capture();
+    if (!admission.window || !this.current(admission)) return false;
     const contents = tab.view.webContents;
     const commandKey = this.platform === 'darwin' ? input.meta : input.control;
     const key = String(input.key || '').toLowerCase();
@@ -614,7 +634,7 @@ class BrowserToolbarCommandOwner {
     if (commandKey && key === 't') {
       event.preventDefault();
       Promise.resolve(action.openNewTab())
-        .catch(() => this.reportError(this.translate('tab.createFailed')));
+        .catch(this.bound(admission, () => this.reportError(this.translate('tab.createFailed'))));
     } else if (commandKey && key === 'w') {
       event.preventDefault(); action.closeTab(tab.id);
     } else if (commandKey && key === 'l') {
@@ -624,9 +644,9 @@ class BrowserToolbarCommandOwner {
       event.preventDefault(); action.focusWorkspaceSearch();
     } else if (commandKey && key === 'r') {
       event.preventDefault();
-      Promise.resolve(action.reloadWhenReady(tab)).catch((error) => {
+      Promise.resolve(action.reloadWhenReady(tab)).catch(this.bound(admission, (error) => {
         this.reportError(error?.message || this.translate('error.connectTimeout'));
-      });
+      }));
     } else if (commandKey && key === 'f' && input.type === 'keyDown') {
       event.preventDefault(); action.setFindBar(true);
     } else if (commandKey && ['=', '+', '-', '0'].includes(key) && input.type === 'keyDown') {

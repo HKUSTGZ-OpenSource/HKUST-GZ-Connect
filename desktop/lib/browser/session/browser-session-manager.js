@@ -80,7 +80,7 @@ function initializeBrowserHostConfiguration(host, options, { blankUrl, normalize
 // to skip another independent cleanup or to discard an unconfirmed resource.
 class BrowserTeardownOwner {
   constructor({ windowOwner, tabs, credentials, commands, pages, certificates,
-    popups, routing, viewport, toolbar, clearViewReferences, retireOpenRequests = () => {} } = {}) {
+    popups, routing, viewport, toolbar, toolbarCommands = null, clearViewReferences, retireOpenRequests = () => {} } = {}) {
     const owners = { tabs, credentials, commands, pages, certificates,
       popups, routing, viewport, toolbar };
     const methods = { tabs: ['closeViews', 'clearTransientState', 'clear'],
@@ -89,10 +89,11 @@ class BrowserTeardownOwner {
       viewport: ['cancelScheduledLayout', 'reset'], toolbar: ['cancel', 'reset'] };
     if (typeof clearViewReferences !== 'function' || typeof retireOpenRequests !== 'function' ||
         Object.entries(methods).some(([key, names]) => names.some(name => typeof owners[key]?.[name] !== 'function')) ||
+        (toolbarCommands && typeof toolbarCommands.reset !== 'function') ||
         (windowOwner && ['requestClose', 'clear'].some(name => typeof windowOwner[name] !== 'function'))) {
       throw new TypeError('Browser teardown dependencies are incomplete');
     }
-    Object.assign(this, { windowOwner, ...owners, clearViewReferences, retireOpenRequests });
+    Object.assign(this, { windowOwner, ...owners, toolbarCommands, clearViewReferences, retireOpenRequests });
   }
 
   attempt(operations, failures = []) {
@@ -112,7 +113,8 @@ class BrowserTeardownOwner {
 
   presentation(failures) {
     this.attempt([() => this.viewport.cancelScheduledLayout(), () => this.toolbar.cancel(),
-      () => this.credentials.reset(), () => this.commands.reset(), () => this.pages.reset()], failures);
+      () => this.credentials.reset(), () => this.commands.reset(), () => this.pages.reset(),
+      () => this.toolbarCommands?.reset()], failures);
   }
 
   beforeCreate() {
