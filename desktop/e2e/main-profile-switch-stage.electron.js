@@ -37,7 +37,7 @@ routing.DomainRoutePolicyStore = OriginalPolicyStore;
 async function waitFor(predicate, message) {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
-    const value = predicate();
+    const value = await predicate();
     if (value) return value;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
@@ -57,6 +57,23 @@ async function run() {
     profile.profileId === targetProfileId && profile.active === false
   )), true);
 
+  const source = profiles.profiles.find(profile => profile.active);
+  const saved = await control.webContents.executeJavaScript(`window.api.save({
+    expectedProfileId: ${JSON.stringify(source.profileId)},
+    username: 'synthetic-switch-user', password: 'synthetic-switch-password',
+  })`);
+  assert.equal(saved.ok, true, 'synthetic credential save must succeed before switching');
+  if (targetProfileId === 'hkustgz') {
+    const replaced = await control.webContents.executeJavaScript(`window.api.save({
+      expectedProfileId: ${JSON.stringify(source.profileId)},
+      username: 'synthetic-switch-user-next', password: 'synthetic-switch-password-next',
+    })`);
+    assert.equal(replaced.ok, true, 'credential replacement must succeed before switching');
+  } else {
+    const cleared = await control.webContents.executeJavaScript('window.api.logout()');
+    assert.equal(cleared.ok, true, 'synthetic credential removal must succeed before switching');
+  }
+
   if (process.env.HKUSTGZ_SWITCH_OPEN_BROWSER === '1') {
     const opened = await control.webContents.executeJavaScript('window.api.openCampusBrowser({})');
     assert.equal(opened.ok, true);
@@ -65,18 +82,21 @@ async function run() {
     )), 'Profile switch Campus Browser did not open');
   }
 
-  const result = await control.webContents.executeJavaScript(`window.api.switchSchoolProfile({
-    profileId: ${JSON.stringify(targetProfileId)}
-  })`);
-  assert.deepEqual(result, {
-    ok: true,
-    profileId: targetProfileId,
-    activeContextEpoch: result.activeContextEpoch,
-    relaunching: true,
-  });
-  assert.equal(Number.isSafeInteger(result.activeContextEpoch), true);
+  await waitFor(() => control.webContents.executeJavaScript(`Boolean(
+    document.querySelector('#schoolProfileSelect option[value="${targetProfileId}"]')
+  )`), 'school selector did not load');
+  const clicked = await control.webContents.executeJavaScript(`(() => {
+    const select = document.getElementById('schoolProfileSelect');
+    select.value = ${JSON.stringify(targetProfileId)};
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    const button = document.getElementById('switchSchoolProfile');
+    if (button.disabled || button.hidden) return false;
+    button.click();
+    return true;
+  })()`);
+  assert.equal(clicked, true, 'inactive school must be switchable through the actual selector');
+  await waitFor(() => retiredResources, 'school switch did not retire the source resources');
   assert.equal(retiredResources, true, 'actual Profile switch must retire the source resource snapshot');
-  assert.equal(Object.hasOwn(result, 'switchId'), false);
   assert.equal(BrowserWindow.getAllWindows().some((window) => (
     window.webContents.getURL().includes('/renderer/campus-browser.html')
   )), false, 'switch result returned before Campus Browser closed');

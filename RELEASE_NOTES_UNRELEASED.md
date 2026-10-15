@@ -6,6 +6,11 @@
 - Applies to: main after 2.0.4; not included in published 2.0.4 installers
 
 本轮断网自动恢复等修复已整理到 [2.0.4 发布说明](RELEASE_NOTES_2.0.4.md)。
+
+## 学校切换 / School switching
+
+- 修复保存、更新或移除登录凭据后无法切回其他学校的问题；切换读取最新的账户凭据版本，继续严格核对学校、账户和工作区身份，不删除其他学校的数据。
+- Fix switching schools after saving, replacing or removing login credentials. Live switching uses the current credential revision while retaining strict profile, account and workspace ownership checks; other schools' data is preserved.
 正式安装包与验收结果以 [GitHub Release](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/tag/v2.0.4) 为准。
 
 ## 门户读取 / Portal reads

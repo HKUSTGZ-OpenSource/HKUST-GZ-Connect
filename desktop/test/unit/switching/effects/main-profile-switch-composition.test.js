@@ -61,6 +61,7 @@ function fixture({ recovery = { ok: true, status: 'none', relaunch: null } } = {
     userData: '/user-data',
     journalFile: '/user-data/global/switch.json',
     activeAuthority: {},
+    getLiveAuthority: () => ({ current: true }),
     application: {},
     argv: ['/app'],
     isPackaged: true,
@@ -91,6 +92,7 @@ test('disabled persistence exposes no switch runtime or side effects', async () 
 
 test('live switch stops exact generation then schedules one sanitized relaunch', async () => {
   const f = fixture();
+  assert.deepEqual(f.runtimeOptions.getLiveAuthority(), { current: true });
   const stopped = await f.runtimeOptions.liveEffects.stopEngine(7);
   assert.deepEqual(stopped, { ok: true, cleanExit: true });
   assert.deepEqual(f.calls.slice(0, 6), [

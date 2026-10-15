@@ -19,6 +19,7 @@ function createMainProfileSwitchComposition({
   userData,
   journalFile,
   activeAuthority,
+  getLiveAuthority,
   application,
   argv,
   isPackaged,
@@ -100,6 +101,7 @@ function createMainProfileSwitchComposition({
     userData,
     journalFile,
     activeAuthority,
+    getLiveAuthority,
     startupEffects: barrier(async () => ({
       ok: effects.cleanupOrphanedEngine(),
       cleanExit: true,

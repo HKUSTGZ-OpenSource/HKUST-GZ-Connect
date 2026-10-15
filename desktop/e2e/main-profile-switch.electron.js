@@ -32,9 +32,10 @@ function readProfile() {
 
 function provisionCustom(userData) {
   let seed = 1;
+  const createdAt = Date.now();
   const owner = new CustomGatewayConfirmationOwner({
     randomBytes: (length) => Buffer.alloc(length, seed++),
-    now: () => 1_800_000_000_000,
+    now: () => createdAt,
     ttlMs: 10_000,
   });
   const active = {
@@ -59,7 +60,7 @@ function provisionCustom(userData) {
     userData,
     profileStorageEffects,
     randomBytes: (length) => Buffer.alloc(length, ++provisionSeed),
-    now: () => 1_800_000_000_100,
+    now: () => createdAt,
   }).begin(confirmation);
 }
 
@@ -193,6 +194,9 @@ async function run() {
     activePid = marker.pid;
     assert.equal(marker.activeContextEpoch, 3);
     assert.match(launched.output.value, /profile switch stage hkustgz: PASS/u);
+    directory(userData).withCandidate(custom.profileId, record => {
+      assert.equal(record.authority.hasCredential, true, 'switching preserves inactive credentials');
+    });
     await stopOwnedProcess(activePid); activePid = null;
 
     launched = await launch(userData, { target: custom.profileId });
@@ -200,6 +204,9 @@ async function run() {
     activePid = marker.pid;
     assert.equal(marker.activeContextEpoch, 4);
     assert.match(launched.output.value, /profile switch stage custom-/u);
+    directory(userData).withCandidate('hkustgz', record => {
+      assert.equal(record.authority.hasCredential, false, 'explicit synthetic logout remains effective');
+    });
     assert.equal(fs.existsSync(path.join(userData, 'global', 'active-context-switch.json')), false);
     process.stdout.write('main Profile switch recovery + relaunch: PASS\n');
   } finally {

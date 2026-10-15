@@ -152,3 +152,34 @@ test('factory binds one journal activation store and separate barriers', () => {
     ['barrier', { mode: 'live' }],
   ]);
 });
+
+test('live switching observes credential revisions without replacing startup recovery identity', () => {
+  FakeSwitchRuntime.instances = [];
+  const authority = {
+    profile: { profileId: 'hkustgz', profileRevision: 1, profileCredentialBindingRevision: 1 },
+    layout: { identity: { profileKey: 'profile-key' } },
+    account: { accountKey: 'account-key', accountRevision: 1,
+      accountCredentialRevision: 1, workspaceKey: 'workspace-key' },
+    workspaceState: { activeContextEpoch: 3 },
+  };
+  let live = authority;
+  let reads = 0;
+  createMainProfileSwitchRuntime({
+    directory: { withCandidate() {} }, userData: '/synthetic', journalFile: '/synthetic/switch',
+    activeAuthority: authority,
+    getLiveAuthority: () => { reads++; return live; },
+    startupEffects: {}, liveEffects: {}, getEngineGeneration: () => null,
+    JournalStoreClass: class { read() { return null; } },
+    ActivationStoreClass: class { plan() {} }, BarrierClass: class {},
+    SwitchRuntimeClass: FakeSwitchRuntime,
+  });
+  const [startup, runtime] = FakeSwitchRuntime.instances;
+  assert.equal(reads, 0, 'construction must not require initialized persistence');
+  assert.equal(startup.options.getActivePersistentContext().accountCredentialRevision, 1);
+  assert.equal(reads, 0, 'startup recovery must use pre-ready identity');
+  live = { ...authority, account: { ...authority.account, accountCredentialRevision: 3 } };
+  assert.equal(runtime.options.getActivePersistentContext().accountCredentialRevision, 3);
+  assert.equal(reads, 1);
+  live = { ...live, account: { ...live.account, accountKey: 'different-account' } };
+  assert.throws(() => runtime.options.getActivePersistentContext(), /identity/u);
+});
