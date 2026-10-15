@@ -48,6 +48,7 @@ class MainProfileSwitchRuntime {
     startupBarrier,
     liveBarrier,
     getActivePersistentContext,
+    getLivePersistentContext = getActivePersistentContext,
     getEngineGeneration,
     SwitchRuntimeClass = ProfileSwitchRuntime,
   } = {}) {
@@ -79,6 +80,7 @@ class MainProfileSwitchRuntime {
     });
     this.live = new SwitchRuntimeClass({
       ...common,
+      getActivePersistentContext: getLivePersistentContext,
       barrier: liveBarrier,
       activateRuntime: (record, journal) => {
         this.liveActivation = relaunchDirective(record, journal);
@@ -120,6 +122,7 @@ function createMainProfileSwitchRuntime({
   userData,
   journalFile,
   activeAuthority,
+  getLiveAuthority = () => activeAuthority,
   startupEffects,
   liveEffects,
   getEngineGeneration,
@@ -135,6 +138,17 @@ function createMainProfileSwitchRuntime({
     ...storageOptions,
   });
   const journalStore = new JournalStoreClass({ filePath: journalFile, ...storageOptions });
+  const liveContext = () => {
+    const initial = persistentContextFromAuthority(activeAuthority);
+    const current = persistentContextFromAuthority(getLiveAuthority());
+    // Credential commits legitimately advance this revision in the same process.
+    // Every other ownership field must still identify the composed runtime.
+    if (Object.keys(initial).some(key => key !== 'accountCredentialRevision' &&
+        initial[key] !== current[key])) {
+      throw new Error('live Profile switch identity changed');
+    }
+    return current;
+  };
   return new MainProfileSwitchRuntime({
     directory: candidates,
     journalStore,
@@ -142,6 +156,7 @@ function createMainProfileSwitchRuntime({
     startupBarrier: new BarrierClass(startupEffects),
     liveBarrier: new BarrierClass(liveEffects),
     getActivePersistentContext: () => persistentContextFromAuthority(activeAuthority),
+    getLivePersistentContext: liveContext,
     getEngineGeneration,
     SwitchRuntimeClass,
   });

@@ -444,7 +444,7 @@ const profileSwitching = createMainProfileSwitchComposition({
   profileStorageEffects,
   directoryOptions: { userData: DATA, packageRoot: __dirname, isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath, desktopDir: __dirname },
-  userData: DATA, journalFile: ACTIVE_CONTEXT_SWITCH, activeAuthority: preReadyStorage.authority,
+  userData: DATA, journalFile: ACTIVE_CONTEXT_SWITCH, activeAuthority: preReadyStorage.authority, getLiveAuthority: () => persistenceRuntime.currentAuthority(),
   application: app, argv: process.argv, isPackaged: app.isPackaged, developmentEntry: __dirname,
   owners: { activeContextLease, browserManager: campusBrowserManager,
     authChallenges: authChallengeCoordinator, onboarding: { cancel: () => { schoolProfileOnboarding.cancel(); externalIntegrationRuntime.cancel(); } },
