@@ -9,6 +9,9 @@
 
 ## 学校切换 / School switching
 
+- 修复旧版本切换失败后因来源凭据版本过期而无法启动的问题；仅在身份和事务校验通过后恢复原切换，不清空账号或网站数据。
+- Recover interrupted switches with an older source credential revision only after identity and transaction checks; account and website data are not reset.
+
 - 修复保存、更新或移除登录凭据后无法切回其他学校的问题；切换读取最新的账户凭据版本，继续严格核对学校、账户和工作区身份，不删除其他学校的数据。
 - Fix switching schools after saving, replacing or removing login credentials. Live switching uses the current credential revision while retaining strict profile, account and workspace ownership checks; other schools' data is preserved.
 正式安装包与验收结果以 [GitHub Release](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/tag/v2.0.4) 为准。

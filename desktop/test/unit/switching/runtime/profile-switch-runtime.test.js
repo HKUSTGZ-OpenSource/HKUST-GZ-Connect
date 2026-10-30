@@ -29,7 +29,7 @@ class CapturingSystem {
   recover() { this.recoveries += 1; return Promise.resolve({ ok: true, status: 'none' }); }
 }
 
-function fixture() {
+function fixture({ recoveryOnly = false } = {}) {
   const from = context('hkustgz', '1', 7);
   const to = context(`custom-${'a'.repeat(32)}`, '2', 2);
   let active = from;
@@ -47,6 +47,7 @@ function fixture() {
     },
   };
   const runtime = new ProfileSwitchRuntime({
+    recoveryOnly,
     directory,
     journalStore: {},
     activationStore: {
@@ -95,6 +96,33 @@ test('switch request binds exact candidates Engine generation epoch and activati
     'destinationWorkspace', 'globalSettings',
   ]);
   assert.deepEqual(await f.runtime.recover(), { ok: true, status: 'none' });
+});
+
+test('startup recovery accepts only a forward source credential revision in the same context', () => {
+  const f = fixture({ recoveryOnly: true });
+  const validate = CapturingSystem.instance.options.validateSource;
+  const journal = { state: 'prepared', from: { ...f.from, accountCredentialRevision: 1 }, to: f.to };
+  // Simulate the validated pre-ready authority and directory after a credential commit.
+  f.runtime.getActivePersistentContext = () => ({ ...f.from, accountCredentialRevision: 3 });
+  f.records.set(f.from.profileId, { context: { ...f.from, accountCredentialRevision: 3 } });
+  assert.equal(validate(journal), true);
+  assert.throws(() => f.runtime.switchTo(f.to.profileId), /recovery/u);
+  for (const key of Object.keys(f.from).filter(key => key !== 'accountCredentialRevision')) {
+    const value = typeof f.from[key] === 'number' ? f.from[key] + 1 : `${f.from[key]}-changed`;
+    assert.equal(validate({ ...journal, from: { ...journal.from, [key]: value } }), false, key);
+  }
+  assert.equal(validate({ ...journal, from: { ...journal.from, accountCredentialRevision: 4 } }), false);
+  assert.equal(validate({ ...journal, state: 'ready' }), false);
+  f.records.set(f.from.profileId, { context: { ...f.from, accountCredentialRevision: 4 } });
+  assert.equal(validate(journal), false, 'directory and fresh authority must agree exactly');
+});
+
+test('live switching does not accept a stale source credential revision', () => {
+  const f = fixture();
+  const validate = CapturingSystem.instance.options.validateSource;
+  f.runtime.getActivePersistentContext = () => ({ ...f.from, accountCredentialRevision: 3 });
+  f.records.set(f.from.profileId, { context: { ...f.from, accountCredentialRevision: 3 } });
+  assert.equal(validate({ state: 'prepared', from: f.from, to: f.to }), false);
 });
 
 test('coordinator callbacks revalidate source destination and activate only the journal target', () => {
