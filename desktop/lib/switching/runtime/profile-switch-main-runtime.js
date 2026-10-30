@@ -72,6 +72,7 @@ class MainProfileSwitchRuntime {
     };
     this.startup = new SwitchRuntimeClass({
       ...common,
+      recoveryOnly: true,
       barrier: startupBarrier,
       activateRuntime: (record, journal) => {
         this.startupActivation = relaunchDirective(record, journal);

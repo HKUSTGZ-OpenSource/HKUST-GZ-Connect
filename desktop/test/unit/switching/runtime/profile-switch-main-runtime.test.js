@@ -89,6 +89,8 @@ test('clean startup performs no switch operation or relaunch', async () => {
     relaunch: null,
   });
   assert.equal(FakeSwitchRuntime.instances[0].options.barrier.kind, 'startup');
+  assert.equal(FakeSwitchRuntime.instances[0].options.recoveryOnly, true);
+  assert.equal(FakeSwitchRuntime.instances[1].options.recoveryOnly, undefined);
   assert.equal(FakeSwitchRuntime.instances[1].options.barrier.kind, 'live');
 });
 
