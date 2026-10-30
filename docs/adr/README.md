@@ -33,3 +33,6 @@ records for review and recovery evidence; future procedural notes belong under `
 
 No ADR type, fixture or design text promotes an unsupported provider. Current capability truth remains the
 intersection of compiled providers, active Profile policy and runtime evidence.
+
+- [0038: Retired source switch recovery](0038-retired-source-switch-recovery.md): proposed;
+  startup-only credential-revision compatibility for #276, with unchanged ownership and cleanup gates.

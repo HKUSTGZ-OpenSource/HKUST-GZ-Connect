@@ -51,13 +51,13 @@
   "devDependencies": {
     "acorn": "8.19.0",
     "@electron/asar": "^3.4.1",
-    "electron": "^43.7.7",
+    "electron": "^43.8.1",
     "electron-builder": "27.0.0-alpha.9",
     "js-yaml": "4.3.2"
   },
   "overrides": {
     "brace-expansion": "5.0.12",
-    "fast-uri": "3.1.8"
+    "fast-uri": "3.1.9"
   },
   "build": {
     "appId": "cn.edu.hkust-gz.connect",

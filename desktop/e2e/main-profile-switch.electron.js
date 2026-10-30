@@ -75,10 +75,22 @@ function directory(userData) {
   });
 }
 
-async function leavePreparedSwitch(userData, destinationProfileId) {
+async function leavePreparedSwitch(userData, destinationProfileId, staleCredential) {
   const candidates = directory(userData);
   let source;
   candidates.withCandidate('hkustgz', (record) => { source = record.context; });
+  if (staleCredential) {
+    candidates.withCandidate('hkustgz', record => {
+      const file = record.authority.layout.account.document;
+      const document = JSON.parse(fs.readFileSync(file, 'utf8'));
+      document.accountCredentialRevision += 2;
+      assert.equal(profileStorageEffects.atomicWritePrivateFile(file,
+        Buffer.from(JSON.stringify(document)), process.platform === 'win32' ? {
+          protectTemporary: file => profileStorageEffects.windowsAcl.protect(file),
+          verifyCommitted: file => profileStorageEffects.windowsAcl.verify(file),
+        } : {}), true);
+    });
+  }
   const journalStore = new ActiveContextSwitchJournalStore({
     filePath: path.join(userData, 'global', 'active-context-switch.json'),
     profileStorageEffects,
@@ -100,7 +112,8 @@ async function leavePreparedSwitch(userData, destinationProfileId) {
     activateRuntime: () => true,
   });
   await assert.rejects(runtime.switchTo(destinationProfileId), (error) => (
-    error?.code === 'ACTIVE_CONTEXT_SWITCH_PROXY_REVOKE_FAILED'
+    error?.code === (staleCredential ? 'ACTIVE_CONTEXT_SWITCH_SOURCE_VALIDATION_FAILED'
+      : 'ACTIVE_CONTEXT_SWITCH_PROXY_REVOKE_FAILED')
   ));
   assert.equal(journalStore.read().state, 'prepared');
 }
@@ -159,7 +172,7 @@ async function launch(userData, { target = null, openBrowser = false } = {}) {
   return { child, output };
 }
 
-async function run() {
+async function run(staleCredential = false) {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'main-profile-switch-'));
   fs.chmodSync(userData, 0o700);
   let activePid = null;
@@ -181,7 +194,7 @@ async function run() {
     });
     const custom = provisionCustom(userData);
 
-    await leavePreparedSwitch(userData, custom.profileId);
+    await leavePreparedSwitch(userData, custom.profileId, staleCredential);
     let launched = await launch(userData);
     let marker = await waitForMarker(userData, custom.profileId, launched.child, launched.output);
     activePid = marker.pid;
@@ -208,14 +221,14 @@ async function run() {
       assert.equal(record.authority.hasCredential, false, 'explicit synthetic logout remains effective');
     });
     assert.equal(fs.existsSync(path.join(userData, 'global', 'active-context-switch.json')), false);
-    process.stdout.write('main Profile switch recovery + relaunch: PASS\n');
+    process.stdout.write(`main Profile switch recovery + relaunch: PASS (staleCredential=${staleCredential})\n`);
   } finally {
     if (activePid) await stopOwnedProcess(activePid);
     try { fs.rmSync(userData, { recursive: true, force: true }); } catch {}
   }
 }
 
-run().catch((error) => {
+run().then(() => run(true)).catch((error) => {
   process.stderr.write(`${error.stack || error}\n`);
   process.exitCode = 1;
 });

@@ -24,14 +24,16 @@ class ProfileSwitchRuntime {
     getActivePersistentContext,
     getEngineGeneration,
     activateRuntime,
+    recoveryOnly = false,
     SwitchSystemClass = ActiveContextSwitchSystem,
   } = {}) {
     if (!directory || typeof directory.withCandidate !== 'function' ||
         !activationStore || typeof activationStore.plan !== 'function' ||
-        typeof SwitchSystemClass !== 'function') {
+        typeof SwitchSystemClass !== 'function' || typeof recoveryOnly !== 'boolean') {
       throw new TypeError('Profile switch runtime dependencies are invalid');
     }
     this.directory = directory;
+    this.recoveryOnly = recoveryOnly;
     this.activationStore = activationStore;
     this.getActivePersistentContext = requiredFunction(
       getActivePersistentContext,
@@ -50,6 +52,7 @@ class ProfileSwitchRuntime {
   }
 
   switchTo(profileId) {
+    if (this.recoveryOnly) throw new Error('startup recovery cannot initiate a live switch');
     const from = this.getActivePersistentContext();
     const record = this.#candidate(profileId);
     const to = record.context;
@@ -85,9 +88,16 @@ class ProfileSwitchRuntime {
   recover() { return this.system.recover(); }
 
   #validateSource(journal) {
-    if (!sameContext(this.getActivePersistentContext(), journal.from)) return false;
+    const current = this.getActivePersistentContext();
+    const exact = sameContext(current, journal.from);
+    const retiredCredential = this.recoveryOnly && journal.state === 'prepared' &&
+      Number.isSafeInteger(current?.accountCredentialRevision) &&
+      current.accountCredentialRevision > journal.from?.accountCredentialRevision &&
+      sameContext(current, { ...journal.from,
+        accountCredentialRevision: current.accountCredentialRevision });
+    if (!exact && !retiredCredential) return false;
     return this.directory.withCandidate(journal.from.profileId, (record) => (
-      sameContext(record.context, journal.from)
+      sameContext(record.context, current)
     ));
   }
 
