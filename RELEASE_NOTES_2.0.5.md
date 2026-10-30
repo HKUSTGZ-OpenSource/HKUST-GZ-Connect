@@ -23,6 +23,7 @@
 
 - 更新至 Electron 43.8.1，纳入受影响证书信任的安全修复，保持 Electron 43 系列兼容范围。
 - 更新兼容的 HTTP 构建依赖与 URI 解析补丁，精确锁文件安全审计通过。
+- 更新 Rustls 至 0.23.46 及配套兼容依赖，纳入 TLS 证书处理、会话调试信息和连接状态相关的安全修补。
 - 汇总此前已合并的模块生命周期和依赖整理，升级保留现有设置与数据。
 
 ## English
@@ -33,6 +34,7 @@
 - Retain ownership after failed or vetoed Browser disposal, block stale access and allow cleanup retry.
 - Keep portal request deadlines active until the response body completes, preventing indefinite reads after headers arrive.
 - Update Electron to 43.8.1 and compatible HTTP/URI build dependencies, retaining the Electron 43 compatibility line.
+- Update Rustls to 0.23.46 and compatible Rust dependencies for TLS certificate handling, session-debug disclosure and connection-state security fixes.
 
 ## 验证边界 / Verification scope
 
