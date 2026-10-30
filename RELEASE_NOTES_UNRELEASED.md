@@ -2,10 +2,10 @@
 
 - Status: Current source contract
 - Owner: project maintainers
-- Last verified: 2026-10-13
-- Applies to: main after 2.0.4; not included in published 2.0.4 installers
+- Last verified: 2026-10-30
+- Applies to: post-2.0.4 fixes selected for the 2.0.5 release candidate
 
-本轮断网自动恢复等修复已整理到 [2.0.4 发布说明](RELEASE_NOTES_2.0.4.md)。
+以下修复已纳入 [2.0.5 发布候选说明](RELEASE_NOTES_2.0.5.md)。是否已发布、实际安装包和验证结果以 GitHub Release 为准；不改写 2.0.4 的既有产物。
 
 ## 学校切换 / School switching
 
