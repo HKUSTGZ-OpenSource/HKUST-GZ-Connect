@@ -72,6 +72,7 @@ Stable fatal codes in v1 are:
 
 - `INVALID_ARGUMENTS`
 - `CONFIGURATION_INVALID`
+- `GATEWAY_ADDRESS_REJECTED`
 - `CREDENTIALS_INVALID`
 - `AUTH_FAILED`
 - `AUTH_REJECTED`
@@ -98,6 +99,13 @@ the password POST emit `GATEWAY_PRELOGIN_UNAVAILABLE`, which may be retried with
 the configured connection budget because no password was submitted. An uncertain
 password POST or response emits terminal `AUTH_INDETERMINATE`; schema violations
 emit `AUTH_PROTOCOL_INVALID`.
+
+`GATEWAY_ADDRESS_REJECTED` is an additive terminal code for a resolved address
+set rejected by Gateway policy (forbidden, unreviewed private, or mixed scope).
+It is not configuration-file corruption and does not trigger automatic retry.
+It carries no address or hostname; clients must not infer it from stderr text.
+Older Desktop versions accept the bounded unknown token and present a generic
+failure; deploy the matching Desktop for actionable bilingual guidance.
 `secondaryCode` is omitted unless it is `AUTH_CLEANUP_UNCONFIRMED`, which adds
 remote-cleanup status without replacing the primary failure.
 `DATA_PLANE_SHUTDOWN_FAILED` is a primary code used only when normal terminal

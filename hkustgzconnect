@@ -6,7 +6,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd -P)"
 ENGINE="$HERE/independent/target/release/ec-engine"
 PROXY_HELPER="$HERE/independent/target/release/ec-proxy-command"
 ENGINE_CONFIG="$HERE/independent/config/hkustgz.json"
-REVIEWED_ENGINE_CONFIG_SHA256="ed7d9d3dee309124b35f9b9921c83df4947d9c919fc009ab2b8b9b3b0457e1db"
+REVIEWED_ENGINE_CONFIG_SHA256="ce049050e839305efbc9549d405e62c34ce98ceb425e3b027f21f2a55e8683d3"
 CONF="$HERE/config.toml"
 
 RUNDIR="$HOME/.hkustgzconnect"

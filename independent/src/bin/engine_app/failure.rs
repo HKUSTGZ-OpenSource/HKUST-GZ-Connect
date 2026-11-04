@@ -76,6 +76,7 @@ fn authentication_error_code(error: &ProviderError) -> EngineErrorCode {
 
 pub(super) fn gateway_connector_error_code(error: &Error) -> EngineErrorCode {
     match error.kind() {
+        ErrorKind::GatewayAddressRejected => EngineErrorCode::GatewayAddressRejected,
         ErrorKind::Configuration => EngineErrorCode::ConfigurationInvalid,
         ErrorKind::GatewayHttp => EngineErrorCode::GatewayPreloginUnavailable,
         _ => EngineErrorCode::AuthIndeterminate,
@@ -138,6 +139,13 @@ mod tests {
 
     #[test]
     fn gateway_resolution_failure_is_retryable_only_before_authentication() {
+        assert_eq!(
+            gateway_connector_error_code(&Error::classified(
+                ErrorKind::GatewayAddressRejected,
+                "synthetic address policy rejection"
+            )),
+            EngineErrorCode::GatewayAddressRejected
+        );
         assert_eq!(
             gateway_connector_error_code(&Error::classified(
                 ErrorKind::GatewayHttp,

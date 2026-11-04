@@ -91,6 +91,7 @@ function classifyEngineCode(code, socksPort, t = createT('zh'), secondaryCode = 
     case 'CREDENTIALS_INVALID': message = t('error.needCredentials'); break;
     case 'INVALID_ARGUMENTS':
     case 'CONFIGURATION_INVALID': message = t('engine.configurationInvalid'); break;
+    case 'GATEWAY_ADDRESS_REJECTED': message = t('engine.gatewayAddressRejected'); break;
     case 'LOCAL_LISTENER_FAILED': message = t('engine.portBusy', { port: socksPort }); break;
     case 'DATA_PLANE_SETUP_TRANSIENT':
     case 'DATA_PLANE_SETUP_FAILED':
@@ -118,6 +119,7 @@ function engineFailureKindFromCode(code) {
     'CREDENTIALS_INVALID',
     'INVALID_ARGUMENTS',
     'CONFIGURATION_INVALID',
+    'GATEWAY_ADDRESS_REJECTED',
     'LOCAL_LISTENER_FAILED',
     'DATA_PLANE_SETUP_FAILED',
     'DATA_PLANE_SHUTDOWN_FAILED',

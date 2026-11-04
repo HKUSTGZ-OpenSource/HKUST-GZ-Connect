@@ -38,6 +38,15 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+test('reviewed HKUST profile and both engine configs permit private gateway peers consistently', () => {
+  assert.equal(sourceProfile.policy.reviewedPrivateGatewayAllowed, true);
+  assert.equal(JSON.parse(sourceEngineConfig).gateway_connector.reviewed_private_gateway_allowed, true);
+  const cli = fs.readFileSync(path.join(desktopRoot, '..', 'independent', 'config', 'hkustgz.json'));
+  assert.deepEqual(cli, sourceEngineConfig);
+  assert.equal(sourceProfile.profileRevision, 1, 'existing persisted identity remains valid');
+  new SchoolProfileRegistry({ packageRoot: desktopRoot }).load();
+});
+
 function digest(data) {
   return crypto.createHash('sha256').update(data).digest('hex');
 }
@@ -240,7 +249,7 @@ test('manifest assets are exact, hashed, read-only copies and match current sour
     key: 'hkustgz-engine-config',
     kind: 'engine-config',
     path: 'assets/profiles/hkustgz/engine-config.json',
-    sha256: 'ed7d9d3dee309124b35f9b9921c83df4947d9c919fc009ab2b8b9b3b0457e1db',
+    sha256: 'ce049050e839305efbc9549d405e62c34ce98ceb425e3b027f21f2a55e8683d3',
   });
   const first = registry.readAsset('hkustgz', 'hkustgz-engine-config', 'engine-config');
   assert.deepEqual(first, fs.readFileSync(path.join(desktopRoot, '..', 'independent', 'config', 'hkustgz.json')));

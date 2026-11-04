@@ -103,6 +103,7 @@ const dictionaries = {
     'engine.channelClosed': '校园网关通道暂时关闭，正在清理会话并自动重试…',
     'engine.dataPlaneShutdownFailed': '校园网络资源未能完整关闭，已停止自动重连；请稍后手动连接。',
     'engine.configurationInvalid': '引擎配置无效，请恢复默认设置或重新安装当前版本',
+    'engine.gatewayAddressRejected': '网关解析到了当前学校策略不允许的地址。请检查学校配置、DNS 或代理解析；无需重装。已停止自动重试。',
     'engine.eventOutputFailed': '引擎状态通道异常，已安全停止；请重试或查看日志',
 
     'url.tooLong': '网址过长',
@@ -301,6 +302,7 @@ const dictionaries = {
     'engine.channelClosed': 'The campus gateway channel is temporarily closed; cleaning up the session and retrying…',
     'engine.dataPlaneShutdownFailed': 'Campus network resources did not close cleanly. Automatic reconnect stopped; try again manually later.',
     'engine.configurationInvalid': 'The engine configuration is invalid; restore defaults or reinstall this version',
+    'engine.gatewayAddressRejected': 'The resolved gateway address is not allowed by this school’s policy. Check the school profile, DNS or proxy resolution; reinstalling is not needed. Automatic retries have stopped.',
     'engine.eventOutputFailed': 'The engine status channel failed and stopped safely; retry or check the logs',
 
     'url.tooLong': 'The URL is too long',

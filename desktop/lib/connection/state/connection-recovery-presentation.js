@@ -29,6 +29,9 @@ function connectionRecoveryPresentation(state = {}, presentation = {}) {
   } else if (AUTHENTICATION_CODES.has(state.failureCode)) {
     category = 'authentication';
     action = 'reconnect';
+  } else if (state.failureCode === 'GATEWAY_ADDRESS_REJECTED') {
+    category = 'network';
+    action = 'open-tower';
   } else if (CONFIGURATION_CODES.has(state.failureCode)) {
     category = 'configuration';
     action = 'open-tower';
