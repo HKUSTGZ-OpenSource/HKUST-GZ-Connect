@@ -57,3 +57,14 @@
   避免把旧页面的询问转交给新窗口。
 - Deferred certificate consent rechecks the admitted Browser and page ownership before dispatch.
   Retired or replaced requests are denied without borrowing another Browser's trust decision.
+
+## 网关地址提示 / Gateway address guidance
+
+状态：2.0.5 之后的未发布修复。 / Status: Unreleased after 2.0.5.
+
+- 网关解析地址被安全策略拒绝时，显示独立的双语提示，指导检查当前网络、域名解析和学校提供的地址后手动重试，
+  不再误报配置损坏或建议重装。连接仍在读取凭据前停止，地址限制和私有地址例外保持不变。
+- Gateway address-policy rejection now has a distinct bilingual message and manual retry guidance,
+  instead of configuration-repair or reinstall advice. Rejection remains before credential reads;
+  address restrictions and reviewed private-address exceptions are unchanged. This offline-verified
+  classification fix does not establish the cause or resolution of any real network incident.

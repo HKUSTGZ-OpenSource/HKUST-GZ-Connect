@@ -90,6 +90,7 @@ pub enum EngineErrorCode {
     AuthIndeterminate,
     AuthNetworkUnavailable,
     GatewayPreloginUnavailable,
+    GatewayAddressPolicyRejected,
     AuthProtocolInvalid,
     AuthCleanupUnconfirmed,
     AuthExpired,
@@ -299,6 +300,13 @@ mod tests {
                     secondary_code: None,
                 },
                 json!({"type": "fatal_error", "code": "AUTH_FAILED"}),
+            ),
+            (
+                EngineEvent::FatalError {
+                    code: EngineErrorCode::GatewayAddressPolicyRejected,
+                    secondary_code: None,
+                },
+                json!({"type": "fatal_error", "code": "GATEWAY_ADDRESS_POLICY_REJECTED"}),
             ),
             (
                 EngineEvent::FatalError {

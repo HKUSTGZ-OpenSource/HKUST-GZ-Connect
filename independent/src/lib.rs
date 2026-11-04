@@ -49,6 +49,7 @@ pub enum ErrorKind {
     GatewayHttp,
     GatewayHttpIndeterminate,
     GatewayPreloginUnavailable,
+    GatewayAddressPolicyRejected,
     GatewayProtocolInvalid,
     Transport,
     DataPlane,
@@ -80,6 +81,7 @@ impl ErrorKind {
             Self::GatewayHttp => "gateway_http",
             Self::GatewayHttpIndeterminate => "gateway_http_indeterminate",
             Self::GatewayPreloginUnavailable => "gateway_prelogin_unavailable",
+            Self::GatewayAddressPolicyRejected => "gateway_address_policy_rejected",
             Self::GatewayProtocolInvalid => "gateway_protocol_invalid",
             Self::Transport => "transport",
             Self::DataPlane => "data_plane",
@@ -190,6 +192,11 @@ mod tests {
         assert_eq!(typed.kind().code(), "authentication");
         assert!(!typed.kind().is_retryable());
         assert!(ErrorKind::DataPlaneTransient.is_retryable());
+        assert!(!ErrorKind::GatewayAddressPolicyRejected.is_retryable());
+        assert_eq!(
+            ErrorKind::GatewayAddressPolicyRejected.code(),
+            "gateway_address_policy_rejected"
+        );
 
         let cleanup = Error::classified(
             ErrorKind::AuthenticationIndeterminate,
