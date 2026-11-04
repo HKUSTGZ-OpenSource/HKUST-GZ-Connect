@@ -71,13 +71,15 @@ test('exit revokes serving before cleanup and close retains stable-session retry
 });
 
 test('terminal structured failure overrides retryable diagnostics and never schedules retry', () => {
-  const f = fixture();
-  f.owner.close({ code: 1, generation: 7 }, 'modern receive TLS: failed', 'AUTH_FAILED', 'network_unhealthy');
-  assert.equal(f.presentation.failureKind, 'terminal');
-  assert.equal(f.presentation.failureCode, 'AUTH_FAILED');
-  assert.equal(f.machine.snapshot().phase, 'idle');
-  assert.equal(f.machine.snapshot().desiredConnected, false);
-  assert.equal(f.calls.some(([name]) => name === 'schedule'), false);
+  for (const code of ['AUTH_FAILED', 'GATEWAY_ADDRESS_POLICY_REJECTED']) {
+    const f = fixture({ settings: { autoReconnect: true } });
+    f.owner.close({ code: 1, generation: 7 }, 'modern receive TLS: failed', code, 'network_unhealthy');
+    assert.equal(f.presentation.failureKind, 'terminal');
+    assert.equal(f.presentation.failureCode, code);
+    assert.equal(f.machine.snapshot().phase, 'idle');
+    assert.equal(f.machine.snapshot().desiredConnected, false);
+    assert.equal(f.calls.some(([name]) => name === 'schedule'), false);
+  }
 });
 
 test('a network failure during password login retains the intent and schedules automatic recovery', () => {

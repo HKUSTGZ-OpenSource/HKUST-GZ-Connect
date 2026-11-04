@@ -2,6 +2,7 @@
 
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const { createT } = require('../../../../lib/platform/i18n/i18n');
 const {
   classifyEngineCode,
   classifyEngineOutput,
@@ -142,5 +143,20 @@ test('failure classification trusts code, then stop reason, before English diagn
   assert.equal(resolveEngineFailureKind({
     stopReason: 'startup_failed',
     diagnosticText: 'gateway authentication failed',
+  }), 'terminal');
+});
+
+test('address-policy rejection is bilingual, terminal and distinct from damaged configuration', () => {
+  const code = 'GATEWAY_ADDRESS_POLICY_REJECTED';
+  const zh = classifyEngineCode(code, 1080, createT('zh'));
+  const en = classifyEngineCode(code, 1080, createT('en'));
+  assert.match(zh, /安全策略.*手动重试/u);
+  assert.match(en, /security policy.*retry manually/u);
+  for (const message of [zh, en]) {
+    assert.doesNotMatch(message, /重装|恢复默认|reinstall|restore.*defaults|127\.0\.0\.1|vpn\.example/iu);
+  }
+  assert.equal(engineFailureKindFromCode(code), 'terminal');
+  assert.equal(resolveEngineFailureKind({
+    code, stopReason: 'network_unhealthy', diagnosticText: 'modern receive TLS: failed',
   }), 'terminal');
 });

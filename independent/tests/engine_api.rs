@@ -332,9 +332,20 @@ fn profile_bound_connector_policy_fails_before_reading_credentials() {
         .unwrap();
     let output = child.wait_with_output().unwrap();
     std::fs::remove_file(config).unwrap();
-    assert!(events(&output.stdout).iter().any(|event| {
-        event["type"] == "fatal_error" && event["code"] == "CONFIGURATION_INVALID"
+    assert!(!output.status.success());
+    let observed = events(&output.stdout);
+    assert!(observed.iter().any(|event| {
+        event["type"] == "fatal_error" && event["code"] == "GATEWAY_ADDRESS_POLICY_REJECTED"
     }));
+    assert!(
+        !observed.iter().any(|event| {
+            event["state"] == "authenticating" || event["type"] == "listener_ready"
+        })
+    );
+    assert_eq!(observed.last().unwrap()["type"], "stopped");
+    assert_eq!(observed.last().unwrap()["reason"], "startup_failed");
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("127.0.0.1"));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("127.0.0.1"));
     assert!(!String::from_utf8_lossy(&output.stdout).contains(private_credential));
     assert!(!String::from_utf8_lossy(&output.stderr).contains(private_credential));
 }

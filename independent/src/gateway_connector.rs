@@ -20,6 +20,10 @@ fn configuration_error(message: impl Into<String>) -> Error {
     Error::classified(ErrorKind::Configuration, message)
 }
 
+fn address_policy_error(message: &'static str) -> Error {
+    Error::classified(ErrorKind::GatewayAddressPolicyRejected, message)
+}
+
 fn connector_error(message: impl Into<String>) -> Error {
     Error::classified(ErrorKind::GatewayHttp, message)
 }
@@ -219,12 +223,12 @@ impl GatewayConnectorGeneration {
             if scope == AddressScope::Forbidden
                 || (scope == AddressScope::Private && !reviewed_private_gateway_allowed)
             {
-                return Err(configuration_error(
+                return Err(address_policy_error(
                     "Gateway resolution returned a forbidden address",
                 ));
             }
             if selected_scope.is_some_and(|selected| selected != scope) {
-                return Err(configuration_error(
+                return Err(address_policy_error(
                     "Gateway resolution mixed public and private addresses",
                 ));
             }
@@ -525,90 +529,107 @@ mod tests {
     }
 
     #[test]
-    fn default_policy_rejects_private_and_always_forbidden_results() {
-        for address in [
-            "10.0.0.1",
-            "100.64.0.1",
+    fn address_policy_rejections_are_typed_and_value_free() {
+        let forbidden = [
             "127.0.0.1",
             "169.254.1.1",
             "224.0.0.1",
             "0.0.0.0",
             "192.0.2.1",
             "198.18.0.1",
-        ] {
-            assert!(
-                GatewayConnectorGeneration::from_resolved(
+            "198.19.255.254",
+            "::1",
+            "::",
+            "fe80::1",
+            "ff02::1",
+            "2001:db8::1",
+            "::ffff:127.0.0.1",
+            "::ffff:198.18.0.1",
+        ];
+        let private = ["10.0.0.1", "100.64.0.1", "fd00::1", "::ffff:10.0.0.1"];
+        for allow_private in [false, true] {
+            for address in forbidden
+                .iter()
+                .chain(private.iter().filter(|_| !allow_private))
+            {
+                let error = GatewayConnectorGeneration::from_resolved(
                     "school-a",
                     1,
                     1,
                     "https://vpn.example.edu",
-                    false,
+                    allow_private,
                     vec![public(address)],
                 )
-                .is_err(),
-                "{address}"
-            );
+                .unwrap_err();
+                assert_eq!(
+                    error.kind(),
+                    ErrorKind::GatewayAddressPolicyRejected,
+                    "{address}"
+                );
+                assert!(!error.kind().is_retryable());
+                assert!(!error.to_string().contains(address));
+                assert!(!error.to_string().contains("vpn.example.edu"));
+            }
         }
     }
 
     #[test]
-    fn reviewed_private_exception_never_allows_local_or_mixed_scope() {
+    fn reviewed_private_exception_never_allows_mixed_scope() {
         let private = GatewayConnectorGeneration::from_resolved(
             "school-a",
             1,
             1,
             "https://vpn.example.edu",
             true,
-            vec![public("10.0.0.1"), public("10.0.0.2")],
+            vec![
+                public("10.0.0.1"),
+                public("100.64.0.1"),
+                public("fd00::1"),
+                public("::ffff:10.0.0.1"),
+            ],
         )
         .unwrap();
         assert!(private.reviewed_private_gateway_allowed());
-        for address in ["127.0.0.1", "169.254.1.1", "224.0.0.1"] {
-            assert!(
-                GatewayConnectorGeneration::from_resolved(
+        assert!(private.peer_allowed(public("fd00::1")));
+        for allow_private in [false, true] {
+            for addresses in [
+                vec![public("10.0.0.1"), public("8.8.8.8")],
+                vec![public("8.8.8.8"), public("10.0.0.1")],
+            ] {
+                let error = GatewayConnectorGeneration::from_resolved(
                     "school-a",
                     1,
                     1,
                     "https://vpn.example.edu",
-                    true,
-                    vec![public(address)],
+                    allow_private,
+                    addresses,
                 )
-                .is_err()
-            );
+                .unwrap_err();
+                assert_eq!(error.kind(), ErrorKind::GatewayAddressPolicyRejected);
+                assert!(!error.kind().is_retryable());
+            }
         }
-        assert!(
-            GatewayConnectorGeneration::from_resolved(
+    }
+
+    #[test]
+    fn public_resolution_sets_remain_allowed() {
+        for allow_private in [false, true] {
+            let connector = GatewayConnectorGeneration::from_resolved(
                 "school-a",
                 1,
                 1,
                 "https://vpn.example.edu",
-                true,
-                vec![public("10.0.0.1"), public("8.8.8.8")],
+                allow_private,
+                vec![
+                    public("8.8.8.8"),
+                    public("2001:4860:4860::8888"),
+                    public("::ffff:8.8.8.8"),
+                ],
             )
-            .is_err()
-        );
-        let private_v6 = GatewayConnectorGeneration::from_resolved(
-            "school-a",
-            1,
-            1,
-            "https://vpn.example.edu",
-            true,
-            vec![public("fd00::1")],
-        )
-        .unwrap();
-        assert!(private_v6.peer_allowed(public("fd00::1")));
-        for address in ["::1", "fe80::1", "ff02::1", "2001:db8::1"] {
-            assert!(
-                GatewayConnectorGeneration::from_resolved(
-                    "school-a",
-                    1,
-                    1,
-                    "https://vpn.example.edu",
-                    true,
-                    vec![public(address)],
-                )
-                .is_err()
-            );
+            .unwrap();
+            assert!(connector.peer_allowed(public("8.8.8.8")));
+            assert!(connector.peer_allowed(public("2001:4860:4860::8888")));
+            assert!(connector.peer_allowed(public("::ffff:8.8.8.8")));
         }
     }
 

@@ -77,6 +77,7 @@ Stable fatal codes in v1 are:
 - `AUTH_REJECTED`
 - `AUTH_INDETERMINATE`
 - `GATEWAY_PRELOGIN_UNAVAILABLE`
+- `GATEWAY_ADDRESS_POLICY_REJECTED`
 - `AUTH_PROTOCOL_INVALID`
 - `AUTH_EXPIRED`
 - `AUTH_LIMIT_EXCEEDED`
@@ -90,6 +91,16 @@ Stable fatal codes in v1 are:
 - `LOGOUT_FAILED`
 - `SHUTDOWN_SIGNAL_FAILED`
 - `EVENT_OUTPUT_FAILED`
+
+`GATEWAY_ADDRESS_POLICY_REJECTED` means the resolved Gateway addresses violate the
+existing address policy (including mixed public/private results). It is emitted
+before credentials are read, with `startup_failed`, without an address or hostname.
+It is terminal until the user checks the network, name resolution and school-provided
+Gateway address and retries manually. Invalid configuration remains
+`CONFIGURATION_INVALID`; address policy and reviewed private-address exceptions do
+not change. This additive code preserves v1 framing. Ship Engine and Desktop together:
+older Desktop builds treat unknown codes generically and may perform bounded retries
+instead of the new terminal handling.
 
 `AUTH_FAILED` remains accepted for older Engine builds. New authentication
 failures use the narrower codes: only a verified structured credential

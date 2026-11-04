@@ -84,6 +84,7 @@ function classifyEngineCode(code, socksPort, t = createT('zh'), secondaryCode = 
     case 'AUTH_INDETERMINATE': message = t('engine.authIndeterminate'); break;
     case 'AUTH_NETWORK_UNAVAILABLE': message = t('engine.authNetworkUnavailable'); break;
     case 'GATEWAY_PRELOGIN_UNAVAILABLE': message = t('engine.gatewayPreloginUnavailable'); break;
+    case 'GATEWAY_ADDRESS_POLICY_REJECTED': message = t('engine.gatewayAddressPolicyRejected'); break;
     case 'AUTH_PROTOCOL_INVALID': message = t('engine.authProtocolInvalid'); break;
     case 'AUTH_EXPIRED': message = t('engine.authExpired'); break;
     case 'AUTH_LIMIT_EXCEEDED': message = t('engine.authLimitExceeded'); break;
@@ -118,6 +119,7 @@ function engineFailureKindFromCode(code) {
     'CREDENTIALS_INVALID',
     'INVALID_ARGUMENTS',
     'CONFIGURATION_INVALID',
+    'GATEWAY_ADDRESS_POLICY_REJECTED',
     'LOCAL_LISTENER_FAILED',
     'DATA_PLANE_SETUP_FAILED',
     'DATA_PLANE_SHUTDOWN_FAILED',

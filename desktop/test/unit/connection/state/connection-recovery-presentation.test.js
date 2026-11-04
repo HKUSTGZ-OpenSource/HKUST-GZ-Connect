@@ -38,3 +38,10 @@ test('unknown errors stay bounded and actionable without parsing diagnostic text
     { lastError: 'arbitrary localized detail' }, { connected: false, connecting: false },
   ), { schemaVersion: 1, category: 'error', action: 'reconnect' });
 });
+
+test('address-policy rejection offers manual retry without configuration-repair guidance', () => {
+  assert.deepEqual(connectionRecoveryPresentation(
+    { failureCode: 'GATEWAY_ADDRESS_POLICY_REJECTED', failureKind: 'terminal', lastError: 'redacted' },
+    { connected: false, connecting: false },
+  ), { schemaVersion: 1, category: 'error', action: 'reconnect' });
+});
