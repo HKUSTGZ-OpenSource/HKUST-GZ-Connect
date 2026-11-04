@@ -77,9 +77,13 @@
 
 ## Git and release
 
-- Maintainer-directed agent iterations are local/native-first: complete relevant macOS software
-  checks and exact-source gates before batching remote pushes. Heavy Windows/Linux validation may
-  use the established native build host; its results must remain distinct from macOS evidence.
+- Primary development runs on Windows plus WSL. Use a Linux-filesystem checkout in WSL for shared
+  development and a separate native Windows checkout for Windows APIs, UI and packaging. The Mac
+  handles macOS-specific changes, native validation and packaging. See the
+  [development handoff](docs/engineering/windows-wsl-handoff.md).
+- Maintainer-directed iterations remain local/native-first: complete relevant checks and exact-source
+  gates before batching remote pushes. Keep WSL/Linux, native Windows and macOS evidence distinct;
+  a host change does not waive required CI or another platform's native acceptance.
 - Respect the maintainer's Actions budget. Do not use repeated pushes, workflow dispatches or
   reruns as an exploratory debugging loop. Budget constraints do not authorize bypassing required
   checks, fabricating statuses, disabling workflows or changing branch protections.

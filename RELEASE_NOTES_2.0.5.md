@@ -1,9 +1,9 @@
 # HKUST(GZ) Connect 2.0.5
 
-- Status: Release candidate; publication and artifact acceptance tracked in #283
+- Status: Published; exact artifact acceptance remains in the release receipt and #283
 - Owner: project maintainers
-- Last verified: 2026-10-30
-- Applies to: the versioned 2.0.5 source; installer availability is established by GitHub Release
+- Last verified: 2026-11-04 (published tag and installer metadata readback)
+- Applies to: `v2.0.5` at `e6dfca371ad5e910858832dea8dcd783a1fa020f`; see the [GitHub Release](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/tag/v2.0.5)
 
 ## 中文
 

@@ -42,8 +42,16 @@ one pull request.
 - npm with the committed `desktop/package-lock.json`
 - Rust installed through `rustup`; the exact toolchain is pinned by
   `independent/rust-toolchain.toml`
-- macOS for the complete Electron/browser suite and local DMG verification
-- GitHub Actions for the required macOS, Windows and Linux package matrix
+- Windows plus WSL for primary development: WSL for shared Linux-side checks, a separate native
+  Windows checkout for Windows APIs, UI, private-file helper and NSIS validation
+- macOS for macOS-specific changes, native Electron/browser acceptance and local DMG verification
+- GitHub Actions retains the required macOS, Windows and Linux package matrix and native test jobs
+
+Start with the [Windows/WSL development handoff](docs/engineering/windows-wsl-handoff.md) for
+fresh-clone commands, exact toolchains, current work and the Mac packaging boundary. Keep source
+on the filesystem of the tools executing it; never share `node_modules`, Cargo `target`, staged
+Engine binaries or package outputs between operating systems. Synchronize through reviewed Git
+commits. WSL/WSLg does not establish native Windows acceptance.
 
 Install Desktop dependencies:
 

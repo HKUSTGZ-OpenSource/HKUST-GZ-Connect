@@ -1,5 +1,10 @@
 # 发布流程 / Release Process
 
+- Status: Current procedure; historical release evidence remains separately dated
+- Owner: project maintainers
+- Last verified: 2026-11-04 (development host split and build entrypoints)
+- Applies to: current source build procedures; release authorization remains per operation
+
 本文档记录 HKUST(GZ) Connect 的发布流程。仓库保留 GitHub Actions 发布工作流；
 已发布的 2.0.1 与 2.0.2 使用维护者授权的指定主机构建和验收。不要把工作流配置
 视为某次发布实际运行过云端构建的证据；以该版本的构建收据为准。
@@ -38,10 +43,9 @@ bash desktop/scripts/build-engine.sh   # 编译 Rust 引擎，放进 desktop/eng
 bash desktop/scripts/rebuild-mac.sh    # macOS：打包、校验并安装到 /Applications
 ```
 
-`build-engine.sh` 在 `independent/` 下以`--no-default-features`构建`ec-engine`和
-`ec-proxy-command`，
-把二进制复制为 `desktop/engine/ec-engine-<平台>-<架构>`，并复制
-`config/hkustgz.json`。打包时 electron-builder 通过 `extraResources`
+`build-engine.sh` 在 `independent/` 下以 `--no-default-features` 构建 `ec-engine`、
+`ec-proxy-command` 和 `ec-gateway-probe`，把三个程序按平台/架构暂存到 `desktop/engine/`，
+再由 `stage-reviewed-profile-configs.js` 暂存已审核的学校配置。打包时 electron-builder 通过 `extraResources`
 把 `desktop/engine/` 放进应用包。
 
 `rebuild-mac.sh` 依次完成：构建引擎 → `electron-builder --mac dir --arm64`
@@ -53,7 +57,9 @@ bash desktop/scripts/rebuild-mac.sh    # macOS：打包、校验并安装到 /Ap
 
 ## 测试
 
-维护者主导的 AI 开发采用“本地先验、集中发布”：先在 Mac 完成相关单元测试、Electron
+主要开发迁到 Windows + WSL，Mac 保留 macOS 小改动、原生回归与封包；按
+[交接指南](docs/engineering/windows-wsl-handoff.md) 分开工作目录和验证记录。
+维护者主导的 AI 开发采用“本地先验、集中推送”：先在对应平台完成相关单元测试、Electron
 回归和精确提交检查，再集中推送已验证的改动。不要靠反复推送、手动触发或重跑 Actions
 来调试。发布仍需单独授权；保留必要的平台构建和包验证，不为节省分钟数绕过必需检查、
 停用工作流或修改保护规则。Mac 通过不代表 Windows/Linux 已验证，遗漏项必须明确记录。
@@ -165,9 +171,10 @@ bash desktop/scripts/build-engine.sh   # build the Rust engine into desktop/engi
 bash desktop/scripts/rebuild-mac.sh    # macOS: package, verify, install to /Applications
 ```
 
-`build-engine.sh` builds `ec-engine` and `ec-proxy-command` with
-`--no-default-features` in `independent/`, copies the binaries to `desktop/engine/`,
-and copies `config/hkustgz.json`. electron-builder bundles `desktop/engine/`
+`build-engine.sh` builds `ec-engine`, `ec-proxy-command` and `ec-gateway-probe` with
+`--no-default-features` in `independent/`, stages the platform/architecture binaries in
+`desktop/engine/`, and stages reviewed school configurations through
+`stage-reviewed-profile-configs.js`. electron-builder bundles `desktop/engine/`
 via `extraResources`.
 
 `rebuild-mac.sh` builds the engine, packages with
@@ -181,8 +188,11 @@ normally requires the first right-click → **Open** flow.
 
 ## Tests
 
-Maintainer-directed AI iterations are local-first: run relevant unit tests, Electron regressions
-and exact-commit gates on macOS before batching validated remote changes. Do not debug through
+Primary development runs on Windows plus WSL; the Mac handles macOS-specific changes, native
+regressions and packaging. Follow the [handoff](docs/engineering/windows-wsl-handoff.md) for separate
+checkouts and evidence. Maintainer-directed AI iterations are local-first: run relevant unit tests,
+Electron regressions and exact-commit gates on the applicable platform before batching validated
+remote changes. Do not debug through
 repeated pushes, workflow dispatches or reruns. Release requires separate authorization; retain
 necessary platform builds and package verification. Saving minutes never authorizes bypassing
 required checks, disabling workflows or changing protections. Record Windows/Linux validation
