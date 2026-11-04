@@ -1024,6 +1024,26 @@ async function main() {
     await runStage('Manager disposal retention', () => assertManagerDisposalRetention(browser));
     await runStage('Session replacement ownership', () => assertNativeSessionOwnership({ session, BrowserWindow }));
     await runStage('toolbar command retirement', () => assertNativeToolbarRetirement({ BrowserWindow, WebContentsView, session, host: browser, waitForMain }));
+    await runStage('queued certificate ownership', async () => {
+      await browser.open(CONFIGURED_HOME, 11080, ROUTE_DIRECT);
+      const page = browser.activeTab().view.webContents, answers = [];
+      let current = browser, replacementCalls = 0;
+      const boundary = CampusBrowserManager.createRequestSecurityBoundary({
+        getBrowser: () => current, getEngineGeneration: () => 1,
+        proxyAccess: { matchesProxyChallenge: () => false, answerProxyChallenge: () => false },
+      });
+      boundary.certificateError({ preventDefault() {} }, page, CONFIGURED_HOME,
+        'synthetic certificate error', {}, value => answers.push(value), true);
+      const oldWindow = browser.window;
+      browser.close();
+      current = { ownsWebContents: () => false,
+        handleCertificateError: ({ callback }) => { replacementCalls++; callback(true); } };
+      await new Promise(setImmediate);
+      assert.deepEqual(answers, [false]); assert.equal(replacementCalls, 0);
+      await waitForMain(() => oldWindow.isDestroyed() && browser.window === null, 'certificate origin cleanup');
+      await browser.open(CONFIGURED_HOME, 11080, ROUTE_DIRECT);
+      process.stdout.write('native queued certificate ownership: PASS\n');
+    });
     await runStage('teardown failure isolation', () => assertTeardownFailureIsolation(browser));
     assert.deepEqual(errors, [], `unexpected campus browser errors: ${errors.join('; ')}`);
     process.stdout.write('campus browser toolbar: PASS\n');

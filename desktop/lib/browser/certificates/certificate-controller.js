@@ -48,9 +48,15 @@ class BrowserRequestSecurityBoundary {
     this.certificateError = (event, webContents, url, error, certificate, callback, isMainFrame) => {
       // Control chrome and unrelated requests keep Chromium defaults; only an
       // owned main frame may reach explicit consent, never a subresource.
+      const browser = getBrowser();
       return routeCertificateError({
-        owned: getBrowser().ownsWebContents(webContents), isMainFrame, event, callback,
-        prompt: () => getBrowser().handleCertificateError({ url, error, certificate, callback }),
+        owned: browser?.ownsWebContents(webContents), isMainFrame, event, callback,
+        prompt: () => {
+          if (getBrowser() !== browser || browser.ownsWebContents(webContents) !== true) {
+            rejectCertificate(callback); return false;
+          }
+          return browser.handleCertificateError({ url, error, certificate, callback });
+        },
       });
     };
     this.proxyLogin = (event, webContents, _details, authInfo, callback) => {

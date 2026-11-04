@@ -74,7 +74,7 @@ test('only owned main frames forward exact request and callback to the existing 
     'synthetic-error', certificate, callback, true);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(prevented, 1);
-  assert.deepEqual(f.calls, [['owns', contents], ['certificate', {
+  assert.deepEqual(f.calls, [['owns', contents], ['owns', contents], ['certificate', {
     url: 'https://fixture.invalid', error: 'synthetic-error', certificate, callback,
   }]]);
   assert.deepEqual(answers, [true]);
@@ -88,6 +88,37 @@ test('a failed Browser consent owner preserves the existing fail-closed callback
     'synthetic-error', {}, result => answers.push(result), true);
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(answers, [false]);
+});
+
+for (const retirement of ['replacement', 'removed', 'unowned', 'throwing']) {
+  test(`queued certificate consent denies ${retirement} ownership before dispatch`, async () => {
+    const f = fixture(), answers = [];
+    f.boundary.certificateError({ preventDefault() {} }, {}, 'https://fixture.invalid',
+      'synthetic-error', {}, value => answers.push(value), true);
+    if (retirement === 'replacement') f.state.currentBrowser = {
+      ownsWebContents: () => true,
+      handleCertificateError: ({ callback }) => { f.calls.push(['replacement']); callback(true); },
+    };
+    else if (retirement === 'removed') f.state.currentBrowser = null;
+    else if (retirement === 'unowned') f.state.owned = false;
+    else f.browser.ownsWebContents = () => { throw new Error('synthetic retired native owner'); };
+    await new Promise(setImmediate);
+    assert.deepEqual(answers, [false]);
+    assert.equal(f.calls.some(call => call[0] === 'certificate'), false);
+    assert.equal(f.calls.some(call => call[0] === 'replacement'), false);
+  });
+}
+
+test('queued consent rechecks page ownership when the Manager object itself is retained', async () => {
+  const f = fixture(), contents = {}, answers = [];
+  let root = { ownsWebContents: value => value === contents };
+  f.browser.ownsWebContents = value => root.ownsWebContents(value);
+  f.boundary.certificateError({ preventDefault() {} }, contents, 'https://fixture.invalid',
+    'synthetic-error', {}, value => answers.push(value), true);
+  root = { ownsWebContents: () => false };
+  await new Promise(setImmediate);
+  assert.deepEqual(answers, [false]);
+  assert.equal(f.calls.some(call => call[0] === 'certificate'), false);
 });
 
 test('unowned proxy challenges never query or borrow proxy credentials', () => {

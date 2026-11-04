@@ -2,10 +2,10 @@
 
 - Status: Current source contract
 - Owner: project maintainers
-- Last verified: 2026-10-30
-- Applies to: post-2.0.4 fixes selected for the 2.0.5 release candidate
+- Last verified: 2026-11-04
+- Applies to: 2.0.5 source history and subsequent unreleased fixes
 
-以下修复已纳入 [2.0.5 发布候选说明](RELEASE_NOTES_2.0.5.md)。是否已发布、实际安装包和验证结果以 GitHub Release 为准；不改写 2.0.4 的既有产物。
+学校切换、门户读取、浏览器关闭、会话与工具栏修复已纳入 [2.0.5 发布候选说明](RELEASE_NOTES_2.0.5.md)。后续未发布修复在对应章节单独标明；实际安装包和验证结果以 GitHub Release 为准，不改写既有产物。
 
 ## 学校切换 / School switching
 
@@ -48,3 +48,12 @@
   查找状态随窗口清理；当前窗口的正常操作和错误反馈保持不变。
 - Late toolbar/resource results no longer refresh replacement windows or publish retired-window
   errors. Find state is cleared with window cleanup; current commands and feedback are preserved.
+
+## 证书询问 / Certificate consent
+
+状态：2.0.5 之后的未发布修复。 / Status: Unreleased after 2.0.5.
+
+- 证书询问执行前重新检查原浏览器和页面归属；关闭或替换后排队的请求会被拒绝，
+  避免把旧页面的询问转交给新窗口。
+- Deferred certificate consent rechecks the admitted Browser and page ownership before dispatch.
+  Retired or replaced requests are denied without borrowing another Browser's trust decision.
