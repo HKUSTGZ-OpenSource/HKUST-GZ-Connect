@@ -2,7 +2,7 @@
 
 - Status: Current index
 - Owner: project maintainers
-- Last verified: 2026-09-04
+- Last verified: 2026-11-04 (handoff entry and authority/placement)
 - Applies to: `main` and the latest stable release
 
 This index defines where project truth lives. Documents describe evidence and decisions; they do
@@ -64,6 +64,7 @@ durable contract. Release receipts may use exact tags, commits, workflow runs an
 
 ## Current key documents
 
+- Primary development and new-machine onboarding: [Windows + WSL handoff](engineering/windows-wsl-handoff.md)
 - Current implementation: `2.0-status.md`
 - Product definition: `product/2.0-product-definition.md`
 - Machine-readable module ownership (path/entrypoint subset enforced): `architecture/module-map.yml`
