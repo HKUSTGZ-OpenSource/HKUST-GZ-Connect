@@ -978,6 +978,28 @@ mod tests {
     }
 
     #[test]
+    fn independent_authenticated_sessions_keep_distinct_channel_material() {
+        // Synthetic values only. This proves client-side derivation/ownership,
+        // not that a real gateway grants two sessions to the same account.
+        let session_a = ModernSessionId::from_bytes(b"synthetic-aaaaaa").unwrap();
+        let session_b = ModernSessionId::from_bytes(b"synthetic-bbbbbb").unwrap();
+        let token_a = ModernToken::derive(&[0x11; 32], &session_a).unwrap();
+        let token_b = ModernToken::derive(&[0x11; 32], &session_b).unwrap();
+        assert_ne!(token_a.as_bytes(), token_b.as_bytes());
+        let renewed_b = ModernToken::derive(&[0x22; 32], &session_b).unwrap();
+        assert_ne!(token_b.as_bytes(), renewed_b.as_bytes());
+        let before =
+            ModernControlRequest::new(ModernCommand::RequestAddress, &token_a, None).unwrap();
+        drop(token_b);
+        drop(renewed_b);
+        drop(session_b);
+        let after =
+            ModernControlRequest::new(ModernCommand::RequestAddress, &token_a, None).unwrap();
+        assert_eq!(before.as_bytes(), after.as_bytes());
+        assert_eq!(format!("{token_a:?}"), "ModernToken(<redacted>)");
+    }
+
+    #[test]
     fn token_acquisition_retains_the_exact_connector_generation() {
         let peer: SocketAddr = "8.8.8.8:443".parse().unwrap();
         let connector = Arc::new(
