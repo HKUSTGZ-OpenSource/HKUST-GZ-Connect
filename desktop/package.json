@@ -27,7 +27,7 @@
     "test:renderer-asar": "node e2e/renderer-module-asar.js",
     "test:control-shell-layout": "electron e2e/control-shell-layout.electron.js",
     "test:workspace-layout": "electron e2e/campus-workspace-layout.electron.js",
-    "test:main-integration": "electron e2e/main-integration.electron.js",
+    "test:main-integration": "electron e2e/main-integration.electron.js && electron e2e/portal-session-expiry.electron.js",
     "test:main-custom-profile": "electron e2e/main-custom-profile.electron.js",
     "test:main-school-onboarding": "node e2e/main-school-onboarding.electron.js",
     "test:main-profile-switch": "node e2e/main-profile-switch.electron.js",

@@ -27,6 +27,13 @@
 
 ## 门户读取 / Portal reads
 
+- 门户 API 跟随重定向进入已知学校登录页时，正确提示会话过期并清除课表缓存；用户自行完成
+  登录（以及学校要求的二次验证）后，返回工作台即可重新读取。不会把未知 HTML 或一般网络失败
+  推断成 2FA，也不修改 VPN 连接。此修复尚未进入已发布的 2.0.6。
+- Recognize known portal sign-in destinations after API redirects, revoke cached schedules and use
+  the existing sign-in/revalidation flow on return to the workspace. Unknown HTML and transport
+  failures are not labeled as MFA. VPN state is unchanged; not yet included in released 2.0.6.
+
 - 修复门户分类、课表和新闻请求收到响应头后超时提前结束的问题。截止时间覆盖正文读取；
   卡住的正文会取消并结束本次读取，不再无限等待。查询参数、数据校验、会话和网络路径不变。
 - Keep the existing portal request deadline active through body consumption, so stalled catalog,

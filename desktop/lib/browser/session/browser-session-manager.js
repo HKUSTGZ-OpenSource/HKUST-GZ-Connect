@@ -13,6 +13,7 @@ const {
   normalizePortalCatalog,
   portalCatalogState,
   readPortalResponseWithinDeadline,
+  portalSessionTransport,
 } = require('./myportal-catalog');
 
 const requestBoundaryGates = new WeakMap();
@@ -1243,7 +1244,7 @@ const hkustMyPortalSources = Object.freeze({
 });
 
 class MyPortalDataRuntime {
-  constructor({ electronSession, getPartition, getPortalUrl, getSources = () => ({}),
+  constructor({ electronSession, electronNet = null, getPartition, getPortalUrl, getSources = () => ({}),
     getSessionUrlHint = () => null, now = Date.now,
     cacheMs = CAMPUS_DATA_DAILY_CACHE_MS, timeoutMs = 8_000 } = {}) {
     if (!electronSession || typeof electronSession.fromPartition !== 'function' ||
@@ -1256,7 +1257,7 @@ class MyPortalDataRuntime {
         !Number.isSafeInteger(timeoutMs) || timeoutMs < 500 || timeoutMs > 30_000) {
       throw new TypeError('myPortal data runtime timing is invalid');
     }
-    Object.assign(this, { electronSession, getPartition, getPortalUrl, getSources, getSessionUrlHint,
+    Object.assign(this, { electronSession, electronNet, getPartition, getPortalUrl, getSources, getSessionUrlHint,
       now, cacheMs, timeoutMs });
     this.cached = null;
     this.inflight = null;
@@ -1323,7 +1324,7 @@ class MyPortalDataRuntime {
     const requestContext = this.captureContext();
     const { portalUrl, partition } = requestContext;
     const cachedBase = this.cached;
-    const targetSession = this.electronSession.fromPartition(partition);
+    const targetSession = portalSessionTransport(this.electronNet, this.electronSession.fromPartition(partition), portalUrl);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     timer.unref?.();
@@ -1333,7 +1334,7 @@ class MyPortalDataRuntime {
       ? Object.freeze({ state: 'authenticated', sessionUrl: hint })
       : Object.freeze({ state: 'unknown', sessionUrl: portalUrl });
     try { if (!hint) probe = await this.probeSession(targetSession, portalUrl, controller.signal); }
-    catch { probe = Object.freeze({ state: 'unknown', sessionUrl: portalUrl }); }
+    catch (error) { probe = Object.freeze({ state: error?.code === 'PORTAL_SESSION_EXPIRED' ? 'unauthenticated' : 'unknown', sessionUrl: portalUrl }); }
     finally { clearTimeout(timer); }
     this.assertContext(requestContext);
     const sessionState = probe.state;

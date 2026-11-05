@@ -66,6 +66,19 @@ test('explicit login expiry discards the cached schedule instead of disguising i
   } finally {h.feature.clearDisplay();}
 });
 
+test('returning after portal sign-in revalidates an expired timetable via the existing focus entrypoint', async () => {
+  const h=harness();try {
+    await h.feature.load();const d=h.defer();const pending=h.feature.refreshSchedule();
+    d.resolve(value('session-expired'));await pending;
+    assert.match(h.body.innerHTML,/data-campus-data-action="login"/);
+    assert.doesNotMatch(h.body.innerHTML,/data-schedule-index/);
+    const revalidation=h.deferLoad();const returned=h.feature.ensureLoaded();
+    revalidation.resolve(value());await returned;
+    assert.equal(h.feature.snapshot().modules.schedule.state,'ready');
+    assert.doesNotMatch(h.body.innerHTML,/data-campus-data-action="login"/);
+  } finally {h.feature.clearDisplay();}
+});
+
 test('late revocation for an earlier week clears the active cache and fences later success', async () => {
   const h=harness(); try {
     h.feature.start(); await h.feature.load();
