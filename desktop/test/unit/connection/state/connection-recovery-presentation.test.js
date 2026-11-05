@@ -33,6 +33,12 @@ test('connected DNS failure remains visible without turning into a generic recon
   ), { schemaVersion: 1, category: 'dns', action: 'open-tower' });
 });
 
+test('gateway address policy rejection directs inspection, not reinstall or automatic retry', () => {
+  assert.deepEqual(connectionRecoveryPresentation({ failureCode: 'GATEWAY_ADDRESS_REJECTED',
+    failureKind: 'terminal', lastError: 'redacted' }, { connected: false, connecting: false }),
+  { schemaVersion: 1, category: 'network', action: 'open-tower' });
+});
+
 test('unknown errors stay bounded and actionable without parsing diagnostic text', () => {
   assert.deepEqual(connectionRecoveryPresentation(
     { lastError: 'arbitrary localized detail' }, { connected: false, connecting: false },

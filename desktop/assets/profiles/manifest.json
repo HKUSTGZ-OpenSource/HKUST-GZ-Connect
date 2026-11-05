@@ -6,14 +6,14 @@
       "default": true,
       "document": {
         "path": "assets/profiles/hkustgz/school-profile.json",
-        "sha256": "52b944749da38d560ea53645425ed137335d67b77956cf3946acc5da1a060a77"
+        "sha256": "93913caddf8eead58cb88293cb9e61037281ca18181cee5f916825c6a6516456"
       },
       "assets": [
         {
           "key": "hkustgz-engine-config",
           "kind": "engine-config",
           "path": "assets/profiles/hkustgz/engine-config.json",
-          "sha256": "ed7d9d3dee309124b35f9b9921c83df4947d9c919fc009ab2b8b9b3b0457e1db"
+          "sha256": "ce049050e839305efbc9549d405e62c34ce98ceb425e3b027f21f2a55e8683d3"
         },
         {
           "key": "hkustgz-logo",

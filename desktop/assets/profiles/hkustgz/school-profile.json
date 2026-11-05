@@ -55,7 +55,7 @@
     ]
   },
   "policy": {
-    "reviewedPrivateGatewayAllowed": false,
+    "reviewedPrivateGatewayAllowed": true,
     "reviewedDnsFallback": [
       "10.90.63.2",
       "10.90.63.3"

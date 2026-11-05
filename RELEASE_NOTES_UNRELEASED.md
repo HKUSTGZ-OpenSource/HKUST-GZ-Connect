@@ -7,7 +7,14 @@
 
 学校切换、门户读取、浏览器关闭、会话与工具栏修复已纳入 [2.0.5 发布候选说明](RELEASE_NOTES_2.0.5.md)。后续未发布修复在对应章节单独标明；实际安装包和验证结果以 GitHub Release 为准，不改写既有产物。
 
-## 学校切换 / School switching
+## 未发布：网关地址策略 / Unreleased: Gateway address policy
+
+- 港科广内置配置启用已审核的内网网关策略，支持同一学校域名的内外网解析；不硬编码本机地址，不改变未知网关规则、证书校验或系统网络。
+- 网关地址策略拒绝改为独立错误提示，不再建议重装；继续停止自动重试，并引导检查学校、DNS 和代理解析。
+- The reviewed HKUST(GZ) profile accepts private Gateway resolution through the existing policy exception. Unknown/custom gateways, forbidden or mixed scopes and TLS verification remain unchanged.
+- Address-policy rejection has an explicit terminal diagnostic instead of a misleading reinstall message. This candidate is not included in 2.0.5; Windows/WSL primary-maintainer review and native acceptance remain separate.
+
+## 已发布学校切换修复 / Released school-switch fixes
 
 - 修复旧版本切换失败后因来源凭据版本过期而无法启动的问题；仅在身份和事务校验通过后恢复原切换，不清空账号或网站数据。
 - Recover interrupted switches with an older source credential revision only after identity and transaction checks; account and website data are not reset.

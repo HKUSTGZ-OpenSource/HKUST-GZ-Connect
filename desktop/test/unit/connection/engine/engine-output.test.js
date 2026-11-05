@@ -97,6 +97,20 @@ test('unsupported MFA is distinct from a wrong password and never retried', () =
   assert.equal(engineFailureKindFromCode('UNSUPPORTED_AUTHENTICATION'), 'terminal');
 });
 
+test('gateway address policy rejection is actionable and terminal, not damaged configuration', () => {
+  const { createT } = require('../../../../lib/platform/i18n/i18n');
+  const { normalizeEngineEvent } = require('../../../../lib/connection/engine/engine-protocol');
+  const code = 'GATEWAY_ADDRESS_REJECTED';
+  assert.deepEqual(normalizeEngineEvent({ type: 'fatal_error', code }),
+    { type: 'fatal_error', code, secondaryCode: null });
+  assert.match(classifyEngineCode(code, 6180), /网关.*地址/);
+  assert.match(classifyEngineCode(code, 6180), /DNS/);
+  assert.doesNotMatch(classifyEngineCode(code, 6180), /配置无效|恢复默认|重新安装/);
+  assert.match(classifyEngineCode(code, 6180, createT('en')), /address.*policy/i);
+  assert.equal(engineFailureKindFromCode(code), 'terminal');
+  assert.equal(resolveEngineFailureKind({ code, stopReason: 'startup_failed' }), 'terminal');
+});
+
 test('bind and authentication-method failures remain distinguishable', () => {
   assert.match(classifyEngineOutput('address already in use', 2080), /2080/);
   assert.match(classifyEngineOutput('Not implemented auth', 1080), /SSO\/MFA/);
