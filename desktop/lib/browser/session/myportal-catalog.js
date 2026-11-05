@@ -1,6 +1,101 @@
 'use strict';
 
 const MAX_RESPONSE_BYTES = 512 * 1024;
+const failure = code => sourceError(code, 'portal request could not complete');
+
+function isPortalSignInResponse(response, portalUrl) {
+  if (response.status < 200 || response.status >= 300 || !response.url) return false;
+  try {
+    const portal = new URL(portalUrl);
+    const final = new URL(response.url);
+    const knownOrigin = final.origin === portal.origin ||
+      (portal.origin === 'https://myportal.hkust-gz.edu.cn' &&
+        final.origin === 'https://sso.hkust-gz.edu.cn');
+    return knownOrigin && final.protocol === 'https:' && !final.username && !final.password &&
+      /^\/(?:account\/login|connect\/authorize)(?:\/|$)/iu.test(final.pathname);
+  } catch { return false; }
+}
+
+// Electron Session.fetch does not reliably populate Response.url/redirected.
+// A request-local redirect observer avoids replacing shared webRequest hooks.
+// Only the existing Session supplies cookies; no credential material is exposed.
+function portalSessionTransport(net, session, portalUrl) {
+  if (!net) return session; // Injected portable/offline fetch implementation.
+  if (typeof net.request !== 'function') throw new TypeError('portal request transport is unavailable');
+  return { fetch(url, options) {
+    return new Promise((resolve, reject) => {
+      let currentUrl = new URL(url);
+      const origin = new URL(portalUrl).origin;
+      if (currentUrl.origin !== origin || currentUrl.protocol !== 'https:' ||
+          currentUrl.username || currentUrl.password) {
+        reject(failure('PORTAL_RESPONSE_INVALID')); return;
+      }
+      let request, settled = false, redirects = 0, bytes = 0;
+      const chunks = [];
+      const settle = (error, value) => {
+        if (settled) return;
+        settled = true; options.signal?.removeEventListener('abort', abort);
+        chunks.length = 0;
+        if (error) reject(error); else resolve(value);
+      };
+      const stop = code => { if (!settled) { settle(failure(code)); request?.abort(); } };
+      const abort = () => stop('PORTAL_SOURCE_TIMEOUT');
+      if (options.signal?.aborted) { abort(); return; }
+      try {
+        request = net.request({ url: currentUrl.href, method: 'GET', session,
+          credentials: 'include', redirect: 'manual', cache: 'no-store' });
+        request.setHeader('Accept', options.headers?.Accept || '*/*');
+        options.signal?.addEventListener('abort', abort, { once: true });
+        request.on('error', () => stop('PORTAL_REQUEST_FAILED'));
+        // Writable close can precede IncomingMessage in Electron; the existing
+        // request deadline, not that event, owns incomplete-response termination.
+        request.on('login', (info, callback) => { callback(); stop(info.isProxy ? 'PORTAL_REQUEST_FAILED' : 'PORTAL_SESSION_EXPIRED'); });
+        request.on('redirect', (_status, _method, target) => {
+          if (settled) return;
+          if (isPortalSignInResponse({ status: 200, url: target }, portalUrl)) {
+            stop('PORTAL_SESSION_EXPIRED'); return;
+          }
+          try {
+            const next = new URL(target);
+            if (++redirects > 5 || next.origin !== origin || next.username || next.password) {
+              stop('PORTAL_RESPONSE_INVALID'); return;
+            }
+            currentUrl = next; request.followRedirect();
+          } catch { stop('PORTAL_RESPONSE_INVALID'); }
+        });
+        request.on('response', response => {
+          if (settled) return;
+          const status = response.statusCode;
+          const headers = new Headers();
+          for (const name of ['content-length', 'content-type']) {
+            const value = response.headers[name];
+            if (value) headers.set(name, Array.isArray(value) ? value[0] : value);
+          }
+          const result = text => ({ status, url: currentUrl.href, headers, text: async () => text });
+          response.on('error', () => stop('PORTAL_REQUEST_FAILED'));
+          response.on('aborted', () => stop('PORTAL_REQUEST_FAILED'));
+          if (status === 401 || status === 403) {
+            settle(null, result('')); request.abort(); return;
+          }
+          if (Number(headers.get('content-length')) > MAX_RESPONSE_BYTES) {
+            stop('PORTAL_RESPONSE_INVALID'); return;
+          }
+          response.on('data', chunk => {
+            if (settled) return;
+            bytes += chunk.length;
+            if (bytes > MAX_RESPONSE_BYTES) { stop('PORTAL_RESPONSE_INVALID'); return; }
+            chunks.push(Buffer.from(chunk));
+          });
+          response.on('end', () => {
+            if (!settled) settle(null, result(Buffer.concat(chunks).toString('utf8')));
+          });
+        });
+        request.end();
+      } catch { stop('PORTAL_REQUEST_FAILED'); }
+    });
+  } };
+}
+
 const MAX_GROUPS = 12;
 const MAX_ENTRIES = 64;
 const CATALOG_STATES = new Set([
@@ -78,6 +173,13 @@ async function readPortalResponseWithinDeadline(context, target, consumeResponse
       headers: { Accept: '*/*' }, signal: controller.signal,
     });
     if (controller.signal.aborted) throw timedOut();
+    // fetch follows redirects: a successful HTTP status may now describe the
+    // sign-in page, not the API. Never consume its authentication body, expose
+    // its query, or infer MFA from arbitrary HTML / an unrelated response URL.
+    if (isPortalSignInResponse(response, context.portalUrl)) {
+      controller.abort();
+      throw sourceError('PORTAL_SESSION_EXPIRED', 'portal sign-in is required');
+    }
     const result = await consumeResponse(response);
     if (controller.signal.aborted) throw timedOut();
     return result;
@@ -296,6 +398,7 @@ const hkustPortalCatalogSource = Object.freeze({
 });
 
 module.exports = {
+  portalSessionTransport,
   hkustPortalCatalogSource,
   normalizePortalCatalog,
   portalCatalogState,
