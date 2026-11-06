@@ -1,5 +1,5 @@
 import { weekRange } from './calendar-model.mjs';
-import { renderSchedule } from './calendar-view.mjs';
+import { renderSchedule, renderScheduleDetail } from './calendar-view.mjs';
 
 const MODULES = Object.freeze({
   schedule: { body: 'scheduleBody', sourceId: 'official-portal', sourceUrl: 'https://myportal.hkust-gz.edu.cn/' },
@@ -155,7 +155,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
       + actionHtml('source', 'news');
   }
 
-  function renderModule(moduleId, module) {
+  function renderModule(moduleId, module, preserveDetail = false) {
     if (disposed) return;
     const config = MODULES[moduleId];
     const body = $(config.body);
@@ -175,8 +175,17 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
     const restoreFocus = focus?.id === 'scheduleDate' ? '#scheduleDate'
       : focus?.dataset?.weekMove ? `[data-week-move="${focus.dataset.weekMove}"]`
         : focus?.hasAttribute?.('data-week-today') ? '[data-week-today]' : null;
-    body.innerHTML = moduleId === 'schedule' ? scheduleHtml(safe)
+    const html = moduleId === 'schedule' ? scheduleHtml(safe)
       : moduleId === 'loans' ? loansHtml(safe) : newsHtml(safe);
+    const detail = preserveDetail && !clearing && !revoked(snapshot) && safe.state === 'ready'
+      ? body.querySelector('#scheduleDetail') : null;
+    if (detail?.open) {
+      const template = doc.createElement('template');
+      template.innerHTML = html;
+      template.content.querySelector('#scheduleDetail').remove();
+      for (const child of [...body.childNodes]) if (child !== detail) child.remove();
+      body.append(template.content);
+    } else body.innerHTML = html;
     if (moduleId === 'schedule') {
       const grid = body.querySelector?.('.week-body');
       if (grid) {
@@ -363,14 +372,12 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
       const group = visibleEvents[Number(card.dataset.scheduleIndex)];
       const dialog = $('scheduleDetail');
       if (group && dialog) {
-        const date = value => new Intl.DateTimeFormat(locale(), { timeZone: 'Asia/Shanghai',
-          dateStyle: 'medium', timeStyle: 'short', hour12: false }).format(value);
         dialog.setAttribute('aria-labelledby', 'scheduleDetailTitle');
-        dialog.innerHTML = `<h3 id="scheduleDetailTitle">${escapeHtml(translate('workspace.scheduleDetails'))}</h3>`
-          + group.members.map(({ entry }) => `<article class="week-detail-item"><h4>${escapeHtml(entry.title)}</h4><p>${escapeHtml(date(entry.startsAt))} – ${escapeHtml(date(entry.endsAt))}</p>`
-            + (entry.location ? `<p>${escapeHtml(entry.location)}</p>` : '')
-            + (entry.url ? `<button type="button" data-entry-url="${escapeHtml(entry.url)}">${escapeHtml(translate('workspace.scheduleSource'))}</button>` : '') + '</article>').join('')
-          + `<button type="button" data-schedule-close>${escapeHtml(translate('workspace.scheduleClose'))}</button>`;
+        dialog.innerHTML = renderScheduleDetail(group, { locale, translate, escapeHtml });
+        const detailEpoch = displayEpoch;
+        dialog.onclose = () => {
+          if (!disposed && detailEpoch === displayEpoch && dialog.isConnected && !dialog.open && !card.isConnected) $('scheduleDate')?.focus();
+        };
         dialog.showModal();
       }
       return;
@@ -436,7 +443,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
         sizeObserver = new Observer(entries => {
           if (disposed) return;
           const width = entries[0]?.contentRect?.width;
-          if (width > 0 && (width < 620) !== miniature) renderModule('schedule', snapshot?.modules?.schedule);
+          if (width > 0 && (width < 620) !== miniature) renderModule('schedule', snapshot?.modules?.schedule, true);
         });
         sizeObserver.observe($('scheduleBody'));
       }

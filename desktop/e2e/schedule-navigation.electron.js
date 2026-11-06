@@ -12,6 +12,7 @@ app.setPath('userData', path.join(root, 'profile'));
 const renderer = process.env.HKUSTGZ_SCHEDULE_RENDERER
   ? path.resolve(process.env.HKUSTGZ_SCHEDULE_RENDERER) : path.join(__dirname, '..', 'renderer');
 const uri = name => pathToFileURL(path.join(renderer, name)).href;
+const fixtureLocale = process.env.HKUSTGZ_SCHEDULE_LOCALE === 'en' ? 'en' : 'zh';
 if (process.env.HKUSTGZ_CALENDAR_CSS_BASELINE) {
   fs.copyFileSync(path.resolve(process.env.HKUSTGZ_CALENDAR_CSS_BASELINE), path.join(root, 'baseline.css'));
 }
@@ -22,6 +23,174 @@ fs.writeFileSync(path.join(root, 'index.html'), `<!doctype html><html lang="zh-C
 <div class="module-head-actions"><span class="module-source">myPortal</span><button id="scheduleRefresh" class="module-refresh">刷新</button></div></div><div id="scheduleBody"></div></section></main>
 <div id="outside-schedule" class="week-summary">Sibling sentinel</div></body></html>`);
 fs.writeFileSync(path.join(root, 'fixture.css'), 'body { display:block; overflow:auto; padding:20px; } main { min-width:0; } .module { padding:16px; }');
+
+async function detailResizeRegression(window) {
+  async function resize(width) {
+    window.setSize(width, 540); window.webContents.setZoomFactor(1);
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const contentWidth = window.getContentSize()[0];
+      const settled = await window.webContents.executeJavaScript(`(() => {
+        const body = document.getElementById('scheduleBody');
+        return Math.abs(innerWidth - ${contentWidth}) < 2 &&
+          document.getElementById('moduleSchedule').dataset.weekSize === (body.clientWidth < 620 ? 'mini' : 'full');
+      })()`);
+      if (settled) return;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.fail('detail resize did not settle');
+  }
+  await window.webContents.executeJavaScript(`document.getElementById('scheduleDetail').close()`);
+  await resize(960);
+  const before = await window.webContents.executeJavaScript(`(() => {
+    const card = document.querySelectorAll('.week-event')[1];
+    card.focus(); card.click();
+    const dialog = document.getElementById('scheduleDetail');
+    window.fixtureResizeCard = card;
+    window.fixtureResizeDialog = dialog;
+    window.fixtureResizeFocus = document.activeElement;
+    return { text: dialog.textContent, label: dialog.getAttribute('aria-labelledby'), calls: fixtureCalls.length };
+  })()`);
+  await window.webContents.executeJavaScript(`(() => {
+    document.querySelector('[data-schedule-close]').click();
+  })()`);
+  await new Promise(resolve => setTimeout(resolve, 80));
+  assert.equal(await window.webContents.executeJavaScript(`document.activeElement === fixtureResizeCard`), true,
+    'closing without a redraw returns to the original card');
+  await window.webContents.executeJavaScript(`fixtureResizeCard.click(); window.fixtureResizeFocus = document.activeElement`);
+  for (const width of [1000, 440, 360, 960]) {
+    await resize(width);
+    const after = await window.webContents.executeJavaScript(`(() => {
+      const dialog = document.getElementById('scheduleDetail');
+      return { open: dialog.open, modal: dialog.matches(':modal'), same: dialog === fixtureResizeDialog,
+        text: dialog.textContent, label: dialog.getAttribute('aria-labelledby'),
+        focused: document.activeElement === fixtureResizeFocus, calls: fixtureCalls.length };
+    })()`);
+    assert.deepEqual(after, { open: true, modal: true, same: true, ...before, focused: true },
+      `open detail must survive the breakpoint at width ${width}`);
+    if (process.env.HKUSTGZ_SCHEDULE_SCREENSHOTS) fs.writeFileSync(path.join(
+      path.resolve(process.env.HKUSTGZ_SCHEDULE_SCREENSHOTS), `detail-open-${width}.png`),
+    (await window.webContents.capturePage()).toPNG());
+  }
+  window.focus(); window.webContents.focus();
+  window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' });
+  window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' });
+  await new Promise(resolve => setTimeout(resolve, 80));
+  const keyboard = await window.webContents.executeJavaScript(`({
+    inside: document.getElementById('scheduleDetail').contains(document.activeElement),
+    focused: document.hasFocus(), tag: document.activeElement.tagName,
+    modal: document.getElementById('scheduleDetail').matches(':modal'),
+  })`);
+  assert.equal(keyboard.inside, true, JSON.stringify(keyboard));
+  window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+  window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+  await new Promise(resolve => setTimeout(resolve, 80));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    open: document.getElementById('scheduleDetail').open, focused: document.activeElement.id,
+  })`), { open: false, focused: 'scheduleDate' });
+  await resize(440);
+  assert.equal(await window.webContents.executeJavaScript(`document.getElementById('scheduleDetail').open`), false,
+    'a closed detail must not reopen on resize');
+  await window.webContents.executeJavaScript(`document.querySelectorAll('.week-event')[1].click()`);
+  process.stdout.write('schedule open-detail breakpoint continuity: PASS\n');
+}
+
+async function regroupedDetailRegression(window) {
+  await window.webContents.executeJavaScript(`(async () => {
+    window.fixtureShortEvents = true; await fixtureFeature.refreshSchedule();
+  })()`);
+  async function resize(width, groups) {
+    window.setSize(width, 540); window.webContents.setZoomFactor(1);
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (await window.webContents.executeJavaScript(`document.querySelectorAll('.week-event').length === ${groups}`)) return;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.fail('short-event grouping did not settle');
+  }
+  for (const [from, to, index, titles] of [
+    [960, 440, 1, ['Short B']], [440, 960, 0, ['Short A', 'Short B']],
+  ]) {
+    await resize(from, from === 960 ? 2 : 1);
+    const before = await window.webContents.executeJavaScript(`(() => {
+      const card = document.querySelectorAll('.week-event')[${index}]; card.focus(); card.click();
+      const dialog = document.getElementById('scheduleDetail'); window.fixtureRegroupDialog = dialog;
+      const buttons = dialog.querySelectorAll('button'); buttons[buttons.length - 2].focus();
+      window.fixtureRegroupFocus = document.activeElement;
+      return fixtureCalls.length;
+    })()`);
+    await resize(to, to === 960 ? 2 : 1);
+    const result = await window.webContents.executeJavaScript(`(() => {
+      const dialog = document.getElementById('scheduleDetail');
+      return { same: dialog === fixtureRegroupDialog, modal: dialog.matches(':modal'),
+        titles: [...dialog.querySelectorAll('h4')].map(node => node.textContent),
+        focused: document.activeElement === fixtureRegroupFocus, calls: fixtureCalls.length };
+    })()`);
+    assert.deepEqual(result, { same: true, modal: true, titles, focused: true, calls: before },
+      'resizing must keep actual detail members rather than reuse the new visual group index');
+    await window.webContents.executeJavaScript(`document.querySelector('[data-schedule-close]').click()`);
+    await new Promise(resolve => setTimeout(resolve, 80));
+    assert.equal(await window.webContents.executeJavaScript('document.activeElement.id'), 'scheduleDate');
+  }
+  await window.webContents.executeJavaScript(`(async () => {
+    window.fixtureShortEvents = false; await fixtureFeature.refreshSchedule();
+  })()`);
+  process.stdout.write('schedule detail regrouping: PASS\n');
+}
+
+async function retiredDetailRegression(window) {
+  async function ready() {
+    await window.webContents.executeJavaScript(`(async () => {
+      window.fixtureExpired = false; window.fixtureDeniedState = null; window.fixtureHold = false;
+      fixtureFeature.clearDisplay(false);
+      const initial = fixtureFeature.load(); fixtureInitialResolve(); await initial;
+      await fixtureFeature.refreshSchedule();
+      const card = document.querySelectorAll('.week-event')[1]; card.focus(); card.click();
+      window.fixtureRetiredDialog = document.getElementById('scheduleDetail');
+    })()`);
+  }
+  async function resizeRetired() {
+    for (const width of [440, 960]) {
+      window.setSize(width, 540);
+      await new Promise(resolve => setTimeout(resolve, 120));
+      assert.deepEqual(await window.webContents.executeJavaScript(`({
+        connected: fixtureRetiredDialog.isConnected,
+        open: Boolean(document.getElementById('scheduleDetail')?.open),
+        details: document.querySelectorAll('.week-detail-item').length,
+        events: document.querySelectorAll('.week-event').length,
+      })`), { connected: false, open: false, details: 0, events: 0 },
+      'a retired detail must not be restored by a queued layout change');
+    }
+  }
+  const denials = ['session-expired', 'forbidden', 'not-authenticated'];
+  // #303 adds explicit null-source retirement; require it when checking that combined source.
+  if (process.env.HKUSTGZ_SCHEDULE_NULL_SOURCE === '1') denials.push('source-unavailable');
+  for (const state of denials) {
+    await ready();
+    await window.webContents.executeJavaScript(`(async () => {
+      window.fixtureDeniedState = ${JSON.stringify(state)}; await fixtureFeature.refreshSchedule();
+    })()`);
+    await resizeRetired();
+  }
+  for (const action of ['clear', 'dispose']) {
+    await ready();
+    await window.webContents.executeJavaScript(`(async () => {
+      window.fixtureHold = true; window.fixtureResolve = null;
+      window.fixtureLateWeek = fixtureFeature.refreshSchedule();
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if (typeof fixtureResolve !== 'function') throw new Error('held week did not start');
+      ${action === 'clear' ? 'fixtureFeature.clearDisplay(true)' : 'fixtureFeature.dispose()'};
+    })()`);
+    await resizeRetired();
+    const final = await window.webContents.executeJavaScript(`(async () => {
+      window.fixtureHold = false; fixtureResolve(); await fixtureLateWeek;
+      return { snapshot: fixtureFeature.snapshot(), scrubbed: fixtureRetiredDialog.innerHTML === '',
+        details: document.querySelectorAll('.week-detail-item').length,
+        events: document.querySelectorAll('.week-event').length };
+    })()`);
+    assert.deepEqual(final, { snapshot: null, scrubbed: true, details: 0, events: 0 });
+    await resizeRetired();
+  }
+  process.stdout.write('schedule detail retirement: PASS (denial, clear, dispose, late result)\n');
+}
 
 async function run() {
   await app.whenReady();
@@ -72,11 +241,10 @@ async function run() {
       const snapshot = items => ({ sessionState: 'authenticated', modules: {
         schedule: { state: items.length ? 'ready' : 'empty', source: 'myportal-calendar', fetchedAt: Date.now(), items }
       }});
-      const labels = { 'workspace.scheduleChooseWeek':'选择日期', 'workspace.schedulePrevious':'上一周',
-        'workspace.scheduleNext':'下一周', 'workspace.scheduleToday':'本周', 'workspace.scheduleClose':'关闭',
-        'workspace.scheduleTime':'时间', 'workspace.scheduleWeekTable':'周课表', 'workspace.scheduleRefresh':'刷新',
-        'workspace.scheduleSource':'打开 myPortal →', 'workspace.scheduleDetails':'安排详情',
-        'workspace.scheduleLoadingWeek':'正在同步所选周…', 'workspace.scheduleRefreshing':'刷新中…' };
+      const { createT } = await import(${JSON.stringify(uri('features/localization/index.mjs'))});
+      const translate = createT(${JSON.stringify(fixtureLocale)});
+      document.documentElement.lang = ${JSON.stringify(fixtureLocale)};
+      document.querySelector('#moduleSchedule h3').textContent = translate('workspace.schedule');
       const feature = campusData.create({ document,
         api: { getCampusData: async () => {
           await new Promise(resolve => { window.fixtureInitialResolve = resolve; });
@@ -85,8 +253,17 @@ async function run() {
           getCampusScheduleWeek: async query => {
             window.fixtureCalls.push(query);
             if(window.fixtureHold) await new Promise((resolve,reject)=>{window.fixtureResolve=resolve;window.fixtureReject=reject;});
-            if(window.fixtureExpired) return {sessionState:'authenticated',modules:{schedule:{state:'session-expired',source:'myportal-calendar',fetchedAt:Date.now(),items:[]}}};
+            const denial = window.fixtureExpired ? 'session-expired' : window.fixtureDeniedState;
+            if (denial) return { ...(denial === 'source-unavailable' ? { portalUrl: null } : {}),
+              sessionState: denial === 'not-authenticated' ? 'unauthenticated' : 'unknown',
+              modules: { schedule: { state: denial, source: 'myportal-calendar', fetchedAt: Date.now(), items: [] } } };
             const monday = campusData.weekRange(Date.parse(query.date+'T12:00:00+08:00'), true).start;
+            if (window.fixtureShortEvents) return snapshot([
+              { id:'short-a', title:'Short A', startsAt:monday+10*3600000, endsAt:monday+(10+5/60)*3600000,
+                url:'https://portal.example.test/#a' },
+              { id:'short-b', title:'Short B', startsAt:monday+(10+45/60)*3600000, endsAt:monday+(10+50/60)*3600000,
+                url:'https://portal.example.test/#b' },
+            ]);
             return snapshot([
               { id:'a', title:'Synthetic Research Group Meeting', startsAt:monday+15*3600000, endsAt:monday+16.5*3600000, location:'Room A' },
               { id:'b', title:'Project-driven Collaborative Design — Full Long Course Name', startsAt:monday+16.5*3600000, endsAt:monday+(18+20/60)*3600000, location:'Room B' },
@@ -95,9 +272,7 @@ async function run() {
               { id:'e', title:'Third concurrent course', startsAt:monday+16.5*3600000, endsAt:monday+(18+20/60)*3600000, location:'Room E' },
             ]);
           } },
-        translate: (key, values) => key === 'workspace.scheduleWeekRange' ? values.start+'–'+values.end
-          : key === 'workspace.scheduleGroupedCompact' ? values.count+'项'
-            : key === 'workspace.scheduleWeekCount' || key === 'workspace.scheduleGrouped' ? values.count+' 项安排' : (labels[key] || key),
+        translate,
         escapeHtml: text => String(text).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'),
         openDeepLink: () => {},
       });
@@ -213,6 +388,7 @@ async function run() {
     assert.ok(Math.abs(detailBounds.cx-detailBounds.vw/2)<2,'detail dialog must be horizontally centered');
     assert.ok(Math.abs(detailBounds.cy-detailBounds.vh/2)<2,'detail dialog must be vertically centered');
     assert.ok(detailBounds.left>=16 && detailBounds.right<=detailBounds.vw-16 && detailBounds.top>=16 && detailBounds.bottom<=detailBounds.vh-16,'detail dialog retains viewport margins');
+    await detailResizeRegression(window);
     for (const width of [360, 440, 960, 1440]) {
       await window.webContents.executeJavaScript(`document.querySelector('dialog').close()`);
       window.webContents.setZoomFactor(1); window.setSize(width,740);
@@ -232,6 +408,7 @@ async function run() {
     window.webContents.sendInputEvent({type:'keyUp',keyCode:'Escape'});
     await new Promise(r=>setTimeout(r,80));
     assert.equal(await window.webContents.executeJavaScript(`document.querySelector('dialog').open`),false);
+    await regroupedDetailRegression(window);
     await window.webContents.executeJavaScript(`document.querySelector('[data-week-today]').click()`); await settle();
     assert.equal(await window.webContents.executeJavaScript(`document.getElementById('scheduleDate').value`), new Date(Date.now()+28800000).toISOString().slice(0,10));
     await window.webContents.executeJavaScript(`window.fixtureHold=true;document.querySelector('[data-week-move="1"]').click()`);
@@ -277,6 +454,7 @@ async function run() {
     assert.deepEqual(cleared, {hadDetails:true,reported:true,scrubbed:true,detached:true,
       snapshotCleared:true,noEvents:true,pendingDisabled:true}, 'failed close still clears real DOM and fences the pending reply');
     process.stdout.write('schedule clear failure: PASS (real dialog scrubbed, pending result retired)\n');
+    await retiredDetailRegression(window);
     process.stdout.write('schedule navigation: PASS (date, adjacent weeks, today, refresh, detail, keyboard, minute geometry, overlap, narrow/wide/zoom, expiry recovery)\n');
   } finally { window.destroy(); }
 }

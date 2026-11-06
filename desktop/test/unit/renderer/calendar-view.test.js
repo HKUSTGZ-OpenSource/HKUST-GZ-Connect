@@ -1,7 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { renderSchedule } = require('../../../renderer/features/campus-data/calendar-view.mjs');
+const { renderSchedule, renderScheduleDetail } = require('../../../renderer/features/campus-data/calendar-view.mjs');
 const stamp = Date.parse('2027-01-13T15:00:00+08:00');
 const escapeHtml = value => String(value).replace(/[&<>"']/gu,
   char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -69,4 +69,21 @@ test('pending view keeps only bounded geometry and never reuses prior event grou
   let geometry;
   renderSchedule({state:'empty',items:[]},options({onLayout:value=>{geometry=value;}}));
   assert.deepEqual(Object.keys(geometry).sort(),['end','height','slotCount','start']);
+});
+
+test('detail markup preserves its members, campus time, labels and escaped actions', () => {
+  const group = { members: [{ entry: { title:'<unsafe title>', location:'<room>',
+    startsAt:stamp, endsAt:stamp+3600000, url:'https://portal.example.test/?q="value"' } }] };
+  const before = JSON.stringify(group);
+  for (const language of ['en', 'zh-CN']) {
+    const html = renderScheduleDetail(group, options({locale:()=>language}));
+    assert.equal((html.match(/class="week-detail-item"/gu)||[]).length,1);
+    assert.match(html,/id="scheduleDetailTitle"/u);
+    assert.match(html,/&lt;unsafe title&gt;|&lt;room&gt;/u);
+    assert.doesNotMatch(html,/<unsafe|<room>/u);
+    assert.match(html,/data-entry-url="https:\/\/portal\.example\.test\/\?q=&quot;value&quot;"/u);
+    assert.match(html,/15:00/);
+    assert.match(html,/data-schedule-close/u);
+  }
+  assert.equal(JSON.stringify(group),before);
 });

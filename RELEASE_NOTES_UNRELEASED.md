@@ -33,6 +33,11 @@
   calendar and news responses terminate instead of waiting indefinitely. This does not establish
   real-school availability or close the separate calendar reporter acceptance.
 
+## 未发布：课表详情缩放 / Unreleased: Timetable detail resizing
+
+- 调整窗口跨过课表布局断点时，保留正在阅读的详情及模态焦点，不再关闭弹层。关闭后，若原课表按钮已被重绘，焦点回到日期选择；数据更新和清理仍会退休旧详情。
+- Resizing across the timetable layout breakpoint preserves the open detail dialog and modal focus. Closing returns focus to the date selector when the original card has been replaced; data updates and clearing still retire old details.
+
 ## 浏览器关闭 / Browser disposal
 
 - 显式关闭失败或被网页阻止时保留 Browser 及原生窗口的管理引用，阻止新命令，并允许重试清理。
