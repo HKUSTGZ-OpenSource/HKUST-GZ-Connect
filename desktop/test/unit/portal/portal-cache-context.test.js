@@ -98,3 +98,43 @@ test('week requests waiting on a new full refresh still populate their own cache
   assert.equal(title(await f.runtime.scheduleWeek({date:'2027-02-01'})),title(value));
   assert.equal(f.calls.length,2);
 });
+
+test('removing and restoring a portal retires personal caches and rereads the restored source', async () => {
+  const f=fixture();
+  await f.runtime.snapshot(); await f.runtime.scheduleWeek({date:'2027-02-01'});
+  const reads=f.calls.length;
+  f.portal=null;
+  const unavailable=await f.runtime.snapshot();
+  assert.equal(unavailable.portalUrl,null);
+  assert.deepEqual(unavailable.modules.schedule.items,[]);
+  assert.equal(f.runtime.calendarCache.size,0);
+  await f.runtime.scheduleWeek({date:'2027-02-01'});
+  assert.equal(f.calls.length,reads);
+  f.portal='https://myportal.hkust-gz.edu.cn/';
+  assert.equal((await f.runtime.snapshot()).modules.schedule.state,'ready');
+  assert.equal(f.calls.length,reads+1);
+});
+
+test('late full and weekly reads cannot overwrite a replacement with no portal', async () => {
+  for(const weekly of [false,true]) {
+    const f=fixture(), pending=deferred(); f.waits.push(pending.promise);
+    const old=observe(weekly?f.runtime.scheduleWeek({date:'2027-02-01'}):f.runtime.snapshot());
+    f.portal=null;
+    const empty=await f.runtime.snapshot(); pending.resolve();
+    assert.equal((await old).error?.code,'PORTAL_CONTEXT_CHANGED');
+    assert.equal(empty.portalUrl,null);
+    assert.equal((await f.runtime.snapshot()).portalUrl,null);
+    assert.equal(f.calls.length,1);
+    assert.equal(f.runtime.calendarCache.size,0);
+  }
+});
+
+test('a pending unconfigured snapshot cannot publish after a portal is configured', async () => {
+  const f=fixture(); f.portal=null;
+  const empty=observe(f.runtime.snapshot());
+  f.portal='https://myportal.hkust-gz.edu.cn/';
+  const current=await f.runtime.snapshot();
+  assert.equal((await empty).error?.code,'PORTAL_CONTEXT_CHANGED');
+  assert.equal(current.modules.schedule.state,'ready');
+  assert.equal(title(await f.runtime.snapshot()),title(current));
+});

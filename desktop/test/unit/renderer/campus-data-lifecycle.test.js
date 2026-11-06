@@ -137,3 +137,30 @@ test('account display clearing retires every surface and pending result even whe
     assert.equal(await h.feature.ensureLoaded(),null);
   } finally {dialog.close=()=>{dialog.open=false;};h.feature.dispose();}
 });
+
+test('an unconfigured school shows inert empty cards and never retries on workspace re-entry', async()=>{
+  const h=harness();
+  const labels=[];
+  for(const id of ['scheduleBody','loansBody','newsBody']) {
+    const label={hidden:false}; labels.push(label);
+    h.nodes.get(id).shell.querySelector=()=>label;
+  }
+  const empty={portalUrl:null,sessionState:'unknown',catalog:{state:'source-unavailable',items:[]},
+    modules:Object.fromEntries(['schedule','loans','news'].map(id=>[id,{
+      state:'source-unavailable',source:'official-api-not-configured',items:[],
+    }]))};
+  try {
+    h.feature.start(); h.load.resolve(empty); await h.feature.load();
+    for(const lang of ['en','zh-CN']) {
+      h.doc.documentElement.lang=lang; h.doc.emit('app-locale-changed');
+      for(const id of ['scheduleBody','loansBody','newsBody']) {
+        assert.match(h.nodes.get(id).innerHTML,/workspace.portalNotConfigured/u);
+        assert.doesNotMatch(h.nodes.get(id).innerHTML,/data-campus-data-action|data-week-move|scheduleDate|portalFailed/u);
+      }
+      assert.equal(h.nodes.get('scheduleRefresh').hidden,true);
+      assert.ok(labels.every(label=>label.hidden));
+      await h.feature.ensureLoaded(); await h.feature.refreshSchedule();
+    }
+    assert.deepEqual(h.calls,['load']);
+  } finally {h.feature.dispose();}
+});

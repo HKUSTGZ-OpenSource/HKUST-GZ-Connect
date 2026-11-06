@@ -91,8 +91,18 @@ writeJson(path.join(userData, 'global', 'update-state.json'), { schemaVersion: 1
 const portalRuntime = require('../lib/browser/session/browser-session-manager');
 const OriginalPortalRuntime = portalRuntime.MyPortalDataRuntime;
 let portalDataSources;
+const portalReads = { session: 0, hint: 0, sources: 0 };
 portalRuntime.MyPortalDataRuntime = class FixturePortalRuntime extends OriginalPortalRuntime {
-  constructor(effects) { super(effects); portalDataSources = effects.getSources; }
+  constructor(effects) {
+    super({ ...effects,
+      electronSession: { fromPartition: (...args) => {
+        portalReads.session++; return effects.electronSession.fromPartition(...args);
+      } },
+      getSessionUrlHint: () => { portalReads.hint++; return effects.getSessionUrlHint(); },
+      getSources: () => { portalReads.sources++; return effects.getSources(); },
+    });
+    portalDataSources = effects.getSources;
+  }
 };
 require('../main');
 portalRuntime.MyPortalDataRuntime = OriginalPortalRuntime;
@@ -117,6 +127,20 @@ async function run() {
   assert.deepEqual(emptyPortalSources, {});
   assert.notEqual(portalDataSources(), emptyPortalSources,
     'actual Main custom Profile keeps fresh unsupported source maps without reading HKUST data');
+  for (const expression of [
+    'window.api.getCampusData()', 'window.api.refreshCampusData()',
+    'window.api.refreshCampusSchedule()', "window.api.getCampusScheduleWeek({ date: '2027-01-11' })",
+  ]) {
+    const data = await control.webContents.executeJavaScript(expression);
+    assert.equal(data.portalUrl, null);
+    assert.equal(data.sessionState, 'unknown');
+    for (const module of Object.values(data.modules)) {
+      assert.equal(module.state, 'source-unavailable');
+      assert.deepEqual(module.items, []);
+    }
+    assert.deepEqual(data.catalog.items, []);
+  }
+  assert.deepEqual(portalReads, { session: 0, hint: 0, sources: 0 });
   assert.equal(state.schoolProfile.profileId, custom.profileId);
   assert.equal(state.schoolProfile.unverified, true);
   assert.equal(state.schoolProfile.normalizedGatewayOrigin, 'https://vpn.example.edu');

@@ -344,3 +344,46 @@ test('reviewed HKUST sources map bounded JSONP data without copying the page non
   )), true);
   assert.doesNotMatch(JSON.stringify(snapshot), /private-session-nonce/u);
 });
+
+test('an explicitly unconfigured portal returns empty data through every read entry without IO', async () => {
+  const f = runtime();
+  let hints = 0, sources = 0;
+  f.subject.getPortalUrl = () => null;
+  f.subject.getSessionUrlHint = () => { hints++; return null; };
+  f.subject.getSources = () => { sources++; return {}; };
+  for (const read of [
+    () => f.subject.snapshot(), () => f.subject.snapshot({ force: true }),
+    () => f.subject.refreshSchedule(), () => f.subject.scheduleWeek({ date: '2027-01-11' }),
+  ]) {
+    const result = await read();
+    assert.equal(result.schemaVersion, 1);
+    assert.equal(result.portalUrl, null);
+    assert.equal(result.sessionState, 'unknown');
+    assert.equal(result.catalog.state, 'source-unavailable');
+    assert.equal(result.catalog.source, 'official-api-not-configured');
+    assert.deepEqual(result.catalog.items, []);
+    for (const module of Object.values(result.modules)) {
+      assert.equal(module.state, 'source-unavailable');
+      assert.equal(module.source, 'official-api-not-configured');
+      assert.equal(module.stale, false);
+      assert.deepEqual(module.items, []);
+    }
+  }
+  assert.deepEqual(f.calls, []);
+  assert.equal(hints, 0);
+  assert.equal(sources, 0);
+});
+
+test('unconfigured portal support does not relax URL, partition or week validation', async () => {
+  const f = runtime();
+  for (const invalid of [undefined, '', 'not a URL', 'http://portal.example.test/', 'https://user:pass@portal.example.test/']) {
+    f.subject.getPortalUrl = () => invalid;
+    await assert.rejects(f.subject.snapshot(), TypeError);
+  }
+  f.subject.getPortalUrl = () => null;
+  f.subject.getPartition = () => 'not-a-persistent-partition';
+  await assert.rejects(f.subject.snapshot(), /partition/u);
+  f.subject.getPartition = () => 'persist:fixture';
+  await assert.rejects(f.subject.scheduleWeek({ date: 'not-a-date' }), TypeError);
+  assert.deepEqual(f.calls, []);
+});
