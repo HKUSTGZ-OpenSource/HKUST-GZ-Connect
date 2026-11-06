@@ -27,25 +27,31 @@ async function controlWindow() {
   )), 'School onboarding control window did not start');
 }
 
+let statusRedrawId = 0;
 async function redrawStatus(control, confirming, fullRefresh = false) {
   const before = await control.webContents.executeJavaScript(`(() => {
     const input = document.getElementById('${confirming ? 'confirmCustomGateway' : 'customGatewayOrigin'}');
     input.focus();
-    document.documentElement.dataset.onboardingRedrawn = '';
-    document.addEventListener('${fullRefresh ? 'app-state-refreshed' : 'app-locale-changed'}', () => {
-      document.documentElement.dataset.onboardingRedrawn = 'yes';
-    }, { once: true });
+    if (${fullRefresh}) {
+      document.documentElement.dataset.onboardingRedrawn = '';
+      document.addEventListener('app-state-refreshed', () => {
+        document.documentElement.dataset.onboardingRedrawn = 'yes';
+      }, { once: true });
+    }
     return document.documentElement.lang;
   })()`);
+  let delivered = `document.documentElement.dataset.onboardingRedrawn === 'yes'`;
   if (fullRefresh) {
     await control.webContents.executeJavaScript(`document.dispatchEvent(new Event('visibilitychange'))`);
   } else {
     const snapshot = await control.webContents.executeJavaScript('window.api.getState()');
-    control.webContents.send('status', snapshot);
+    const notice = `onboarding-status-${++statusRedrawId}`;
+    control.webContents.send('status', { ...snapshot, notice });
+    // Status processing must not depend on an unchanged locale being broadcast again.
+    delivered = `document.getElementById('settingsNotice').textContent === ${JSON.stringify(notice)}`;
   }
-  await waitFor(() => control.webContents.executeJavaScript(
-    `document.documentElement.dataset.onboardingRedrawn === 'yes'`,
-  ), 'Main state did not reach the Renderer redraw event');
+  await waitFor(() => control.webContents.executeJavaScript(delivered),
+    'Main state did not reach the Renderer');
   const after = await control.webContents.executeJavaScript(`(() => ({
     locale: document.documentElement.lang,
     selected: document.getElementById('schoolProfileSelect').value,
