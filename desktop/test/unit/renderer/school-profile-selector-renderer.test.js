@@ -162,6 +162,7 @@ test('locale redraw preserves Other school draft and its credential gate', async
   const callsBefore = f.calls.length;
   for (const locale of ['zh-CN', 'zh-CN', 'en']) {
     f.feature.setTranslator((key) => `${locale}:${key}`);
+    f.feature.setActiveProfile(view('hkustgz', { active: true }));
     assert.equal(select.value, OTHER_PROFILE);
     assert.equal(select.children.at(-1).textContent, `${locale}:school.other`);
     assert.equal(f.elements.get('customSchoolPanel').hidden, false);
@@ -183,6 +184,7 @@ test('locale redraw preserves confirmation, back and original expiry', async () 
   for (const finish of ['back', 'expire']) {
     await f.feature.probe();
     f.feature.setTranslator((key, vars = {}) => `${key}:${vars.origin || ''}`);
+    f.feature.setActiveProfile(view('hkustgz', { active: true }));
     assert.equal(select.value, OTHER_PROFILE);
     assert.equal(f.elements.get('customSchoolPanel').hidden, true);
     assert.equal(f.elements.get('customGatewayConfirmation').hidden, false);
@@ -198,6 +200,17 @@ test('locale redraw preserves confirmation, back and original expiry', async () 
     assert.equal(f.elements.get('lgBtn').disabled, true);
   }
   assert.match(f.elements.get('schoolProfileError').textContent, /PROFILE_CONFIRMATION_STALE/u);
+});
+
+test('a different active school still replaces the Other school selection', async () => {
+  const f = fixture();
+  await f.feature.refresh();
+  f.elements.get('schoolProfileSelect').value = OTHER_PROFILE;
+  const nextId = `custom-${'a'.repeat(32)}`;
+  assert.equal(f.feature.setActiveProfile(view(nextId, { active: true, custom: true })), true);
+  assert.equal(f.elements.get('schoolProfileSelect').value, nextId);
+  assert.equal(f.elements.get('customSchoolPanel').hidden, true);
+  assert.equal(f.feature.credentialProfileId(), nextId);
 });
 
 test('Other Gateway requires probe then explicit confirmation before creation and switch', async () => {
