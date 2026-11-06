@@ -27,8 +27,8 @@
 
 ## 未发布：门户按钮 / Unreleased: Portal button
 
-- 修复设置中的“打开校园门户”按钮把点击事件当作网址而无法打开的问题；恢复使用当前学校的默认门户，现有资源和网址校验保持不变。
-- Fix the Settings portal button passing its click event as a URL. It now requests the current school's default portal while preserving resource routing and URL validation.
+- 修复控制塔快速工具中的“打开应用内校园浏览器”按钮把点击事件当作网址而无法打开的问题；恢复默认浏览器入口，现有学校、资源和网址校验保持不变。
+- Fix the Control Tower browser button passing its click event as a URL. It now requests the default browser entry while preserving school-specific fallback, resource routing and URL validation.
 
 ## 门户读取 / Portal reads
 
