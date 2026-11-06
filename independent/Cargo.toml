@@ -96,6 +96,10 @@ xz2 = { version = "0.1", features = ["static"], optional = true }
 zeroize = "1"
 zstd = { version = "0.14", optional = true }
 
+[dev-dependencies]
+# Ephemeral loopback HTTPS certificates; never linked into shipped binaries.
+rcgen = { version = "=0.14.10", default-features = false, features = ["crypto", "ring"] }
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

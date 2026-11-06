@@ -28,9 +28,11 @@
 ## 多设备支持说明 / Multi-device support clarification
 
 - 补充双机连接的账号并发、地址分配和安全验收说明，修正旧“多客户端已禁用”记录的
-  证据范围；新增客户端生命周期与会话材料隔离回归。不代表学校网关已允许或已验证双机并发。
+  证据范围；新增客户端生命周期、会话材料及本地 HTTPS Cookie/注销隔离回归。
+  不代表学校网关已允许或已验证双机并发。
 - Document gateway-policy prerequisites and safe two-device acceptance; qualify the historical
-  multi-client metadata and add client ownership/session-material regressions. This does not add
+  multi-client metadata and add client ownership/session-material and loopback HTTPS cookie/logout
+  isolation regressions. This does not add
   or claim campus-validated concurrent VPN access.
 
 ## 门户读取 / Portal reads

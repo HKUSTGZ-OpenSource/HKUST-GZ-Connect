@@ -2,7 +2,7 @@
 
 Status: Current support boundary; campus concurrency unverified
 Owner: Project maintainers
-Last verified: 2026-11-05
+Last verified: 2026-11-06
 Applies to: v2.0.6 / main `541091d7422132a98e0eca534f58e80c4f0fe931`; issue #287
 
 ## 能否同时连接两台 Mac？
@@ -26,7 +26,9 @@ Applies to: v2.0.6 / main `541091d7422132a98e0eca534f58e80c4f0fe931`; issue #287
   会话材料。生产密码表单中未发现主动替换其他设备的参数。
 - 客户端注销通过本次登录的会话发送；服务端是否把注销扩展到同账号其他会话仍需验证。
 - 两个独立进程管理实例的启停、重连定时器和会话材料可用离线测试验证。
-  这不等于验证了真实 Cookie 传输、服务端并发登录、地址分配或校园资源双机可达。
+  新增 loopback HTTPS 测试使用同一 origin 的两个生产 HTTPS 会话，验证 Cookie 传输、
+  注销及取消/失败登录清理保持各自归属；证书和密钥临时生成，仅保存在内存中。
+  这些合成服务测试不等于验证了校园网关的注销范围、并发登录、地址分配或双机资源可达。
 - 尚无经验证的服务端“被其他设备替换”原因码。普通超时、断网和通道关闭不能被擅自
   显示成“另一个设备已登录”。若获得稳定、脱敏的原因码，才可增加专用提示和停止抢占式重试。
 - myPortal 登录过期属于浏览器 SSO 会话，与 VPN 并发策略不同。课表恢复不能证明
@@ -54,8 +56,9 @@ sessions. Vendor public/private account terminology documents a capability, not
 this campus's policy. There is no client-side policy bypass or token-sharing mode.
 
 The client creates per-login HTTPS sessions and derives channel material from
-server-issued session inputs. Offline owner/token tests do not prove server-side
-logout scope or two-device resource access. Generic transport failures must not be
+server-issued session inputs. Loopback HTTPS regressions also verify per-session cookies and logout/cancellation/failed-login
+cleanup using production HTTP/auth owners and an ephemeral pinned certificate. These synthetic
+tests do not prove campus server-side logout scope or two-device resource access. Generic transport failures must not be
 relabeled as session replacement without a verified gateway reason code.
 
 Request versions and sanitized event timing first, then administrator policy
