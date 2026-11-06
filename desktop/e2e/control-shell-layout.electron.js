@@ -764,6 +764,13 @@ async function main() {
       await capture(window, output, `${label}-settings`);
       await exerciseNewTabSettings(window);
       await exerciseBrowserDataSettings(window);
+      const portalRequest = await window.webContents.executeJavaScript(`(async () => {
+        document.getElementById('openBrowser').click();
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        return window.api.testState().lastOpenRequest;
+      })()`);
+      assert.deepEqual(portalRequest, { url: '' },
+        `${label}: Settings must open the default portal without serializing the click event`);
       await capture(window, output, `${label}-browser-data`);
     }
 
