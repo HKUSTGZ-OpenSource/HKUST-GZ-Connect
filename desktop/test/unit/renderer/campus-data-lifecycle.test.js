@@ -26,12 +26,13 @@ function harness(){
   win.ResizeObserver=class {constructor(callback){this.callback=callback;this.disconnections=0;observers.push(this);}observe(){}disconnect(){this.disconnections++;}};
   doc.documentElement={lang:'en'};doc.defaultView=win;doc.getElementById=id=>nodes.get(id)||null;
   const load=deferred(),week=deferred();
-  const feature=create({document:doc,api:{
+  const api={
     getCampusData:()=>{calls.push('load');return load.promise;},refreshCampusData:()=>{calls.push('full');return load.promise;},
     refreshCampusSchedule:()=>{calls.push('refresh');return week.promise;},getCampusScheduleWeek:()=>{calls.push('week');return week.promise;},
-  },translate:key=>key,escapeHtml:String,openDeepLink:()=>calls.push('open'),onCatalog:item=>{published.push(item);hooks.onCatalog?.();}});
+  };
+  const feature=create({document:doc,api,translate:key=>key,escapeHtml:String,openDeepLink:()=>calls.push('open'),onCatalog:item=>{published.push(item);hooks.onCatalog?.();}});
   const targets=[doc,win,...nodes.values(),...['scheduleBody','loansBody','newsBody'].map(id=>nodes.get(id).shell)];
-  return {feature,load,week,nodes,doc,win,observers,published,calls,hooks,listenerCount:()=>targets.reduce((n,t)=>n+t.count(),0)};
+  return {feature,api,load,week,nodes,doc,win,observers,published,calls,hooks,listenerCount:()=>targets.reduce((n,t)=>n+t.count(),0)};
 }
 
 test('campus-data start is idempotent and disposal removes only owned listeners',()=>{
@@ -161,6 +162,18 @@ test('an unconfigured school shows inert empty cards and never retries on worksp
       assert.ok(labels.every(label=>label.hidden));
       await h.feature.ensureLoaded(); await h.feature.refreshSchedule();
     }
+    h.nodes.get('scheduleBody').shell.emit('click',{target:{closest:selector=>
+      selector==='[data-campus-data-action]'?{dataset:{campusDataAction:'login'}}:null}});
     assert.deepEqual(h.calls,['load']);
+    // The same module states must redraw when the portal becomes available again.
+    h.api.refreshCampusData=async()=>({...empty,portalUrl:'https://portal.example.test/',sessionState:'authenticated'});
+    await h.feature.load(true);
+    assert.match(h.nodes.get('scheduleBody').innerHTML,/data-week-move/u);
+    assert.equal(h.nodes.get('scheduleRefresh').hidden,false);
+    assert.ok(labels.every(label=>!label.hidden));
+    h.api.refreshCampusData=async()=>empty;
+    await h.feature.load(true);
+    assert.doesNotMatch(h.nodes.get('scheduleBody').innerHTML,/data-week-move/u);
+    assert.ok(labels.every(label=>label.hidden));
   } finally {h.feature.dispose();}
 });

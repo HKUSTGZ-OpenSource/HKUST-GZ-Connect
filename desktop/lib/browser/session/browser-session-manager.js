@@ -959,7 +959,8 @@ function campusDataSnapshot(sessionState, checkedAt, portalUrl, modules, catalog
   return Object.freeze({
     schemaVersion: 1,
     checkedAt: campusDataTimestamp(checkedAt, 'checkedAt'),
-    portalUrl: campusDataUrl(portalUrl, 'portalUrl'),
+    // Only explicit null represents a Profile with no configured portal.
+    portalUrl: portalUrl === null ? null : campusDataUrl(portalUrl, 'portalUrl'),
     sessionState,
     catalog: normalizePortalCatalog(catalog),
     modules: Object.freeze(Object.fromEntries(CAMPUS_DATA_MODULES.map((moduleId) => [
@@ -1266,8 +1267,13 @@ class MyPortalDataRuntime {
     this.contextKey = null;
   }
 
+  portalRoot() {
+    const value = this.getPortalUrl();
+    return value === null ? null : myPortalRoot(value);
+  }
+
   captureContext() {
-    const portalUrl = myPortalRoot(this.getPortalUrl());
+    const portalUrl = this.portalRoot();
     const partition = this.getPartition();
     if (typeof partition !== 'string' || partition.length > 96 || !/^persist:[a-z0-9-]+$/u.test(partition)) {
       throw new TypeError('portal browser partition is invalid');
@@ -1281,7 +1287,7 @@ class MyPortalDataRuntime {
     let current = false;
     try {
       current = context.epoch === this.calendarEpoch && context.partition === this.getPartition() &&
-        context.portalUrl === myPortalRoot(this.getPortalUrl());
+        context.portalUrl === this.portalRoot();
     } catch {}
     if (!current) throw Object.assign(new Error('portal data context changed'), { code: 'PORTAL_CONTEXT_CHANGED' });
   }
@@ -1322,6 +1328,11 @@ class MyPortalDataRuntime {
     const checkedAt = this.now();
     const requestContext = this.captureContext();
     const { portalUrl, partition } = requestContext;
+    if (portalUrl === null) {
+      return campusDataSnapshot('unknown', checkedAt, null,
+        campusDataStateModules('source-unavailable', 'official-api-not-configured', checkedAt),
+        portalCatalogState('source-unavailable', checkedAt, 'official-api-not-configured'));
+    }
     const cachedBase = this.cached;
     const targetSession = this.electronSession.fromPartition(partition);
     const controller = new AbortController();

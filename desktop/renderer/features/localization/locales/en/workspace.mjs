@@ -59,6 +59,8 @@ export default [
   ["workspace.portalForbiddenHint","Open the official page to verify account permissions."],
   ["workspace.portalExpired","School sign-in expired"],
   ["workspace.portalExpiredHint","Sign in again, then refresh this module."],
+  ["workspace.portalNotConfigured","No data source configured"],
+  ["workspace.portalNotConfiguredHint","This module does not yet provide data for the current school."],
   ["workspace.portalSourcePending","School data API pending verification"],
   ["workspace.portalSourcePendingHint","Only reliable official links are shown; pages are not scraped and data is never invented."],
   ["workspace.portalSessionUnavailable","Could not check school sign-in"],

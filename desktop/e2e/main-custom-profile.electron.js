@@ -88,9 +88,17 @@ writeJson(path.join(userData, 'global', 'settings.json'), {
 });
 writeJson(path.join(userData, 'global', 'update-state.json'), { schemaVersion: 1, checkedAt: 0 });
 
+process.env.HKUSTGZ_SYNTHETIC_NETWORK_E2E = '1';
+const updates = require('../lib/platform/update/update-check');
+const OriginalUpdater = updates.UpdateNotificationRuntime;
+updates.UpdateNotificationRuntime = class extends OriginalUpdater {
+  constructor(effects) { super({ ...effects, check: async () => null }); }
+};
+
 const portalRuntime = require('../lib/browser/session/browser-session-manager');
 const OriginalPortalRuntime = portalRuntime.MyPortalDataRuntime;
 let portalDataSources;
+let dataSnapshots = 0;
 const portalReads = { session: 0, hint: 0, sources: 0 };
 portalRuntime.MyPortalDataRuntime = class FixturePortalRuntime extends OriginalPortalRuntime {
   constructor(effects) {
@@ -103,18 +111,74 @@ portalRuntime.MyPortalDataRuntime = class FixturePortalRuntime extends OriginalP
     });
     portalDataSources = effects.getSources;
   }
+  snapshot(options) { dataSnapshots++; return super.snapshot(options); }
 };
 require('../main');
 portalRuntime.MyPortalDataRuntime = OriginalPortalRuntime;
+updates.UpdateNotificationRuntime = OriginalUpdater;
 
 async function waitFor(predicate, message) {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
-    const value = predicate();
+    const value = await predicate();
     if (value) return value;
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error(message);
+}
+
+async function verifyUnconfiguredCards(control) {
+  control.webContents.send('open-settings');
+  await waitFor(() => control.webContents.executeJavaScript("!document.getElementById('dash').hidden"),
+    'Control window did not show its workspace navigation');
+  for (const [language, title] of [['en', 'No data source configured'], ['zh', '尚未配置数据来源']]) {
+    await control.webContents.executeJavaScript(`window.api.save({ language: '${language}' })`);
+    await control.webContents.executeJavaScript(`document.querySelector('.nav[data-page="browser"]').click()`);
+    await waitFor(() => control.webContents.executeJavaScript(`
+      [...document.querySelectorAll('.data-grid .module-note')].length === 3 &&
+      [...document.querySelectorAll('.data-grid .module-note')].every(node => node.textContent === ${JSON.stringify(title)})
+    `), 'Custom school did not render the translated unconfigured state');
+    const reads = dataSnapshots;
+    for (const [width, height] of [[440, 560], [1024, 768], [1440, 900]]) {
+      control.setContentSize(width, height);
+      for (const tab of ['Official', 'Personal']) {
+        const display = await control.webContents.executeJavaScript(`(async () => {
+          document.getElementById('serviceTab${tab}').click();
+          document.getElementById('moduleSchedule').scrollIntoView({ block: 'start' });
+          await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          const grid = document.querySelector('.data-grid');
+          return {
+            controls: grid.querySelectorAll('button:not([hidden]), input, [data-entry-url]').length,
+            badgesHidden: [...grid.querySelectorAll('.module-source')].every(node => node.hidden && getComputedStyle(node).display === 'none'),
+            refreshHidden: getComputedStyle(document.getElementById('scheduleRefresh')).display === 'none',
+            refreshDisabled: document.getElementById('scheduleRefresh').disabled,
+            overflow: Math.max(document.documentElement.scrollWidth - innerWidth, grid.scrollWidth - grid.clientWidth),
+            titles: [...grid.querySelectorAll('.module-note')].map(node => node.textContent),
+          };
+        })()`);
+        assert.equal(display.controls, 0);
+        assert.equal(display.badgesHidden, true);
+        assert.equal(display.refreshHidden, true);
+        assert.equal(display.refreshDisabled, true);
+        assert.ok(display.overflow <= 1);
+        assert.deepEqual(display.titles, [title, title, title]);
+        const output = process.env.HKUSTGZ_CUSTOM_PROFILE_SCREENSHOT_DIR;
+        if (output) {
+          fs.mkdirSync(output, { recursive: true });
+          fs.writeFileSync(path.join(output, `${language}-${tab}-${width}.png`),
+            (await control.webContents.capturePage()).toPNG());
+        }
+      }
+    }
+    await control.webContents.executeJavaScript(`(async () => {
+      document.querySelector('.nav[data-page="settings"]').click();
+      document.querySelector('.nav[data-page="browser"]').click();
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    })()`);
+    assert.equal(dataSnapshots, reads, 'Unconfigured cards must not reload on workspace re-entry');
+  }
+  assert.deepEqual(portalReads, { session: 0, hint: 0, sources: 0 });
+  process.stdout.write('custom Profile unconfigured campus-data cards: PASS\n');
 }
 
 async function run() {
@@ -138,7 +202,9 @@ async function run() {
       assert.equal(module.state, 'source-unavailable');
       assert.deepEqual(module.items, []);
     }
-    assert.deepEqual(data.catalog.items, []);
+    for (const key of ['applications', 'applicationGroups', 'serviceItems', 'serviceGroups']) {
+      assert.deepEqual(data.catalog[key], []);
+    }
   }
   assert.deepEqual(portalReads, { session: 0, hint: 0, sources: 0 });
   assert.equal(state.schoolProfile.profileId, custom.profileId);
@@ -155,6 +221,7 @@ async function run() {
   assert.equal(profiles.profiles[0].profileId, custom.profileId);
   assert.equal(profiles.profiles[0].active, true);
   assert.equal(Object.hasOwn(profiles.profiles[0], 'accountKey'), false);
+  await verifyUnconfiguredCards(control);
 
   const saved = await control.webContents.executeJavaScript(`window.api.save({
     expectedProfileId: ${JSON.stringify(custom.profileId)},

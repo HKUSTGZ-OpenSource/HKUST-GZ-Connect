@@ -361,7 +361,9 @@ test('an explicitly unconfigured portal returns empty data through every read en
     assert.equal(result.sessionState, 'unknown');
     assert.equal(result.catalog.state, 'source-unavailable');
     assert.equal(result.catalog.source, 'official-api-not-configured');
-    assert.deepEqual(result.catalog.items, []);
+    for (const key of ['applications', 'applicationGroups', 'serviceItems', 'serviceGroups']) {
+      assert.deepEqual(result.catalog[key], []);
+    }
     for (const module of Object.values(result.modules)) {
       assert.equal(module.state, 'source-unavailable');
       assert.equal(module.source, 'official-api-not-configured');

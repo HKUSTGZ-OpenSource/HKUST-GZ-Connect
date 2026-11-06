@@ -144,7 +144,8 @@ test('a full-load denial still replaces visible personal data after advancing it
 
 test('source removal revokes prior calendar data, timers and late week publication', async()=>{
   const savedSet=globalThis.setTimeout,savedClear=globalThis.clearTimeout,timers=new Set();
-  globalThis.setTimeout=()=>{const timer={unref(){}};timers.add(timer);return timer;};
+  let queued;
+  globalThis.setTimeout=callback=>{queued=callback;const timer={unref(){}};timers.add(timer);return timer;};
   globalThis.clearTimeout=timer=>timers.delete(timer);
   const h=harness();
   try {
@@ -161,6 +162,7 @@ test('source removal revokes prior calendar data, timers and late week publicati
     assert.doesNotMatch(h.body.innerHTML,/Fixture|data-week-move/u);
     assert.equal(h.button.hidden,true);
     const count=h.calls(); await h.feature.ensureLoaded(); await h.feature.refreshSchedule();
+    queued(); await Promise.resolve();
     assert.equal(h.calls(),count);
   } finally {h.feature.dispose();globalThis.setTimeout=savedSet;globalThis.clearTimeout=savedClear;}
 });
