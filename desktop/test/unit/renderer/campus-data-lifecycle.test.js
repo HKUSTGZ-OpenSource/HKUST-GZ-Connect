@@ -26,12 +26,13 @@ function harness(){
   win.ResizeObserver=class {constructor(callback){this.callback=callback;this.disconnections=0;observers.push(this);}observe(){}disconnect(){this.disconnections++;}};
   doc.documentElement={lang:'en'};doc.defaultView=win;doc.getElementById=id=>nodes.get(id)||null;
   const load=deferred(),week=deferred();
-  const feature=create({document:doc,api:{
+  const api={
     getCampusData:()=>{calls.push('load');return load.promise;},refreshCampusData:()=>{calls.push('full');return load.promise;},
     refreshCampusSchedule:()=>{calls.push('refresh');return week.promise;},getCampusScheduleWeek:()=>{calls.push('week');return week.promise;},
-  },translate:key=>key,escapeHtml:String,openDeepLink:()=>calls.push('open'),onCatalog:item=>{published.push(item);hooks.onCatalog?.();}});
+  };
+  const feature=create({document:doc,api,translate:key=>key,escapeHtml:String,openDeepLink:()=>calls.push('open'),onCatalog:item=>{published.push(item);hooks.onCatalog?.();}});
   const targets=[doc,win,...nodes.values(),...['scheduleBody','loansBody','newsBody'].map(id=>nodes.get(id).shell)];
-  return {feature,load,week,nodes,doc,win,observers,published,calls,hooks,listenerCount:()=>targets.reduce((n,t)=>n+t.count(),0)};
+  return {feature,api,load,week,nodes,doc,win,observers,published,calls,hooks,listenerCount:()=>targets.reduce((n,t)=>n+t.count(),0)};
 }
 
 test('campus-data start is idempotent and disposal removes only owned listeners',()=>{
@@ -136,4 +137,43 @@ test('account display clearing retires every surface and pending result even whe
     assert.equal(h.feature.snapshot(),null);
     assert.equal(await h.feature.ensureLoaded(),null);
   } finally {dialog.close=()=>{dialog.open=false;};h.feature.dispose();}
+});
+
+test('an unconfigured school shows inert empty cards and never retries on workspace re-entry', async()=>{
+  const h=harness();
+  const labels=[];
+  for(const id of ['scheduleBody','loansBody','newsBody']) {
+    const label={hidden:false}; labels.push(label);
+    h.nodes.get(id).shell.querySelector=()=>label;
+  }
+  const empty={portalUrl:null,sessionState:'unknown',catalog:{state:'source-unavailable',items:[]},
+    modules:Object.fromEntries(['schedule','loans','news'].map(id=>[id,{
+      state:'source-unavailable',source:'official-api-not-configured',items:[],
+    }]))};
+  try {
+    h.feature.start(); h.load.resolve(empty); await h.feature.load();
+    for(const lang of ['en','zh-CN']) {
+      h.doc.documentElement.lang=lang; h.doc.emit('app-locale-changed');
+      for(const id of ['scheduleBody','loansBody','newsBody']) {
+        assert.match(h.nodes.get(id).innerHTML,/workspace.portalNotConfigured/u);
+        assert.doesNotMatch(h.nodes.get(id).innerHTML,/data-campus-data-action|data-week-move|scheduleDate|portalFailed/u);
+      }
+      assert.equal(h.nodes.get('scheduleRefresh').hidden,true);
+      assert.ok(labels.every(label=>label.hidden));
+      await h.feature.ensureLoaded(); await h.feature.refreshSchedule();
+    }
+    h.nodes.get('scheduleBody').shell.emit('click',{target:{closest:selector=>
+      selector==='[data-campus-data-action]'?{dataset:{campusDataAction:'login'}}:null}});
+    assert.deepEqual(h.calls,['load']);
+    // The same module states must redraw when the portal becomes available again.
+    h.api.refreshCampusData=async()=>({...empty,portalUrl:'https://portal.example.test/',sessionState:'authenticated'});
+    await h.feature.load(true);
+    assert.match(h.nodes.get('scheduleBody').innerHTML,/data-week-move/u);
+    assert.equal(h.nodes.get('scheduleRefresh').hidden,false);
+    assert.ok(labels.every(label=>!label.hidden));
+    h.api.refreshCampusData=async()=>empty;
+    await h.feature.load(true);
+    assert.doesNotMatch(h.nodes.get('scheduleBody').innerHTML,/data-week-move/u);
+    assert.ok(labels.every(label=>label.hidden));
+  } finally {h.feature.dispose();}
 });

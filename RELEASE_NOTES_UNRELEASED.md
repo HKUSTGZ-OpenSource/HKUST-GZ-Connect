@@ -25,6 +25,12 @@
 - Fix switching schools after saving, replacing or removing login credentials. Live switching uses the current credential revision while retaining strict profile, account and workspace ownership checks; other schools' data is preserved.
 正式安装包与验收结果以 [GitHub Release](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/tag/v2.0.4) 为准。
 
+## 未发布：未配置门户的学校 / Unreleased: Schools without a portal
+
+- 自定义学校尚未配置门户数据来源时，课表、借阅和资讯显示准确空态，不再误报加载失败、反复刷新或跳转至港科广来源；旧课表缓存和迟到结果不能恢复已退休的数据。
+- Schools without a configured portal show an accurate empty state for timetable, loans and news, without ineffective retries or HKUST-specific links. Retired calendar data cannot reappear from caches or late responses.
+- 显式未配置的门户不会创建数据读取 Session 或访问网络；已有门户的登录、临时失败和刷新行为保持不变。 / An explicitly unconfigured portal performs no data Session or network access; configured portals retain their existing authentication, transient-failure and refresh behavior.
+
 ## 门户读取 / Portal reads
 
 - 修复门户分类、课表和新闻请求收到响应头后超时提前结束的问题。截止时间覆盖正文读取；

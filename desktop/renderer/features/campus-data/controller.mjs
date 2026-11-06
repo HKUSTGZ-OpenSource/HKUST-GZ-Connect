@@ -42,7 +42,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
   let lastScheduleLayout = null;
   const weekKey = date => weekRange(Date.parse(`${date}T12:00:00+08:00`), true).start;
   const reusable = module => validModule(module) && ['ready', 'empty'].includes(module.state);
-  const revoked = value => value?.sessionState === 'unauthenticated' ||
+  const revoked = value => value?.portalUrl === null || value?.sessionState === 'unauthenticated' ||
     ['not-authenticated', 'session-expired', 'forbidden'].includes(value?.modules?.schedule?.state);
   function revokeSchedule() {
     displayEpoch++; inflight = null;
@@ -85,6 +85,9 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
   }
 
   function stateCopy(state, moduleId) {
+    if (snapshot?.portalUrl === null) {
+      return ['workspace.portalNotConfigured', 'workspace.portalNotConfiguredHint', null];
+    }
     if (state === 'source-unavailable' &&
         snapshot?.modules?.[moduleId]?.source === 'myportal-session') {
       return ['workspace.portalSessionUnavailable', 'workspace.portalSessionUnavailableHint', 'retry'];
@@ -128,6 +131,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
 
   function scheduleHtml(module) {
     visibleEvents = [];
+    if (snapshot?.portalUrl === null) return stateHtml(module, 'schedule');
     return renderSchedule(module, { selectedDate, clockNow: () => Date.now(), miniature, locale,
       translate, escapeHtml, stateHtml, actionHtml, scheduleNotice, lastScheduleLayout,
       onLayout: geometry => { lastScheduleLayout = geometry; },
@@ -163,11 +167,19 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
     if (!body || !shell) return;
     const safe = validModule(module) ? module : { state: 'source-unavailable', items: [] };
     shell.dataset.state = safe.state;
+    const unconfigured = snapshot?.portalUrl === null;
+    const sourceLabel = shell.querySelector?.('.module-source');
+    if (sourceLabel) sourceLabel.hidden = unconfigured;
     if (moduleId === 'schedule') {
+      const refresh = $('scheduleRefresh');
+      if (refresh) {
+        refresh.hidden = unconfigured;
+        if (unconfigured) refresh.disabled = true;
+      }
       const width = body.clientWidth || Math.max(1, (doc.defaultView?.innerWidth || 960) - 128);
       miniature = width < 620;
       shell.dataset.weekSize = miniature ? 'mini' : 'full';
-      const key = JSON.stringify([selectedDate, miniature, locale(), safe.state, safe.source, safe.items, scheduleNotice]);
+      const key = JSON.stringify([selectedDate, miniature, locale(), unconfigured, safe.state, safe.source, safe.items, scheduleNotice]);
       if (key === scheduleViewKey) return;
       scheduleViewKey = key;
     }
@@ -206,7 +218,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
     if (disposed) return;
     const button = $('scheduleRefresh');
     if (!button) return;
-    button.disabled = busy;
+    button.disabled = busy || snapshot?.portalUrl === null;
     button.textContent = translate(busy
       ? 'workspace.scheduleRefreshing' : 'workspace.scheduleRefresh');
   }
@@ -280,6 +292,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
 
   async function refreshSchedule(force = true) {
     if (disposed || clearing) return null;
+    if (snapshot?.portalUrl === null) return snapshot;
     const epoch = displayEpoch;
     if (followCurrentWeek) selectedDate = campusDate(Date.now());
     const date = selectedDate;
@@ -346,7 +359,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
   }
 
   function activate(target) {
-    if (disposed) return;
+    if (disposed || snapshot?.portalUrl === null) return;
     const weekMove = target.closest('[data-week-move]');
     const today = target.closest('[data-week-today]');
     if (weekMove || today) {
@@ -452,6 +465,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
   function ensureLoaded() {
     if (disposed || clearing) return Promise.resolve(null);
     if (!loaded) return load(false);
+    if (snapshot?.portalUrl === null) return Promise.resolve(snapshot);
     if (followCurrentWeek && weekRange(Date.parse(`${selectedDate}T12:00:00+08:00`), true).start !==
         weekRange(Date.now(), true).start) return refreshSchedule(false);
     const scheduleState = snapshot?.modules?.schedule?.state;

@@ -59,6 +59,8 @@ export default [
   ["workspace.portalForbiddenHint","可前往官方页面确认账号权限。"],
   ["workspace.portalExpired","学校登录已过期"],
   ["workspace.portalExpiredHint","重新登录后再刷新本模块。"],
+  ["workspace.portalNotConfigured","尚未配置数据来源"],
+  ["workspace.portalNotConfiguredHint","此模块暂不提供当前学校的数据。"],
   ["workspace.portalSourcePending","学校数据接口待确认"],
   ["workspace.portalSourcePendingHint","当前仅提供可靠的官方入口，不抓取网页、不伪造数据。"],
   ["workspace.portalSessionUnavailable","暂时无法确认学校登录"],

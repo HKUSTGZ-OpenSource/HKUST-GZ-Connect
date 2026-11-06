@@ -141,3 +141,43 @@ test('a full-load denial still replaces visible personal data after advancing it
     assert.doesNotMatch(h.body.innerHTML,/data-schedule-index/);
   } finally {h.feature.clearDisplay();}
 });
+
+test('source removal revokes prior calendar data, timers and late week publication', async()=>{
+  const savedSet=globalThis.setTimeout,savedClear=globalThis.clearTimeout,timers=new Set();
+  let queued;
+  globalThis.setTimeout=callback=>{queued=callback;const timer={unref(){}};timers.add(timer);return timer;};
+  globalThis.clearTimeout=timer=>timers.delete(timer);
+  const h=harness();
+  try {
+    await h.feature.load(); assert.equal(timers.size,1);
+    const old=h.defer(); const week=h.feature.refreshSchedule(); await Promise.resolve();
+    const next=h.deferLoad(); const full=h.feature.load(true);
+    next.resolve({portalUrl:null,sessionState:'unknown',modules:{schedule:{
+      state:'source-unavailable',source:'official-api-not-configured',items:[],
+    }}});
+    await full; old.resolve(value()); await week;
+    assert.equal(h.feature.snapshot().portalUrl,null);
+    assert.deepEqual(h.feature.snapshot().modules.schedule.items,[]);
+    assert.equal(timers.size,0);
+    assert.doesNotMatch(h.body.innerHTML,/Fixture|data-week-move/u);
+    assert.equal(h.button.hidden,true);
+    const count=h.calls(); await h.feature.ensureLoaded(); await h.feature.refreshSchedule();
+    queued(); await Promise.resolve();
+    assert.equal(h.calls(),count);
+  } finally {h.feature.dispose();globalThis.setTimeout=savedSet;globalThis.clearTimeout=savedClear;}
+});
+
+test('a weekly unconfigured response hides and disables its refresh action', async()=>{
+  const h=harness();
+  try {
+    await h.feature.load();
+    const next=h.defer(), work=h.feature.refreshSchedule();
+    next.resolve({portalUrl:null,sessionState:'unknown',modules:{schedule:{
+      state:'source-unavailable',source:'official-api-not-configured',items:[],
+    }}});
+    await work;
+    assert.equal(h.button.hidden,true);
+    assert.equal(h.button.disabled,true);
+    assert.deepEqual(h.feature.snapshot().modules.schedule.items,[]);
+  } finally {h.feature.dispose();}
+});
