@@ -3,7 +3,10 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const { app, BrowserWindow } = require('electron');
+
+app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-resource-layout-')));
 
 const renderer = path.join(__dirname, '..', 'renderer', 'index.html');
 const preload = path.join(__dirname, 'resource-manager-layout-preload.js');
