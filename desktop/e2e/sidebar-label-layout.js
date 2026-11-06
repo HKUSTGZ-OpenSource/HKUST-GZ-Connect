@@ -30,12 +30,12 @@ module.exports = async function exerciseSidebarLabels(window) {
     for (const language of ['en', 'zh']) {
       await evaluate(`(async () => { await window.api.save({language:'${language}'}); document.dispatchEvent(new Event('visibilitychange')); })()`);
       await waitFor(`document.documentElement.lang === '${language === 'zh' ? 'zh-CN' : 'en'}'`);
-      for (const [width, height, zoom] of [[519,700,1],[520,700,1],[609,700,1],[610,700,1],[1024,768,1],[1024,768,1.25],[1440,900,1],[1024,768,2]]) {
+      for (const [width, height, zoom] of [[518,700,1],[519,700,1],[520,700,1],[608,700,1],[609,700,1],[610,700,1],[1024,768,1],[1024,768,1.25],[1440,900,1],[1024,768,2]]) {
         window.setContentSize(width, height); contents.setZoomFactor(zoom);
         await waitFor(`Math.abs(innerWidth * ${zoom} - ${width}) < 2 && Math.abs(innerHeight * ${zoom} - ${height}) < 2`);
         const snapshot = await evaluate(`(() => {
           const rect = node => { const r=node.getBoundingClientRect(); return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height}; };
-          return {innerWidth,innerHeight,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,
+          return {innerWidth,innerHeight,bodyOverflow:document.documentElement.scrollWidth-innerWidth,contentOverflow:document.querySelector('.content').scrollWidth-document.querySelector('.content').clientWidth,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,
             rail:rect(document.querySelector('.sidebar')),
             labels:[...document.querySelectorAll('.nav')].map(button => {
               const label=button.querySelector('.nav-label'), style=getComputedStyle(label), text=label.textContent;
@@ -53,7 +53,8 @@ module.exports = async function exerciseSidebarLabels(window) {
             })};
         })()`);
         const name = `${language}/${width}/${zoom}`;
-        check(snapshot.rail.width === (snapshot.innerWidth <= 609 ? 64 : 72), `${name}: rail width changed`);
+        check(snapshot.bodyOverflow <= 0 && snapshot.contentOverflow <= 0, `${name}: horizontal overflow`);
+        check(Math.round(snapshot.rail.width * 64) === (snapshot.innerWidth <= 519 ? 64 : 72) * 64, `${name}: rail width changed`);
         for (const label of snapshot.labels) {
           const labelName = `${name}/${label.page}`;
           check(label.title.length > 0, `${labelName}: accessible title missing`);
@@ -81,13 +82,29 @@ module.exports = async function exerciseSidebarLabels(window) {
           const button=document.querySelector('.nav.active'), r=button.getBoundingClientRect(), s=getComputedStyle(button), marker=getComputedStyle(button,'::before'), tooltip=getComputedStyle(button,'::after');
           return {focus:button===document.activeElement,focusVisible:button.matches(':focus-visible'),outline:s.outlineStyle,
             markerLeft:r.left+parseFloat(marker.left),markerRight:r.left+parseFloat(marker.left)+parseFloat(marker.width),
+            outlineLeft:r.left-parseFloat(s.outlineWidth)-parseFloat(s.outlineOffset),outlineRight:r.right+parseFloat(s.outlineWidth)+parseFloat(s.outlineOffset),
             tooltip:tooltip.content,tooltipOpacity:parseFloat(tooltip.opacity),title:button.title};
         })()`);
         check(active.focus && active.focusVisible && active.outline !== 'none', `${name}: keyboard focus lost`);
+        check(active.outlineLeft >= snapshot.rail.left-0.5 && active.outlineRight <= snapshot.rail.right+0.5, `${name}: focus outline clipped`);
         check(active.markerLeft >= snapshot.rail.left - 0.5 && active.markerRight <= snapshot.rail.right, `${name}: active indicator clipped`);
         if (snapshot.innerWidth <= 519) check(active.tooltip === JSON.stringify(active.title) && active.tooltipOpacity >= 0.99, `${name}: narrow tooltip lost`);
-        rows.push({language,width,height,zoom,...snapshot,active});
+        rows.push({language,width,height,zoom,contentSize:window.getContentSize(),...snapshot,active});
         if (output) fs.writeFileSync(path.join(output, `${language}-${width}-${zoom}.png`), (await contents.capturePage()).toPNG());
+        await evaluate("document.querySelector('.nav[data-page=settings]').click(); document.getElementById('openNotificationDrawer').focus(); document.getElementById('openNotificationDrawer').click()");
+        await waitFor("!document.getElementById('notificationDrawer').hidden && Math.abs(document.getElementById('notificationDrawer').getBoundingClientRect().right-innerWidth)<0.5");
+        const notification = await evaluate(`(() => {
+          const drawer=document.getElementById('notificationDrawer'), backdrop=document.getElementById('notificationBackdrop'), r=drawer.getBoundingClientRect(), b=backdrop.getBoundingClientRect();
+          return {left:r.left,right:r.right,backdropLeft:b.left,backdropRight:b.right,focusedClose:document.activeElement.id==='closeNotificationDrawer'};
+        })()`);
+        check(Math.abs(notification.backdropLeft-snapshot.rail.right)<0.5 && Math.abs(notification.backdropRight-snapshot.innerWidth)<0.5, `${name}: notification backdrop misaligned`);
+        check(notification.left>=snapshot.rail.right-0.5 && Math.abs(notification.right-snapshot.innerWidth)<0.5, `${name}: notification drawer outside content`);
+        if (snapshot.innerWidth<=609) check(Math.abs(notification.left-snapshot.rail.right)<0.5, `${name}: compact notification drawer misaligned`);
+        check(notification.focusedClose, `${name}: notification close focus lost`);
+        contents.sendInputEvent({type:'keyDown',keyCode:'Escape'}); contents.sendInputEvent({type:'keyUp',keyCode:'Escape'});
+        await waitFor("document.getElementById('notificationDrawer').hidden && document.activeElement.id==='openNotificationDrawer'");
+        rows[rows.length-1].notification=notification;
+
       }
     }
   } finally {

@@ -181,7 +181,7 @@ button, input, select, a, code { -webkit-app-region: no-drag; }
   align-items: center;
   transition: background .18s, color .18s;
 }
-.nav-label { color: inherit; max-width: 100%; text-align: center; overflow-wrap: break-word; }
+.nav-label { color: inherit; max-width: 100%; text-align: center; overflow-wrap: normal; }
 .nav:hover { background: rgba(255,255,255,.09); color: #fff; }
 .nav.active::before {
   content: "";
@@ -1112,11 +1112,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .dash { min-width: 0; }
 .sidebar { flex: 0 0 72px; padding: 14px 0 16px; background: linear-gradient(168deg, #174783 0%, #0e3467 45%, #092448 100%); }
 .side-group { gap: 8px; }
-.nav { width: 58px; min-height: 58px; padding: 8px 3px 6px; border-radius: 17px; gap: 4px; }
+.nav { width: 66px; min-height: 58px; padding: 8px 0 6px; border-radius: 17px; gap: 4px; }
 .nav svg { width: 21px; height: 21px; }
 .nav-label { font-size: 10.5px; line-height: 1.15; font-weight: 650; }
 .nav.active { color: var(--navy); background: linear-gradient(180deg, #fff, #f9fbff); box-shadow: 0 6px 16px rgba(4, 25, 55, .22); }
-.nav.active::before { left: -7px; width: 3px; height: 28px; }
+.nav.active::before { left: -3px; width: 3px; height: 28px; }
+.nav:focus-visible { outline-offset: 0; }
 .content { overscroll-behavior: contain; }
 .page { max-width: 1120px; padding: 24px; gap: 18px; }
 .page[data-page="browser"] { max-width: 1320px; min-height: 100%; }
@@ -1716,13 +1717,11 @@ button.data-row:hover strong { color: var(--navy-2); }
   .routing-export-section .integration-list { grid-template-columns: 1fr; }
 }
 @media (max-width: 609px) {
-  .sidebar { flex-basis: 64px; }
-  .nav { width: 52px; }
   .page { padding: 16px 14px 24px; }
   .connection-detail-grid { grid-template-columns: 1fr; }
   .category-stack-grid[data-stack-columns="1"] .category-site-list { column-gap: 10px; }
-  .notification-backdrop { left: 64px; }
-  .notification-drawer { width: calc(100vw - 64px); }
+  .notification-backdrop { left: 72px; }
+  .notification-drawer { width: calc(100vw - 72px); }
   .routing-card-heading { align-items: flex-start; flex-wrap: wrap; }
   .routing-card-heading .mini { margin-left: 41px; }
   .routing-consumer-scope { grid-template-columns: 1fr; }
@@ -1743,6 +1742,8 @@ button.data-row:hover strong { color: var(--navy-2); }
     gap: 0;
     justify-content: center;
   }
+  .nav.active::before { left: -8px; }
+  .nav:focus-visible { outline-offset: 2px; }
   .nav svg { width: 19px; height: 19px; }
   .nav-label { display: none; }
   .nav::after {
