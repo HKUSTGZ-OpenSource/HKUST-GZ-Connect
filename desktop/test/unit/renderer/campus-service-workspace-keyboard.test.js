@@ -95,6 +95,7 @@ test('keyboard navigation exits search without changing mouse or explicit no-foc
   assert.equal(h.content.scrollTop, 90);
   h.tabs.official.handlers.get('click')(); assert.equal(h.doc.activeElement, h.chip);
   h.tabs.personal.handlers.get('click')(); assert.equal(h.doc.activeElement, h.$('createCategory'));
+  h.tabs.personal.focus();
   h.feature.setTab('official', { focus: false });
-  assert.equal(h.doc.activeElement, h.$('createCategory'));
+  assert.equal(h.doc.activeElement, h.tabs.personal);
 });
