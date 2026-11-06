@@ -84,6 +84,7 @@ pub enum NetworkUnhealthyReason {
 pub enum EngineErrorCode {
     InvalidArguments,
     ConfigurationInvalid,
+    GatewayAddressRejected,
     CredentialsInvalid,
     AuthFailed,
     AuthRejected,
@@ -292,6 +293,13 @@ mod tests {
                     reason: NetworkUnhealthyReason::DataPlaneDisconnected,
                 },
                 json!({"type": "network_unhealthy", "reason": "data_plane_disconnected"}),
+            ),
+            (
+                EngineEvent::FatalError {
+                    code: EngineErrorCode::GatewayAddressRejected,
+                    secondary_code: None,
+                },
+                json!({"type": "fatal_error", "code": "GATEWAY_ADDRESS_REJECTED"}),
             ),
             (
                 EngineEvent::FatalError {

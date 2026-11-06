@@ -219,12 +219,14 @@ impl GatewayConnectorGeneration {
             if scope == AddressScope::Forbidden
                 || (scope == AddressScope::Private && !reviewed_private_gateway_allowed)
             {
-                return Err(configuration_error(
+                return Err(Error::classified(
+                    ErrorKind::GatewayAddressRejected,
                     "Gateway resolution returned a forbidden address",
                 ));
             }
             if selected_scope.is_some_and(|selected| selected != scope) {
-                return Err(configuration_error(
+                return Err(Error::classified(
+                    ErrorKind::GatewayAddressRejected,
                     "Gateway resolution mixed public and private addresses",
                 ));
             }
@@ -549,6 +551,67 @@ mod tests {
                 "{address}"
             );
         }
+    }
+
+    #[test]
+    fn reviewed_hkust_policy_accepts_split_dns_without_weakening_forbidden_peers() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../config/hkustgz.json")).unwrap();
+        let allowed = config["gateway_connector"]["reviewed_private_gateway_allowed"]
+            .as_bool()
+            .unwrap();
+        assert!(allowed);
+        for address in [
+            "10.23.45.67",
+            "172.20.1.2",
+            "192.168.2.3",
+            "fd12::1",
+            "8.8.8.8",
+        ] {
+            assert!(
+                GatewayConnectorGeneration::from_resolved(
+                    "hkustgz",
+                    1,
+                    1,
+                    "https://vpn.example.edu",
+                    allowed,
+                    vec![public(address)]
+                )
+                .is_ok()
+            );
+        }
+        for allowed in [false, true] {
+            for addresses in [
+                vec![public("127.0.0.1")],
+                vec![public("169.254.1.1")],
+                vec![public("198.18.0.1")],
+                vec![public("::1")],
+                vec![public("fe80::1")],
+                vec![public("10.23.45.67"), public("8.8.8.8")],
+            ] {
+                let error = GatewayConnectorGeneration::from_resolved(
+                    "school-a",
+                    1,
+                    1,
+                    "https://vpn.example.edu",
+                    allowed,
+                    addresses,
+                )
+                .unwrap_err();
+                assert_eq!(error.kind(), ErrorKind::GatewayAddressRejected);
+                assert!(!error.to_string().contains("10.23.45.67"));
+            }
+        }
+        let error = GatewayConnectorGeneration::from_resolved(
+            "custom-a",
+            1,
+            1,
+            "https://vpn.example.edu",
+            false,
+            vec![public("10.23.45.67")],
+        )
+        .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::GatewayAddressRejected);
     }
 
     #[test]

@@ -1,5 +1,7 @@
 # Architecture decision index
 
+- [0039: Reviewed private Gateway diagnostics](0039-reviewed-private-gateway-diagnostics.md): proposed for #282; existing school-policy exception and additive terminal error.
+
 - Current implementation status: [`../2.0-status.md`](../2.0-status.md)
 - Current indexed implementation baseline: stable `v2.0.0` at
   `415a3b5dfb9d11bffa14cde27e924af486823249`

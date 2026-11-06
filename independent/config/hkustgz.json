@@ -13,7 +13,7 @@
   },
   "hash_windows_installer": true,
   "gateway_connector": {
-    "reviewed_private_gateway_allowed": false
+    "reviewed_private_gateway_allowed": true
   },
   "max_artifact_bytes": 536870912,
   "proxy": {

@@ -4,8 +4,9 @@
 - Authority: project maintainer
 - Baseline: `main@15738338ff2a280300b66e98a1823659f24630a4`
 - Started: 2026-09-04
-- Last verified: 2026-10-13 (release/source readback; repository settings retain their separately dated evidence)
-- Development main at verification: `d14e10e78756678f73f1120ab086cbe7ccb5be26`
+- Last verified: 2026-11-04 (handoff/source/release metadata; older findings retain their dated scope)
+- Development main at handoff baseline: `e6dfca371ad5e910858832dea8dcd783a1fa020f`
+- Post-baseline code integration: `771f2ac14a2fa05b350efc0219c3d2b779a93689` (#289 closes #273)
 - Scope: repository governance, documentation truth, agent instructions, module boundaries,
   contributor workflow, GitHub protections and organization migration
 
@@ -33,6 +34,17 @@ high-risk rules. No instruction file is treated as a substitute for review or te
 - User data and installed application state are outside repository-governance migrations.
 
 ## Current findings
+
+The 2026-11-04 [Windows/WSL handoff](docs/engineering/windows-wsl-handoff.md) is the current
+development-host and task-queue entrypoint. Stable `v2.0.5` resolves to the baseline above;
+its four installers and two receipts were read back from release metadata. This handoff is not
+a repeat installer/signature or live-school acceptance. Windows/WSL now owns primary development;
+Mac work is macOS-specific changes, native validation and packaging. Findings below retain their
+historical checkpoint details; in particular item 7's `v2.0.4` was latest at that earlier date.
+M1/M2/M5, G4, reporter issues #127/#177 and the newer #282/#287 remain separate acceptance
+work. #289 closes the bounded #273 defect after exact-head checks; it does not close M2/#80 or
+enter the immutable stable installers. Live issue/PR state is linked from the handoff.
+Moving hosts does not complete this goal.
 
 1. PR #59 established the contributor, agent, documentation and machine-governance baseline on
    `main`; runtime modularization must now consume those boundaries rather than create alternatives.
@@ -97,7 +109,7 @@ high-risk rules. No instruction file is treated as a substitute for review or te
    inherits admin alongside `heeh02`; no membership was created. Ownership transfer is complete,
    while team/reviewer and post-transfer governance convergence remain open. See the
    [migration receipt](docs/governance/2026-09-12-organization-transfer-receipt.md).
-7. Latest stable is now `v2.0.4`, published from `50731a94664464d5910375f4f6832e8f069d3937`
+7. At the 2026-10-13 checkpoint, latest stable was `v2.0.4`, published from `50731a94664464d5910375f4f6832e8f069d3937`
    on 2026-10-09. The annotated tag, successful native build `37914773313`, four installer
    metadata digests and the downloaded build/checksum receipts were read back. This is not a new
    byte-level re-verification of the installers. The release receipt records ad-hoc, non-notarized

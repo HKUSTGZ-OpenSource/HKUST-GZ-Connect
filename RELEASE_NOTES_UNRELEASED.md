@@ -2,12 +2,21 @@
 
 - Status: Current source contract
 - Owner: project maintainers
-- Last verified: 2026-10-30
-- Applies to: post-2.0.4 fixes selected for the 2.0.5 release candidate
+- Last verified: 2026-11-05
+- Applies to: 2.0.5 source history and fixes selected for the 2.0.6 candidate
 
-以下修复已纳入 [2.0.5 发布候选说明](RELEASE_NOTES_2.0.5.md)。是否已发布、实际安装包和验证结果以 GitHub Release 为准；不改写 2.0.4 的既有产物。
+学校切换、门户读取、浏览器关闭、会话与工具栏修复已纳入 [2.0.5 发布候选说明](RELEASE_NOTES_2.0.5.md)。后续未发布修复在对应章节单独标明；实际安装包和验证结果以 GitHub Release 为准，不改写既有产物。
 
-## 学校切换 / School switching
+网关地址策略和证书归属修复已选入 [2.0.6 发布候选说明](RELEASE_NOTES_2.0.6.md)；实际发布状态以 GitHub Release 为准。
+
+## 2.0.6 候选：网关地址策略 / 2.0.6 candidate: Gateway address policy
+
+- 港科广内置配置启用已审核的内网网关策略，支持同一学校域名的内外网解析；不硬编码本机地址，不改变未知网关规则、证书校验或系统网络。
+- 网关地址策略拒绝改为独立错误提示，不再建议重装；继续停止自动重试，并引导检查学校、DNS 和代理解析。
+- The reviewed HKUST(GZ) profile accepts private Gateway resolution through the existing policy exception. Unknown/custom gateways, forbidden or mixed scopes and TLS verification remain unchanged.
+- Address-policy rejection has an explicit terminal diagnostic instead of a misleading reinstall message. This candidate is not included in 2.0.5; Windows/WSL primary-maintainer review and native acceptance remain separate.
+
+## 已发布学校切换修复 / Released school-switch fixes
 
 - 修复旧版本切换失败后因来源凭据版本过期而无法启动的问题；仅在身份和事务校验通过后恢复原切换，不清空账号或网站数据。
 - Recover interrupted switches with an older source credential revision only after identity and transaction checks; account and website data are not reset.
@@ -48,3 +57,12 @@
   查找状态随窗口清理；当前窗口的正常操作和错误反馈保持不变。
 - Late toolbar/resource results no longer refresh replacement windows or publish retired-window
   errors. Find state is cleared with window cleanup; current commands and feedback are preserved.
+
+## 证书询问 / Certificate consent
+
+状态：2.0.5 之后的未发布修复。 / Status: Unreleased after 2.0.5.
+
+- 证书询问执行前重新检查原浏览器和页面归属；关闭或替换后排队的请求会被拒绝，
+  避免把旧页面的询问转交给新窗口。
+- Deferred certificate consent rechecks the admitted Browser and page ownership before dispatch.
+  Retired or replaced requests are denied without borrowing another Browser's trust decision.

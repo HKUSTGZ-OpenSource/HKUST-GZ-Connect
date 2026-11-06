@@ -333,7 +333,7 @@ fn profile_bound_connector_policy_fails_before_reading_credentials() {
     let output = child.wait_with_output().unwrap();
     std::fs::remove_file(config).unwrap();
     assert!(events(&output.stdout).iter().any(|event| {
-        event["type"] == "fatal_error" && event["code"] == "CONFIGURATION_INVALID"
+        event["type"] == "fatal_error" && event["code"] == "GATEWAY_ADDRESS_REJECTED"
     }));
     assert!(!String::from_utf8_lossy(&output.stdout).contains(private_credential));
     assert!(!String::from_utf8_lossy(&output.stderr).contains(private_credential));
