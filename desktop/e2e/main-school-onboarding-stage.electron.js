@@ -7,7 +7,16 @@ dialog.showErrorBox = (title, message) => {
   process.stderr.write(`school-onboarding-stage-error: ${title}: ${message}\n`);
 };
 
-require('../main');
+// Exercise the production status push without connecting to a Gateway.
+const statusModule = require('../lib/connection/state/connection-state-machine');
+const OriginalStatusRuntime = statusModule.ConnectionStatusRuntime;
+let statusOwner;
+statusModule.ConnectionStatusRuntime = class extends OriginalStatusRuntime {
+  constructor(effects) { super(effects); statusOwner = this; }
+};
+try { require('../main'); }
+finally { statusModule.ConnectionStatusRuntime = OriginalStatusRuntime; }
+
 
 async function waitFor(predicate, message, timeoutMs = 15_000) {
   const deadline = Date.now() + timeoutMs;
@@ -24,6 +33,40 @@ async function controlWindow() {
     window.webContents.getURL().endsWith('/renderer/index.html') &&
     !window.webContents.isLoading()
   )), 'School onboarding control window did not start');
+}
+
+async function redrawStatus(control, confirming) {
+  const before = await control.webContents.executeJavaScript(`(() => {
+    const input = document.getElementById('${confirming ? 'confirmCustomGateway' : 'customGatewayOrigin'}');
+    input.focus();
+    document.documentElement.dataset.onboardingRedrawn = '';
+    document.addEventListener('app-locale-changed', () => {
+      document.documentElement.dataset.onboardingRedrawn = 'yes';
+    }, { once: true });
+    return document.documentElement.lang;
+  })()`);
+  assert.ok(statusOwner, 'Main status owner must be initialized');
+  statusOwner.emit();
+  await waitFor(() => control.webContents.executeJavaScript(
+    `document.documentElement.dataset.onboardingRedrawn === 'yes'`,
+  ), 'Main status did not reach the Renderer locale event');
+  const after = await control.webContents.executeJavaScript(`(() => ({
+    locale: document.documentElement.lang,
+    selected: document.getElementById('schoolProfileSelect').value,
+    school: document.getElementById('customSchoolName').value,
+    gateway: document.getElementById('customGatewayOrigin').value,
+    editing: !document.getElementById('customSchoolPanel').hidden,
+    confirming: !document.getElementById('customGatewayConfirmation').hidden,
+    credentialProfile: window.schoolProfileSelectorFeature.credentialProfileId(),
+    loginDisabled: ['lgUser', 'lgPass', 'lgBtn'].every((id) => document.getElementById(id).disabled),
+    focused: document.activeElement.id,
+  }))()`);
+  assert.deepEqual(after, {
+    locale: before, selected: '__other_school__', school: 'Example University',
+    gateway: 'https://vpn.example.edu', editing: !confirming, confirming,
+    credentialProfile: null, loginDisabled: true,
+    focused: confirming ? 'confirmCustomGateway' : 'customGatewayOrigin',
+  }, 'Same-language status must preserve the current onboarding step');
 }
 
 async function runOnboarding(control) {
@@ -65,11 +108,13 @@ async function runOnboarding(control) {
     document.getElementById('customGatewayOrigin').value = 'https://vpn.example.edu';
     const fingerprint = document.getElementById('customGatewayLeafSha256');
     if (fingerprint.value !== '') throw new Error('First-use onboarding must not require a manually entered fingerprint');
-    document.getElementById('probeCustomGateway').click();
   })()`);
+  await redrawStatus(control, false);
+  await control.webContents.executeJavaScript(`document.getElementById('probeCustomGateway').click()`);
   await waitFor(async () => control.webContents.executeJavaScript(`
     !document.getElementById('customGatewayConfirmation').hidden
   `), 'Gateway confirmation did not appear');
+  await redrawStatus(control, true);
   const probed = await control.webContents.executeJavaScript(`(async () => ({
     profiles: await window.api.listSchoolProfiles(),
     summary: document.getElementById('customGatewaySummary').textContent,
