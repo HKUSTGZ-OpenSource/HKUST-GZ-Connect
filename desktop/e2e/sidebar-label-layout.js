@@ -11,7 +11,7 @@ module.exports = async function exerciseSidebarLabels(window) {
   async function waitFor(expression) {
     const deadline = Date.now() + 5000;
     while (Date.now() < deadline) {
-      if (await evaluate(expression)) { await frame(); return; }
+      if (await evaluate(typeof expression === 'function' ? expression() : expression)) { await frame(); return; }
       await new Promise(resolve => setTimeout(resolve, 20));
     }
     throw new Error(`Sidebar fixture did not settle: ${expression}`);
@@ -32,7 +32,10 @@ module.exports = async function exerciseSidebarLabels(window) {
       await waitFor(`document.documentElement.lang === '${language === 'zh' ? 'zh-CN' : 'en'}'`);
       for (const [width, height, zoom] of [[518,700,1],[519,700,1],[520,700,1],[608,700,1],[609,700,1],[610,700,1],[1024,768,1],[1024,768,1.25],[1440,900,1],[1024,768,2]]) {
         window.setContentSize(width, height); contents.setZoomFactor(zoom);
-        await waitFor(`Math.abs(innerWidth * ${zoom} - ${width}) < 2 && Math.abs(innerHeight * ${zoom} - ${height}) < 2`);
+        await waitFor(() => {
+          const [nativeWidth, nativeHeight] = window.getContentSize();
+          return `Math.abs(innerWidth * ${zoom} - ${nativeWidth}) < 2 && Math.abs(innerHeight * ${zoom} - ${nativeHeight}) < 2`;
+        });
         const snapshot = await evaluate(`(() => {
           const rect = node => { const r=node.getBoundingClientRect(); return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height}; };
           return {innerWidth,innerHeight,bodyOverflow:document.documentElement.scrollWidth-innerWidth,contentOverflow:document.querySelector('.content').scrollWidth-document.querySelector('.content').clientWidth,reducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -122,6 +125,12 @@ module.exports = async function exerciseSidebarLabels(window) {
     contents.setZoomFactor(initialZoom); window.setContentSize(...initialSize);
     await evaluate(`(async () => { await window.api.save({language:'${initialLocale.startsWith('zh') ? 'zh' : 'en'}'}); document.dispatchEvent(new Event('visibilitychange')); })()`);
     await frame();
+  }
+  for (const language of ['en','zh']) {
+    const widths = rows.filter(row=>row.language===language).map(row=>row.innerWidth);
+    check(widths.some(width=>width<=519), `${language}: icon-only breakpoint not exercised`);
+    check(widths.some(width=>width>519 && width<=609), `${language}: compact label breakpoint not exercised`);
+    check(widths.some(width=>width>609), `${language}: standard label breakpoint not exercised`);
   }
   if (output) fs.writeFileSync(path.join(output,'measurements.json'), JSON.stringify({rows,failures},null,2));
   console.log(JSON.stringify({kind:'sidebar-label-layout',platform:process.platform,rows:rows.length,failures}));
