@@ -749,6 +749,18 @@ async function main() {
       if (width >= 1180) assert.ok(tower.towerRoutingWidth >= tower.towerGridWidth - 1,
         `${label}: website routing does not use the full Control Tower width`);
       await capture(window, output, `${label}-tower`);
+      const portalEntry = await window.webContents.executeJavaScript(`(async () => {
+        const button = document.getElementById('openBrowser');
+        button.scrollIntoView({ block: 'center' });
+        button.focus();
+        button.click();
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        return { request: window.api.testState().lastOpenRequest,
+          visible: button.getClientRects().length > 0, focused: document.activeElement === button };
+      })()`);
+      assert.deepEqual(portalEntry, { request: { url: '' }, visible: true, focused: true },
+        `${label}: Control Tower must open the default browser entry without serializing the click event`);
+      await capture(window, output, `${label}-portal-button`);
       await shellSnapshot(window, 'settings');
       const notification = await notificationDrawerSnapshot(window);
       assert.equal(notification.opened, true, `${label}: notification drawer did not open`);
