@@ -209,6 +209,11 @@ async function verifyCustomBranding(control) {
 async function run() {
   await app.whenReady();
   const control = await controlWindow();
+  control.webContents.setBackgroundThrottling(false);
+  control.show(); control.focus(); control.webContents.focus();
+  await waitFor(() => control.isVisible() && control.webContents.executeJavaScript(
+    'document.hasFocus() && !document.hidden',
+  ), 'School onboarding window did not become visible and focused');
   if (process.env.HKUSTGZ_ONBOARDING_STAGE === 'verify') {
     await verifyCustomBranding(control);
     return;
