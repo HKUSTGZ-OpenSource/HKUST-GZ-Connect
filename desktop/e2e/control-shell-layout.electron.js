@@ -623,7 +623,11 @@ async function exerciseWorkspaceTabKeyboard(window) {
         await execute(`(() => { const tab=document.getElementById('serviceTab${from}'); tab.click(); tab.focus(); })()`);
         await press(key); await verify(to);
       }
-      for (const to of ['Personal','Official','Personal','Official']) { await press('Right'); await verify(to); }
+      await execute(`document.getElementById('serviceTabOfficial').click(); document.getElementById('serviceTabPersonal').focus()`);
+      await press('Right'); await verify('Official');
+      for (const key of ['Left','Right']) {
+        for (const to of ['Personal','Official','Personal','Official']) { await press(key); await verify(to); }
+      }
       for (const tab of ['Official','Personal']) {
         await press(tab === 'Official' ? 'Home' : 'End'); await verify(tab);
         await press('Tab');
@@ -665,6 +669,8 @@ async function main() {
     width: preview ? 1024 : 480,
     height: preview ? 576 : 854,
     webPreferences: { contextIsolation: true, nodeIntegration: false, preload, backgroundThrottling: false } });
+  window.webContents.session.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] },
+    (_details, reply) => reply({ cancel: true }));
   try {
     await window.loadFile(renderer);
     await window.webContents.executeJavaScript("new Promise((resolve) => { const done = () => document.getElementById('dash').hidden ? setTimeout(done, 20) : resolve(); done(); })");

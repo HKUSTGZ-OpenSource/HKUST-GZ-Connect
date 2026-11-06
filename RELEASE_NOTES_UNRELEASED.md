@@ -51,6 +51,11 @@
   writes across runtimes. Retired work cannot overwrite the current path or stall it during
   read-only policy preparation; cookies and website login state are preserved.
 
+## 未发布：工作台键盘导航 / Unreleased: Workspace tab keyboard navigation
+
+- 修复工作台 Home 键选错标签、方向键切换后焦点跳进面板的问题；方向键和 Home／End 保持标签焦点，Tab 再进入内容，鼠标行为不变。
+- Fix the workspace Home target and keep focus on the selected tab during arrow/Home/End navigation. Tab enters the panel; existing mouse behavior is preserved.
+
 ## 工具栏命令 / Toolbar commands
 
 - 修复旧浏览器窗口关闭后，迟到的网站打开结果仍刷新新窗口或显示过期错误的问题。

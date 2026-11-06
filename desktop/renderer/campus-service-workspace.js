@@ -426,8 +426,13 @@
       doc.querySelector('.ws-tabs')?.addEventListener('keydown', (event) => {
         if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' &&
             event.key !== 'Home' && event.key !== 'End') return;
+        const tabs = [$('serviceTabOfficial'), $('serviceTabPersonal')];
+        const current = tabs.indexOf(event.target);
+        if (current < 0) return;
         event.preventDefault();
-        setTab(tab === 'official' || event.key === 'End' ? 'personal' : 'official');
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? 1 : 1 - current;
+        setTab(next === 0 ? 'official' : 'personal', { focus: false });
+        tabs[next].focus({ preventScroll: true });
       });
       $('createCategory').addEventListener('click', () => onCreateCategory());
       $('manageResources').addEventListener('click', () => onToggleOrganize());
