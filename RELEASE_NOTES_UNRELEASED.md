@@ -66,3 +66,10 @@
   避免把旧页面的询问转交给新窗口。
 - Deferred certificate consent rechecks the admitted Browser and page ownership before dispatch.
   Retired or replaced requests are denied without borrowing another Browser's trust decision.
+
+## XML 解析与证书信任 / XML parsing and certificate trust
+
+- 更新 XML 解析器，避免深层嵌套元素在解析阶段耗尽栈并使 Engine 退出；保持现有输入大小、UTF-8 与 DTD/entity 边界。
+- Update the XML parser to avoid parse-stack exhaustion on deeply nested elements while retaining existing input-size, UTF-8 and DTD/entity boundaries. This does not claim that every downstream XML consumer is stack-safe.
+- 默认 TLS 信任库跟随上游移除 emSign Root CA - C1 与 emSign ECC Root CA - C3。仅能链到这两个根的网关将不再通过默认 PKI 验证；已有精确来源的显式叶证书信任机制不变。
+- The default TLS trust store removes emSign Root CA - C1 and emSign ECC Root CA - C3 following upstream. Gateways relying solely on those roots fail default PKI verification; existing explicit origin-bound leaf trust is unchanged.
