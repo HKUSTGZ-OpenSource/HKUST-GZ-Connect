@@ -139,7 +139,7 @@ test('account display clearing retires every surface and pending result even whe
 });
 
 test('late detail close remains inert after clear or dispose even when body cleanup fails', async()=>{
-  for(const action of ['clear','dispose']) {
+  for(const action of ['clear','pending-clear','dispose']) {
     const h=harness(),dialog=h.nodes.get('scheduleDetail'),body=h.nodes.get('scheduleBody');
     let focused=0;
     h.nodes.set('scheduleDate',{focus:()=>{focused++;}});
@@ -152,7 +152,8 @@ test('late detail close remains inert after clear or dispose even when body clea
       assert.equal(typeof lateClose,'function');
       Object.defineProperty(body,'innerHTML',{configurable:true,get:()=>'',
         set:()=>{throw new Error('synthetic body cleanup failure');}});
-      assert.throws(()=>action==='clear'?h.feature.clearDisplay(true):h.feature.dispose(),AggregateError);
+      assert.throws(()=>action==='dispose'?h.feature.dispose():h.feature.clearDisplay(action==='pending-clear'),AggregateError);
+      if(action==='pending-clear') assert.throws(()=>h.feature.clearDisplay(false),AggregateError);
       lateClose();
       assert.equal(focused,0,'retired detail must not move focus despite remaining DOM');
     } finally {
