@@ -78,3 +78,13 @@ export function renderSchedule(module, {
     + `<div class="week-body" data-slot-count="${layout.slotCount}" data-height="${layout.height}">${lanes}${times}${events}${empty}</div></div></div>`
     + `<dialog id="scheduleDetail" class="week-detail"></dialog>` + actionHtml('source', 'schedule');
 }
+
+export function renderScheduleDetail(group, { locale, translate, escapeHtml }) {
+  const date = value => new Intl.DateTimeFormat(locale(), { timeZone: 'Asia/Shanghai',
+    dateStyle: 'medium', timeStyle: 'short', hour12: false }).format(value);
+  return `<h3 id="scheduleDetailTitle">${escapeHtml(translate('workspace.scheduleDetails'))}</h3>`
+    + group.members.map(({ entry }) => `<article class="week-detail-item"><h4>${escapeHtml(entry.title)}</h4><p>${escapeHtml(date(entry.startsAt))} – ${escapeHtml(date(entry.endsAt))}</p>`
+      + (entry.location ? `<p>${escapeHtml(entry.location)}</p>` : '')
+      + (entry.url ? `<button type="button" data-entry-url="${escapeHtml(entry.url)}">${escapeHtml(translate('workspace.scheduleSource'))}</button>` : '') + '</article>').join('')
+    + `<button type="button" data-schedule-close>${escapeHtml(translate('workspace.scheduleClose'))}</button>`;
+}
