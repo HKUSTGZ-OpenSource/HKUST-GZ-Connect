@@ -137,3 +137,27 @@ test('account display clearing retires every surface and pending result even whe
     assert.equal(await h.feature.ensureLoaded(),null);
   } finally {dialog.close=()=>{dialog.open=false;};h.feature.dispose();}
 });
+
+test('late detail close remains inert after clear or dispose even when body cleanup fails', async()=>{
+  for(const action of ['clear','dispose']) {
+    const h=harness(),dialog=h.nodes.get('scheduleDetail'),body=h.nodes.get('scheduleBody');
+    let focused=0;
+    h.nodes.set('scheduleDate',{focus:()=>{focused++;}});
+    Object.assign(dialog,{isConnected:true,setAttribute(){},showModal(){this.open=true;}});
+    try {
+      h.feature.start();h.load.resolve(value());await h.feature.load();
+      const card={dataset:{scheduleIndex:'0'},isConnected:false};
+      body.shell.emit('click',{target:{closest:selector=>selector==='[data-schedule-index]'?card:null}});
+      const lateClose=dialog.onclose;
+      assert.equal(typeof lateClose,'function');
+      Object.defineProperty(body,'innerHTML',{configurable:true,get:()=>'',
+        set:()=>{throw new Error('synthetic body cleanup failure');}});
+      assert.throws(()=>action==='clear'?h.feature.clearDisplay(true):h.feature.dispose(),AggregateError);
+      lateClose();
+      assert.equal(focused,0,'retired detail must not move focus despite remaining DOM');
+    } finally {
+      Object.defineProperty(body,'innerHTML',{configurable:true,writable:true,value:''});
+      h.feature.dispose();
+    }
+  }
+});

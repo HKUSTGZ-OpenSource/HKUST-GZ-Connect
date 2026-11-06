@@ -375,7 +375,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
         dialog.setAttribute('aria-labelledby', 'scheduleDetailTitle');
         dialog.innerHTML = renderScheduleDetail(group, { locale, translate, escapeHtml });
         dialog.onclose = () => {
-          if (dialog.isConnected && !dialog.open && !card.isConnected) $('scheduleDate')?.focus();
+          if (!disposed && !clearing && dialog.isConnected && !dialog.open && !card.isConnected) $('scheduleDate')?.focus();
         };
         dialog.showModal();
       }
