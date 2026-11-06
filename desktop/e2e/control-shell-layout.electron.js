@@ -3,7 +3,11 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const { app, BrowserWindow } = require('electron');
+
+// Native UI tests must not borrow an installed app's Chromium profile.
+app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-control-shell-')));
 
 const renderer = path.join(__dirname, '..', 'renderer', 'index.html');
 const preload = path.join(__dirname, 'resource-manager-layout-preload.js');
@@ -567,6 +571,81 @@ async function notificationDrawerSnapshot(window, { reducedMotion = false } = {}
   })()`);
 }
 
+async function exerciseWorkspaceTabKeyboard(window) {
+  window.show(); window.focus(); window.webContents.focus();
+  const execute = code => window.webContents.executeJavaScript(code);
+  const frame = () => execute('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  const press = async (keyCode, modifiers = []) => {
+    window.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
+    window.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers });
+    await frame();
+  };
+  const original = await execute('window.api.getState().then(state => state.locale)');
+  const locale = async language => {
+    await execute(`(async () => {
+      await window.api.save({ language: '${language}' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    })()`);
+    for (let attempt = 0; attempt < 100; attempt++) {
+      if (await execute(`document.documentElement.lang === '${language === 'zh' ? 'zh-CN' : 'en'}'`)) {
+        await frame(); return;
+      }
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.fail('keyboard fixture language did not settle');
+  };
+  const verify = async expected => {
+    const result = await execute(`(() => ({
+      focused: document.activeElement.id,
+      selected: ['Official','Personal'].map(name => document.getElementById('serviceTab'+name).getAttribute('aria-selected')),
+      stops: ['Official','Personal'].map(name => document.getElementById('serviceTab'+name).tabIndex),
+      panels: ['Official','Personal'].map(name => document.getElementById('service'+name+'View').hidden),
+      stable: window.fixtureKeyboardDataNodes.every(node => node.isConnected),
+    }))()`);
+    const official = expected === 'Official';
+    assert.deepEqual(result, { focused: `serviceTab${expected}`,
+      selected: [String(official), String(!official)], stops: official ? [0,-1] : [-1,0],
+      panels: [!official,official], stable: true });
+  };
+  try {
+    await settle(window, 1024, 768);
+    await execute(`document.querySelector('.nav[data-page="browser"]').click()`);
+    for (const language of ['zh','en']) {
+      await locale(language);
+      assert.equal(await execute('!document.hidden && document.hasFocus()'), true);
+      await execute(`window.fixtureKeyboardDataNodes = ['scheduleBody','loansBody','newsBody'].map(id => document.getElementById(id).firstElementChild)`);
+      for (const [from,key,to] of [
+        ['Official','Home','Official'], ['Official','End','Personal'],
+        ['Official','Left','Personal'], ['Official','Right','Personal'],
+        ['Personal','Home','Official'], ['Personal','End','Personal'],
+        ['Personal','Left','Official'], ['Personal','Right','Official'],
+      ]) {
+        await execute(`(() => { const tab=document.getElementById('serviceTab${from}'); tab.click(); tab.focus(); })()`);
+        await press(key); await verify(to);
+      }
+      for (const to of ['Personal','Official','Personal','Official']) { await press('Right'); await verify(to); }
+      for (const tab of ['Official','Personal']) {
+        await press(tab === 'Official' ? 'Home' : 'End'); await verify(tab);
+        await press('Tab');
+        assert.equal(await execute(`document.getElementById('service${tab}View').contains(document.activeElement)`), true);
+        await press('Tab', ['shift']); await verify(tab);
+      }
+      await execute(`(() => {
+        const input=document.getElementById('resourceSearch'); input.value='keyboard fixture';
+        input.dispatchEvent(new Event('input', {bubbles:true}));
+        document.getElementById('serviceTabPersonal').focus();
+      })()`);
+      await press('Home'); await verify('Official');
+      assert.deepEqual(await execute(`({ query:document.getElementById('resourceSearch').value,
+        hidden:document.getElementById('serviceSearchView').hidden })`), { query:'', hidden:true });
+    }
+    process.stdout.write('workspace native tab keyboard: PASS (ZH/EN, arrows, Home/End, Tab, search, data-node stability)\n');
+  } finally {
+    await locale(original);
+    await execute(`delete window.fixtureKeyboardDataNodes; document.getElementById('serviceTabOfficial').click()`);
+  }
+}
+
 async function main() {
   await app.whenReady();
   const output = process.env.HKUSTGZ_CONTROL_SCREENSHOT_DIR || '';
@@ -594,6 +673,7 @@ async function main() {
       await new Promise((resolve) => window.once('closed', resolve));
       return;
     }
+    await exerciseWorkspaceTabKeyboard(window);
     for (const [label, width, height] of [
       ['narrow', 440, 540], ['minimum', 820, 540], ['default', 1024, 576], ['wide', 1280, 720],
       ['ultrawide', 1440, 900],
