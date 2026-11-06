@@ -25,6 +25,11 @@
 - Fix switching schools after saving, replacing or removing login credentials. Live switching uses the current credential revision while retaining strict profile, account and workspace ownership checks; other schools' data is preserved.
 正式安装包与验收结果以 [GitHub Release](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/tag/v2.0.4) 为准。
 
+## 侧栏标签 / Sidebar labels
+
+- 修复侧栏中“校园工作台”和 Workspace 的末字孤立换行；保留完整文案和字号，标签模式统一使用 72px 侧栏，519px 以下保留 64px 图标模式；焦点轮廓、活动标记与通知浮层保持在正确范围内。
+- Keep sidebar labels readable without splitting Workspace or leaving a single Chinese character on a trailing line. Full labels and font size are preserved. Label mode uses a 72px rail; the 64px icon-only rail remains below 520px, with aligned focus rings, active indicators and notification overlays.
+
 ## 门户读取 / Portal reads
 
 - 修复门户分类、课表和新闻请求收到响应头后超时提前结束的问题。截止时间覆盖正文读取；
