@@ -326,12 +326,11 @@ function create({ document, translate = key => key, copy, save, refresh, getEnvi
     await copy(value);
     if (disposed) return;
     const button = byId('copyTunnelIp');
-    const previous = button.textContent;
     button.textContent = translate('connect.copied');
     let timer;
     timer = timers.setTimeout(() => {
       pendingTimers.delete(timer);
-      if (!disposed) button.textContent = previous;
+      if (!disposed) button.textContent = translate('connect.copyIp');
     }, 1200);
     pendingTimers.add(timer);
   }

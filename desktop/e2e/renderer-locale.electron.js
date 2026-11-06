@@ -115,6 +115,17 @@ async function main() {
       locale === 'zh' ? '新建分类' : 'New category');
     await evaluate("document.getElementById('serviceTabOfficial').click()");
   }
+  for (const [page, selector] of [['connect', '#copyTunnelIp'], ['tower', '[data-copy=socks]']]) {
+    await evaluate(`document.querySelector('.nav[data-page=${page}]').click(); document.querySelector('${selector}').click()`);
+    await waitFor(`document.querySelector('${selector}').textContent === ${JSON.stringify(copied[initial])}`);
+    await status(other);
+    // Let the already scheduled 1200ms feedback restoration run after the language change.
+    await new Promise(resolve => setTimeout(resolve, 1300));
+    await status(other);
+    equal('pending copy timer uses current language: ' + page,
+      await evaluate(`document.querySelector('${selector}').textContent`), copy[other]);
+    await status(initial);
+  }
   equal('offline fixture makes no HTTP requests', deniedRequests, 0);
   console.log(JSON.stringify({ initial, platform: process.platform, electron: process.versions.electron, observations, failures }));
   assert.deepEqual(failures, [], 'Renderer locale regressions');
