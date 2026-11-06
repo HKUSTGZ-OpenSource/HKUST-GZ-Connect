@@ -415,12 +415,14 @@
       if (active) applyActiveProfile(active);
     }
     function setActiveProfile(value) {
+      const editingOther = active?.profileId === value?.profileId &&
+        elements.schoolProfileSelect.value === OTHER_PROFILE;
       if (!applyActiveProfile(value)) return false;
       profiles = profiles.map((profile) => Object.freeze({
         ...profile,
         active: profile.profileId === active.profileId,
       }));
-      renderProfiles(active.profileId);
+      renderProfiles(editingOther ? OTHER_PROFILE : active.profileId);
       return true;
     }
     function start() {
