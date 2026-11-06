@@ -201,7 +201,8 @@
       if (customGatewayEnabled) items.push(option(OTHER_PROFILE, t('school.other')));
       elements.schoolProfileSelect.replaceChildren(...items);
       elements.schoolPicker.hidden = profiles.length === 1 && !customGatewayEnabled;
-      const available = profiles.some((profile) => profile.profileId === preferred);
+      const available = (customGatewayEnabled && preferred === OTHER_PROFILE) ||
+        profiles.some((profile) => profile.profileId === preferred);
       elements.schoolProfileSelect.value = available
         ? preferred
         : profiles.find((profile) => profile.active)?.profileId ||
@@ -414,12 +415,14 @@
       if (active) applyActiveProfile(active);
     }
     function setActiveProfile(value) {
+      const editingOther = active?.profileId === value?.profileId &&
+        elements.schoolProfileSelect.value === OTHER_PROFILE;
       if (!applyActiveProfile(value)) return false;
       profiles = profiles.map((profile) => Object.freeze({
         ...profile,
         active: profile.profileId === active.profileId,
       }));
-      renderProfiles(active.profileId);
+      renderProfiles(editingOther ? OTHER_PROFILE : active.profileId);
       return true;
     }
     function start() {

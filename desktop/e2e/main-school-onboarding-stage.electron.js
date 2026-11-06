@@ -7,6 +7,7 @@ dialog.showErrorBox = (title, message) => {
   process.stderr.write(`school-onboarding-stage-error: ${title}: ${message}\n`);
 };
 
+process.env.HKUSTGZ_SYNTHETIC_NETWORK_E2E = '1';
 require('../main');
 
 async function waitFor(predicate, message, timeoutMs = 15_000) {
@@ -24,6 +25,50 @@ async function controlWindow() {
     window.webContents.getURL().endsWith('/renderer/index.html') &&
     !window.webContents.isLoading()
   )), 'School onboarding control window did not start');
+}
+
+let statusRedrawId = 0;
+async function redrawStatus(control, confirming, fullRefresh = false) {
+  const before = await control.webContents.executeJavaScript(`(() => {
+    const input = document.getElementById('${confirming ? 'confirmCustomGateway' : 'customGatewayOrigin'}');
+    input.focus();
+    if (${fullRefresh}) {
+      document.documentElement.dataset.onboardingRedrawn = '';
+      document.addEventListener('app-state-refreshed', () => {
+        document.documentElement.dataset.onboardingRedrawn = 'yes';
+      }, { once: true });
+    }
+    return document.documentElement.lang;
+  })()`);
+  let delivered = `document.documentElement.dataset.onboardingRedrawn === 'yes'`;
+  if (fullRefresh) {
+    await control.webContents.executeJavaScript(`document.dispatchEvent(new Event('visibilitychange'))`);
+  } else {
+    const snapshot = await control.webContents.executeJavaScript('window.api.getState()');
+    const notice = `onboarding-status-${++statusRedrawId}`;
+    control.webContents.send('status', { ...snapshot, notice });
+    // Status processing must not depend on an unchanged locale being broadcast again.
+    delivered = `document.getElementById('settingsNotice').textContent === ${JSON.stringify(notice)}`;
+  }
+  await waitFor(() => control.webContents.executeJavaScript(delivered),
+    'Main state did not reach the Renderer');
+  const after = await control.webContents.executeJavaScript(`(() => ({
+    locale: document.documentElement.lang,
+    selected: document.getElementById('schoolProfileSelect').value,
+    school: document.getElementById('customSchoolName').value,
+    gateway: document.getElementById('customGatewayOrigin').value,
+    editing: !document.getElementById('customSchoolPanel').hidden,
+    confirming: !document.getElementById('customGatewayConfirmation').hidden,
+    credentialProfile: window.schoolProfileSelectorFeature.credentialProfileId(),
+    loginDisabled: ['lgUser', 'lgPass', 'lgBtn'].every((id) => document.getElementById(id).disabled),
+    focused: document.activeElement.id,
+  }))()`);
+  assert.deepEqual(after, {
+    locale: before, selected: '__other_school__', school: 'Example University',
+    gateway: 'https://vpn.example.edu', editing: !confirming, confirming,
+    credentialProfile: null, loginDisabled: true,
+    focused: confirming ? 'confirmCustomGateway' : 'customGatewayOrigin',
+  }, 'Same-language redraw must preserve the current onboarding step');
 }
 
 async function runOnboarding(control) {
@@ -65,11 +110,15 @@ async function runOnboarding(control) {
     document.getElementById('customGatewayOrigin').value = 'https://vpn.example.edu';
     const fingerprint = document.getElementById('customGatewayLeafSha256');
     if (fingerprint.value !== '') throw new Error('First-use onboarding must not require a manually entered fingerprint');
-    document.getElementById('probeCustomGateway').click();
   })()`);
+  await redrawStatus(control, false);
+  await redrawStatus(control, false, true);
+  await control.webContents.executeJavaScript(`document.getElementById('probeCustomGateway').click()`);
   await waitFor(async () => control.webContents.executeJavaScript(`
     !document.getElementById('customGatewayConfirmation').hidden
   `), 'Gateway confirmation did not appear');
+  await redrawStatus(control, true);
+  await redrawStatus(control, true, true);
   const probed = await control.webContents.executeJavaScript(`(async () => ({
     profiles: await window.api.listSchoolProfiles(),
     summary: document.getElementById('customGatewaySummary').textContent,
@@ -160,6 +209,11 @@ async function verifyCustomBranding(control) {
 async function run() {
   await app.whenReady();
   const control = await controlWindow();
+  control.webContents.setBackgroundThrottling(false);
+  control.show(); control.focus(); control.webContents.focus();
+  await waitFor(() => control.isVisible() && control.webContents.executeJavaScript(
+    'document.hasFocus() && !document.hidden',
+  ), 'School onboarding window did not become visible and focused');
   if (process.env.HKUSTGZ_ONBOARDING_STAGE === 'verify') {
     await verifyCustomBranding(control);
     return;

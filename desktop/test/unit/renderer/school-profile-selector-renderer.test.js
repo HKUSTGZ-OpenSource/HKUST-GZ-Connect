@@ -146,6 +146,73 @@ test('selector lists active and candidate schools and switches only an inactive 
   assert.equal(f.elements.get('schoolProfileStatus').textContent, 'school.switching');
 });
 
+test('locale redraw preserves Other school draft and its credential gate', async () => {
+  const f = fixture();
+  f.feature.start();
+  await new Promise((resolve) => setImmediate(resolve));
+  const select = f.elements.get('schoolProfileSelect');
+  select.value = OTHER_PROFILE;
+  select.listeners.get('change')();
+  const draft = {
+    customSchoolName: 'Example University',
+    customGatewayOrigin: 'https://vpn.example.edu',
+    customGatewayLeafSha256: 'ab'.repeat(32),
+  };
+  for (const [id, value] of Object.entries(draft)) f.elements.get(id).value = value;
+  const callsBefore = f.calls.length;
+  for (const locale of ['zh-CN', 'zh-CN', 'en']) {
+    f.feature.setTranslator((key) => `${locale}:${key}`);
+    f.feature.setActiveProfile(view('hkustgz', { active: true }));
+    assert.equal(select.value, OTHER_PROFILE);
+    assert.equal(select.children.at(-1).textContent, `${locale}:school.other`);
+    assert.equal(f.elements.get('customSchoolPanel').hidden, false);
+    for (const [id, value] of Object.entries(draft)) assert.equal(f.elements.get(id).value, value);
+    assert.equal(f.feature.credentialProfileId(), null);
+    for (const id of ['lgUser', 'lgPass', 'lgBtn']) assert.equal(f.elements.get(id).disabled, true);
+    assert.equal(f.calls.length, callsBefore);
+  }
+});
+
+test('locale redraw preserves confirmation, back and original expiry', async () => {
+  const f = fixture();
+  f.feature.start();
+  await new Promise((resolve) => setImmediate(resolve));
+  const select = f.elements.get('schoolProfileSelect');
+  select.value = OTHER_PROFILE;
+  select.listeners.get('change')();
+  f.elements.get('customGatewayOrigin').value = 'https://vpn.example.edu';
+  for (const finish of ['back', 'expire']) {
+    await f.feature.probe();
+    f.feature.setTranslator((key, vars = {}) => `${key}:${vars.origin || ''}`);
+    f.feature.setActiveProfile(view('hkustgz', { active: true }));
+    assert.equal(select.value, OTHER_PROFILE);
+    assert.equal(f.elements.get('customSchoolPanel').hidden, true);
+    assert.equal(f.elements.get('customGatewayConfirmation').hidden, false);
+    assert.match(f.elements.get('customGatewaySummary').textContent, /https:\/\/vpn\.example\.edu/u);
+    assert.equal(f.feature.credentialProfileId(), null);
+    assert.equal(f.calls.some(([name]) => name === 'confirm' || name === 'switch'), false);
+    if (finish === 'back') await f.elements.get('backCustomGateway').listeners.get('click')();
+    else f.expire();
+    assert.equal(select.value, OTHER_PROFILE);
+    assert.equal(f.elements.get('customSchoolPanel').hidden, false);
+    assert.equal(f.elements.get('customGatewayConfirmation').hidden, true);
+    assert.equal(f.elements.get('customGatewayOrigin').value, 'https://vpn.example.edu');
+    assert.equal(f.elements.get('lgBtn').disabled, true);
+  }
+  assert.match(f.elements.get('schoolProfileError').textContent, /PROFILE_CONFIRMATION_STALE/u);
+});
+
+test('a different active school still replaces the Other school selection', async () => {
+  const f = fixture();
+  await f.feature.refresh();
+  f.elements.get('schoolProfileSelect').value = OTHER_PROFILE;
+  const nextId = `custom-${'a'.repeat(32)}`;
+  assert.equal(f.feature.setActiveProfile(view(nextId, { active: true, custom: true })), true);
+  assert.equal(f.elements.get('schoolProfileSelect').value, nextId);
+  assert.equal(f.elements.get('customSchoolPanel').hidden, true);
+  assert.equal(f.feature.credentialProfileId(), nextId);
+});
+
 test('Other Gateway requires probe then explicit confirmation before creation and switch', async () => {
   const f = fixture();
   await f.feature.refresh();
@@ -163,6 +230,8 @@ test('Other Gateway requires probe then explicit confirmation before creation an
   assert.match(f.elements.get('customGatewaySummary').textContent, /https:\/\/vpn\.example\.edu/u);
   assert.equal(f.calls.some(([name]) => name === 'confirm'), false);
 
+  f.feature.setTranslator((key) => key);
+  assert.equal(select.value, OTHER_PROFILE);
   await f.feature.confirm();
   assert.equal(f.calls.some(([name]) => name === 'confirm'), true);
   assert.deepEqual(f.calls.at(-1), ['switch', { profileId: `custom-${'c'.repeat(32)}` }]);
@@ -253,6 +322,9 @@ test('first-beta mode hides Other and the selector when only HKUST is available'
   assert.equal(f.elements.get('schoolProfileSelect').children.length, 1);
   assert.equal(f.elements.get('schoolPicker').hidden, true);
   assert.equal(f.elements.get('customSchoolPanel').hidden, true);
+  await f.feature.refresh(OTHER_PROFILE);
+  f.feature.setTranslator((key) => key);
+  assert.equal(f.elements.get('schoolProfileSelect').value, 'hkustgz');
   assert.equal(f.feature.credentialProfileId(), 'hkustgz');
 });
 
