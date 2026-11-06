@@ -89,8 +89,19 @@ module.exports = async function exerciseSidebarLabels(window) {
         check(active.outlineLeft >= snapshot.rail.left-0.5 && active.outlineRight <= snapshot.rail.right+0.5, `${name}: focus outline clipped`);
         check(active.markerLeft >= snapshot.rail.left - 0.5 && active.markerRight <= snapshot.rail.right, `${name}: active indicator clipped`);
         if (snapshot.innerWidth <= 519) check(active.tooltip === JSON.stringify(active.title) && active.tooltipOpacity >= 0.99, `${name}: narrow tooltip lost`);
-        rows.push({language,width,height,zoom,contentSize:window.getContentSize(),...snapshot,active});
-        if (output) fs.writeFileSync(path.join(output, `${language}-${width}-${zoom}.png`), (await contents.capturePage()).toPNG());
+        const workspace = [];
+        for (const panel of ['Official','Personal']) {
+          await evaluate(`document.getElementById('serviceTab${panel}').click(); document.querySelector('.nav[data-page=browser]').focus()`);
+          await frame();
+          const view = await evaluate(`({hidden:document.getElementById('service${panel}View').hidden,
+            bodyOverflow:document.documentElement.scrollWidth-innerWidth,
+            contentOverflow:document.querySelector('.content').scrollWidth-document.querySelector('.content').clientWidth,
+            panelOverflow:document.getElementById('service${panel}View').scrollWidth-document.getElementById('service${panel}View').clientWidth})`);
+          check(!view.hidden && view.bodyOverflow<=0 && view.contentOverflow<=0 && view.panelOverflow<=0, `${name}: ${panel} workspace overflow`);
+          workspace.push({panel,...view});
+          if (output) fs.writeFileSync(path.join(output, `${language}-${width}-${zoom}-${panel}.png`), (await contents.capturePage()).toPNG());
+        }
+        rows.push({language,width,height,zoom,contentSize:window.getContentSize(),...snapshot,active,workspace});
         await evaluate("document.querySelector('.nav[data-page=settings]').click(); document.getElementById('openNotificationDrawer').focus(); document.getElementById('openNotificationDrawer').click()");
         await waitFor("!document.getElementById('notificationDrawer').hidden && Math.abs(document.getElementById('notificationDrawer').getBoundingClientRect().right-innerWidth)<0.5");
         const notification = await evaluate(`(() => {
