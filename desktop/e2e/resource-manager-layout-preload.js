@@ -3,6 +3,9 @@
 const { contextBridge } = require('electron');
 const fixtureLocale = process.env.HKUSTGZ_E2E_LOCALE === 'en' ? 'en' : 'zh';
 const authChallengeListeners = new Set();
+const statusListeners = new Set();
+let localeEvents = 0;
+document.addEventListener('app-locale-changed', () => { localeEvents++; });
 let authResponseCount = 0;
 
 function reviewedPreviewResources() {
@@ -477,7 +480,13 @@ contextBridge.exposeInMainWorld('api', {
   cancelCustomGateway: async () => false,
   deleteSchoolProfile: async () => ({ ok: false, error: 'not available in fixture' }),
   switchSchoolProfile: async () => ({ ok: false, error: 'not available in fixture' }),
-  onStatus: () => {},
+  onStatus: (callback) => { statusListeners.add(callback); },
+  fixtureLocaleEvents: () => localeEvents,
+  fixtureEmitStatus: (patch) => {
+    Object.assign(state, patch);
+    for (const callback of statusListeners) callback(patch);
+    return statusListeners.size;
+  },
   onTelemetry: () => {},
   onNetworkEnvironment: () => {},
   onAuthChallenge: (listener) => {

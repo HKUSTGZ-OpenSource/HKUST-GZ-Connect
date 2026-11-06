@@ -394,3 +394,22 @@ test('partial startup failure unsubscribes and removes listeners before preservi
   assert.equal(f.ids.get('copyTunnelIp').listenerCount('click'), 0);
   assert.equal(owner.dispose(), false);
 });
+
+for (const [initial, next] of [['en', 'zh'], ['zh', 'en']]) {
+  test(`copy feedback restores the current language: ${initial} to ${next}`, async () => {
+    const { createT } = require('../../../renderer/features/localization/index.mjs');
+    let translate = createT(initial);
+    const f = documentFixture();
+    const { owner, timers } = ownerFor(f.document, { translate: key => translate(key) });
+    owner.start();
+    const button = f.ids.get('copyTunnelIp');
+    button.textContent = translate('connect.copyIp');
+    await button.dispatch('click');
+    assert.equal(button.textContent, translate('connect.copied'));
+    translate = createT(next);
+    button.textContent = translate('connect.copyIp');
+    for (const callback of timers.scheduled.values()) callback();
+    assert.equal(button.textContent, translate('connect.copyIp'));
+    owner.dispose();
+  });
+}

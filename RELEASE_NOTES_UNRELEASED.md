@@ -66,3 +66,10 @@
   避免把旧页面的询问转交给新窗口。
 - Deferred certificate consent rechecks the admitted Browser and page ownership before dispatch.
   Retired or replaced requests are denied without borrowing another Browser's trust decision.
+
+## 状态刷新与语言 / Status refresh and language
+
+- 相同有效语言的状态通知不再重复翻译整个界面，保留复制反馈和工作台来源按钮的键盘焦点；首次加载和真正切换中英文仍会更新翻译，连接状态照常刷新。
+- Status updates with the same effective language preserve copy feedback and keyboard focus on workspace source controls. Initial translation, actual language changes and ordinary connection-state updates remain active.
+- 复制反馈定时器按当前语言恢复按钮文字，避免切换语言后重新显示旧译文。
+- Copy feedback timers restore the current language instead of writing back a label captured before a language change.

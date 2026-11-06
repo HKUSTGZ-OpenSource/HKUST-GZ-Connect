@@ -4,6 +4,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // Active UI language. Chinese until get-state reports the real system locale.
 let t = window.I18N.createT('zh');
+let appliedLocale = null;
 const { evaluateLoginProgress } = window.loginFlow;
 let st = {
   connected: false,
@@ -54,6 +55,7 @@ function show(view) { $('login').hidden = view !== 'login'; $('dash').hidden = v
 
 function applyLocale(rawLocale) {
   const locale = window.I18N.resolveLocale(rawLocale);
+  if (locale === appliedLocale) return;
   t = window.I18N.createT(locale);
   document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
   window.I18N.applyStatic(t, document);
@@ -64,6 +66,7 @@ function applyLocale(rawLocale) {
     button.textContent = expanded ? t('section.collapse') : t('section.expand');
     button.setAttribute('aria-expanded', String(expanded));
   });
+  appliedLocale = locale;
   document.dispatchEvent(new Event('app-locale-changed'));
 }
 function setPage(page) {

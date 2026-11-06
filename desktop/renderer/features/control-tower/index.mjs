@@ -139,13 +139,12 @@ function create({ document: doc, api, translate, getSettings, setSettings, refre
       const text = '127.0.0.1:' + (Number(getSettings().port) || 1080);
       await api.copy(text);
       if (disposed) return;
-      const old = button.textContent;
       button.textContent = translate('tower.copied');
       button.classList.add('done');
       const timer = timers.setTimeout(() => {
         copyTimers.delete(timer);
         if (disposed) return;
-        button.textContent = old;
+        button.textContent = translate('tower.copy');
         button.classList.remove('done');
       }, 1200);
       copyTimers.add(timer);

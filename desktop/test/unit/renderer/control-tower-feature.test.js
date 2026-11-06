@@ -199,3 +199,21 @@ test('disposal fences a pending settings reply and removes all listeners', async
   assert.equal(f.feature.start(), false);
   assert.ok(!f.calls.includes('refresh'));
 });
+
+for (const [initial, next] of [['en', 'zh'], ['zh', 'en']]) {
+  test(`SOCKS copy feedback restores the current language: ${initial} to ${next}`, async () => {
+    const { createT } = require('../../../renderer/features/localization/index.mjs');
+    let translate = createT(initial);
+    const f = fixture({ translate: key => translate(key) });
+    f.feature.start();
+    f.copy.textContent = translate('tower.copy');
+    await f.copy.dispatch('click')[0];
+    assert.equal(f.copy.textContent, translate('tower.copied'));
+    translate = createT(next);
+    f.copy.textContent = translate('tower.copy');
+    for (const { callback } of f.timers.values()) callback();
+    assert.equal(f.copy.textContent, translate('tower.copy'));
+    assert.equal(f.copy.classList.contains('done'), false);
+    f.feature.dispose();
+  });
+}
