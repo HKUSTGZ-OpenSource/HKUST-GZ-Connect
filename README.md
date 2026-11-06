@@ -223,6 +223,9 @@ Host hkustgz-hpc
 
 ## 常见问题
 
+- **同一账号可以同时连接两台 Mac 吗？** 取决于学校网关的账号/用户组并发策略及
+  隧道地址分配；目前未完成学校双机验收，不能保证支持。若第二台上线后第一台掉线，
+  请勿反复重连互相抢占，先请管理员确认策略。详见[多设备连接说明](docs/product/multi-device-connections.md)。
 - **连接后普通上网会变慢吗？** 不会。只有校园浏览器和明确配置了本地代理的应用
   会进入校园隧道。
 - **需要安装 Chrome 或 Clash 吗？** 不需要。校园浏览器已经包含在应用中，Clash
@@ -479,6 +482,11 @@ edits `~/.ssh/config`, installs extensions, or launches VS Code automatically.
 
 ## FAQ
 
+- **Can two Macs connect with the same account simultaneously?** This depends on
+  gateway account/group concurrency and tunnel address allocation. Campus two-device
+  acceptance is not yet complete. If starting B disconnects A, avoid repeated
+  reconnect attempts and ask the administrator to confirm the effective policy.
+  See [multi-device connections](docs/product/multi-device-connections.md).
 - **Will ordinary browsing become slower?** No. Only Campus Browser and apps
   explicitly configured for the local endpoint use the tunnel.
 - **Are Chrome or Clash required?** No. Campus Browser is included; Clash is an

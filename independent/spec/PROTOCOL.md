@@ -14,7 +14,10 @@ enabled by this profile remain separate release gates.
 - Reported gateway version: `M7.6.8R2`
 - Initial authentication: username/password (`StartAuth=1`)
 - Graphical challenge: disabled (`RndImg=0`)
-- Multiple concurrent clients: disabled
+- Historical metadata recorded a disabled multi-client option. Its exact field
+  and per-account concurrency semantics are not established by the retained
+  sanitized fixture; do not interpret it as current proof that two devices
+  using one account are prohibited. See the [multi-device support boundary](../../docs/product/multi-device-connections.md).
 - Device type: `ssl`
 - Windows client manifest: `/com/WindowsModule.xml`
 - macOS/Linux package metadata: `/por/ec_pkg.csp`

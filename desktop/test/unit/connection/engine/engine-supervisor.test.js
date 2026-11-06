@@ -32,6 +32,53 @@ function fakeChild() {
   return child;
 }
 
+test('independent client owners never stop or invalidate a peer with the same PID and generation', async () => {
+  // Two computers may have identical local PIDs/generation counters. This is
+  // client ownership evidence, not a simulation of campus account admission.
+  for (const stoppedIndex of [0, 1]) {
+    const children = [fakeChild(), fakeChild()];
+    const owners = children.map(child => new EngineSupervisor({ spawnProcess: () => child }));
+    const first = owners[0].start({ command: '/synthetic/ec-engine' });
+    const second = owners[1].start({ command: '/synthetic/ec-engine' });
+    assert.equal(first.generation, second.generation);
+    assert.ok(owners.every(owner => owner.hasActive));
+    const peer = 1 - stoppedIndex;
+    const peerGeneration = owners[peer].currentGeneration;
+    children[stoppedIndex].kill = signal => {
+      children[stoppedIndex].killCalls.push(signal);
+      queueMicrotask(() => children[stoppedIndex].emit('close', 0, signal));
+      return true;
+    };
+    assert.equal((await owners[stoppedIndex].stop({ graceMs: 100, forceWaitMs: 100 })).ok, true);
+    assert.equal(owners[peer].hasActive, true);
+    assert.equal(owners[peer].currentGeneration, peerGeneration);
+    assert.deepEqual(children[peer].killCalls, []);
+    assert.equal(owners[stoppedIndex].start({ command: '/synthetic/ec-engine' }).ok, true);
+    assert.equal(owners[peer].currentChild, children[peer]);
+    assert.equal(owners[peer].currentGeneration, peerGeneration);
+    children.forEach(child => child.emit('close', 0, null));
+    assert.ok(owners.every(owner => !owner.hasActive));
+  }
+});
+
+test('invalidating one client cancels only its recovery timers, not its peer timers', async () => {
+  const pending = new Map(); let next = 0;
+  const owners = [0, 1].map(() => new EngineSupervisor({ spawnProcess: fakeChild,
+    setTimeoutFn: callback => { pending.set(++next, callback); return next; },
+    clearTimeoutFn: id => pending.delete(id),
+  }));
+  const fired = [];
+  owners.forEach((owner, index) => owner.schedule(owner.currentGeneration, 1, () => fired.push(index)));
+  const late = [...pending.values()][0];
+  owners[0].invalidate(); late();
+  assert.equal(owners[0].scheduledCount, 0);
+  assert.equal(owners[1].scheduledCount, 1);
+  for (const callback of pending.values()) callback();
+  await Promise.resolve();
+  assert.deepEqual(fired, [1]);
+  owners.forEach(owner => owner.invalidate());
+});
+
 test('spawn error, exit, and close converge exactly once at close', async () => {
   const child = fakeChild();
   const events = [];
