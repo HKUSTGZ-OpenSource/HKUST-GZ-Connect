@@ -272,7 +272,7 @@ window.addEventListener('focus', () => {
   }
 });
 
-$('openBrowser').addEventListener('click', openCampus);
+$('openBrowser').addEventListener('click', () => openCampus());
 $('openLog2').addEventListener('click', () => window.api.openLog());
 $('openAdvancedSettings').addEventListener('click', () => setPage('tower'));
 

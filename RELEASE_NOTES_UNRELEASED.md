@@ -25,6 +25,11 @@
 - Fix switching schools after saving, replacing or removing login credentials. Live switching uses the current credential revision while retaining strict profile, account and workspace ownership checks; other schools' data is preserved.
 正式安装包与验收结果以 [GitHub Release](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/tag/v2.0.4) 为准。
 
+## 未发布：门户按钮 / Unreleased: Portal button
+
+- 修复设置中的“打开校园门户”按钮把点击事件当作网址而无法打开的问题；恢复使用当前学校的默认门户，现有资源和网址校验保持不变。
+- Fix the Settings portal button passing its click event as a URL. It now requests the current school's default portal while preserving resource routing and URL validation.
+
 ## 门户读取 / Portal reads
 
 - 修复门户分类、课表和新闻请求收到响应头后超时提前结束的问题。截止时间覆盖正文读取；
