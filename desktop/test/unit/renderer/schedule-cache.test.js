@@ -166,3 +166,18 @@ test('source removal revokes prior calendar data, timers and late week publicati
     assert.equal(h.calls(),count);
   } finally {h.feature.dispose();globalThis.setTimeout=savedSet;globalThis.clearTimeout=savedClear;}
 });
+
+test('a weekly unconfigured response hides and disables its refresh action', async()=>{
+  const h=harness();
+  try {
+    await h.feature.load();
+    const next=h.defer(), work=h.feature.refreshSchedule();
+    next.resolve({portalUrl:null,sessionState:'unknown',modules:{schedule:{
+      state:'source-unavailable',source:'official-api-not-configured',items:[],
+    }}});
+    await work;
+    assert.equal(h.button.hidden,true);
+    assert.equal(h.button.disabled,true);
+    assert.deepEqual(h.feature.snapshot().modules.schedule.items,[]);
+  } finally {h.feature.dispose();}
+});

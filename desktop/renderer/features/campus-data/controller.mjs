@@ -172,7 +172,10 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
     if (sourceLabel) sourceLabel.hidden = unconfigured;
     if (moduleId === 'schedule') {
       const refresh = $('scheduleRefresh');
-      if (refresh) refresh.hidden = unconfigured;
+      if (refresh) {
+        refresh.hidden = unconfigured;
+        if (unconfigured) refresh.disabled = true;
+      }
       const width = body.clientWidth || Math.max(1, (doc.defaultView?.innerWidth || 960) - 128);
       miniature = width < 620;
       shell.dataset.weekSize = miniature ? 'mini' : 'full';
