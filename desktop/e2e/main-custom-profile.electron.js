@@ -128,6 +128,9 @@ async function waitFor(predicate, message) {
 }
 
 async function verifyUnconfiguredCards(control) {
+  // This part measures foreground UI; hidden startup windows can suspend frames.
+  control.webContents.setBackgroundThrottling(false);
+  control.show();
   control.webContents.send('open-settings');
   await waitFor(() => control.webContents.executeJavaScript("!document.getElementById('dash').hidden"),
     'Control window did not show its workspace navigation');
