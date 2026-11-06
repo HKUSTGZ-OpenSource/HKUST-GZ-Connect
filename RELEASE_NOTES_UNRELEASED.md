@@ -16,6 +16,11 @@
 - The reviewed HKUST(GZ) profile accepts private Gateway resolution through the existing policy exception. Unknown/custom gateways, forbidden or mixed scopes and TLS verification remain unchanged.
 - Address-policy rejection has an explicit terminal diagnostic instead of a misleading reinstall message. This candidate is not included in 2.0.5; Windows/WSL primary-maintainer review and native acceptance remain separate.
 
+## 未发布：自定义学校选择 / Unreleased: Other school selection
+
+- 修复填写“其他学校”时，状态刷新或切换语言把选择重置为默认学校的问题；保留草稿和待确认步骤，仍须明确确认后才创建和切换学校。
+- Preserve Other school drafts and pending confirmation during status or language redraws. Creating and switching schools still requires explicit confirmation.
+
 ## 已发布学校切换修复 / Released school-switch fixes
 
 - 修复旧版本切换失败后因来源凭据版本过期而无法启动的问题；仅在身份和事务校验通过后恢复原切换，不清空账号或网站数据。
