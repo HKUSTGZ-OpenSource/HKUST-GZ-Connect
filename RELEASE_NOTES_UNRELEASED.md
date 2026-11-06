@@ -25,6 +25,13 @@
 - Fix switching schools after saving, replacing or removing login credentials. Live switching uses the current credential revision while retaining strict profile, account and workspace ownership checks; other schools' data is preserved.
 正式安装包与验收结果以 [GitHub Release](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/tag/v2.0.4) 为准。
 
+## 未发布：门户代理认证 / Unreleased: Portal proxy authentication
+
+- 严格代理认证开启且门户被设为校园路由时，首次课表读取现在可使用当前连接的本地代理凭据，无需先打开网页预热。默认门户直连规则保持不变。
+- 学校或连接上下文已退出、请求已取消或挑战来自其他代理时，不发送凭据；不自动登录学校门户，不更改凭据存储。
+- Portal data can authenticate a cold local proxy Session when strict authentication and a campus route are selected, without opening a warm-up page. The default direct portal route is unchanged.
+- Retired school/Engine contexts, cancelled requests and unrelated authentication challenges receive no credentials. Portal sign-in and stored data are unchanged. This fix is not in a published installer.
+
 ## 门户读取 / Portal reads
 
 - 门户 API 跟随重定向进入已知学校登录页时，正确提示会话过期并清除课表缓存；用户自行完成

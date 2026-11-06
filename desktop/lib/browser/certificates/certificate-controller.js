@@ -59,6 +59,13 @@ class BrowserRequestSecurityBoundary {
         },
       });
     };
+    // Admitted Main requests have no WebContents. Capture the Engine lifetime;
+    // the existing credential owner still decides the exact proxy challenge.
+    this.captureProxyLogin = () => {
+      const generation = getEngineGeneration();
+      return (authInfo, callback) => getEngineGeneration() === generation &&
+        proxyAccess.answerProxyChallenge(authInfo, generation, callback) === true;
+    };
     this.proxyLogin = (event, webContents, _details, authInfo, callback) => {
       // Chromium needs the strict loopback HTTP CONNECT challenge answered.
       // Capture one generation and delegate exact challenge/pin checks to its

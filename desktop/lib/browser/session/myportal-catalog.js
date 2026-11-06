@@ -19,7 +19,7 @@ function isPortalSignInResponse(response, portalUrl) {
 // Electron Session.fetch does not reliably populate Response.url/redirected.
 // A request-local redirect observer avoids replacing shared webRequest hooks.
 // Only the existing Session supplies cookies; no credential material is exposed.
-function portalSessionTransport(net, session, portalUrl) {
+function portalSessionTransport(net, session, portalUrl, proxyLogin = null) {
   if (!net) return session; // Injected portable/offline fetch implementation.
   if (typeof net.request !== 'function') throw new TypeError('portal request transport is unavailable');
   return { fetch(url, options) {
@@ -49,7 +49,16 @@ function portalSessionTransport(net, session, portalUrl) {
         request.on('error', () => stop('PORTAL_REQUEST_FAILED'));
         // Writable close can precede IncomingMessage in Electron; the existing
         // request deadline, not that event, owns incomplete-response termination.
-        request.on('login', (info, callback) => { callback(); stop(info.isProxy ? 'PORTAL_REQUEST_FAILED' : 'PORTAL_SESSION_EXPIRED'); });
+        request.on('login', (info, callback) => {
+          let replied = false;
+          const reply = (...values) => { if (!replied) { replied = true; callback(...values); } };
+          try {
+            if (!settled && !options.signal?.aborted && info.isProxy === true &&
+                proxyLogin?.(info, reply) === true && replied) return;
+          } catch {} // Context retirement or a refused capability cancels this challenge.
+          reply();
+          stop(info.isProxy ? 'PORTAL_REQUEST_FAILED' : 'PORTAL_SESSION_EXPIRED');
+        });
         request.on('redirect', (_status, _method, target) => {
           if (settled) return;
           if (isPortalSignInResponse({ status: 200, url: target }, portalUrl)) {
