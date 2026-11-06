@@ -237,13 +237,14 @@ async function main() {
     show: false,
     width: 500,
     height: 640,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, preload },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, preload, backgroundThrottling: false },
   });
 
   try {
     await window.loadFile(renderer);
     await waitFor(window, "document.getElementById('dash').hidden === false", 'dashboard initialization');
     await require('./sidebar-label-layout')(window);
+    assert.equal(window.isVisible(), false, 'sidebar keyboard phase must restore the hidden layout window');
     await exerciseIntegrationCenter(window);
     await exerciseAddWebsiteDialogLayout(window);
     assertCustomResourceAddAndOpen(await addAndOpenCustomResource(window));

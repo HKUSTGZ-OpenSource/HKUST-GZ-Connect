@@ -16,6 +16,7 @@ module.exports = async function exerciseSidebarLabels(window) {
     }
     throw new Error(`Sidebar fixture did not settle: ${expression}`);
   }
+  const initiallyVisible = window.isVisible();
   const initialSize = window.getContentSize();
   const initialZoom = contents.getZoomFactor();
   const initialLocale = await evaluate('document.documentElement.lang');
@@ -23,10 +24,9 @@ module.exports = async function exerciseSidebarLabels(window) {
   const check = (condition, name) => { if (!condition) failures.push(name); };
   const output = process.env.HKUSTGZ_SIDEBAR_LAYOUT_ARTIFACTS;
   if (output) fs.mkdirSync(output, { recursive: true });
-  contents.setBackgroundThrottling(false);
-  window.show(); window.focus(); contents.focus();
-  await waitFor('document.hasFocus() && !document.hidden');
   try {
+    window.show(); window.focus(); contents.focus();
+    await waitFor('document.hasFocus() && !document.hidden');
     for (const language of ['en', 'zh']) {
       await evaluate(`(async () => { await window.api.save({language:'${language}'}); document.dispatchEvent(new Event('visibilitychange')); })()`);
       await waitFor(`document.documentElement.lang === '${language === 'zh' ? 'zh-CN' : 'en'}'`);
@@ -122,9 +122,13 @@ module.exports = async function exerciseSidebarLabels(window) {
       }
     }
   } finally {
-    contents.setZoomFactor(initialZoom); window.setContentSize(...initialSize);
-    await evaluate(`(async () => { await window.api.save({language:'${initialLocale.startsWith('zh') ? 'zh' : 'en'}'}); document.dispatchEvent(new Event('visibilitychange')); })()`);
-    await frame();
+    try {
+      await evaluate(`(async () => { await window.api.save({language:'${initialLocale.startsWith('zh') ? 'zh' : 'en'}'}); document.dispatchEvent(new Event('visibilitychange')); })()`);
+      await frame();
+    } finally {
+      if (!initiallyVisible) window.hide();
+      contents.setZoomFactor(initialZoom); window.setContentSize(...initialSize);
+    }
   }
   for (const language of ['en','zh']) {
     const widths = rows.filter(row=>row.language===language).map(row=>row.innerWidth);
