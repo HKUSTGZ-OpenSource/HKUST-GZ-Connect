@@ -23,6 +23,62 @@ fs.writeFileSync(path.join(root, 'index.html'), `<!doctype html><html lang="zh-C
 <div id="outside-schedule" class="week-summary">Sibling sentinel</div></body></html>`);
 fs.writeFileSync(path.join(root, 'fixture.css'), 'body { display:block; overflow:auto; padding:20px; } main { min-width:0; } .module { padding:16px; }');
 
+async function detailResizeRegression(window) {
+  async function resize(width) {
+    window.setSize(width, 540); window.webContents.setZoomFactor(1);
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const contentWidth = window.getContentSize()[0];
+      const settled = await window.webContents.executeJavaScript(`(() => {
+        const body = document.getElementById('scheduleBody');
+        return Math.abs(innerWidth - ${contentWidth}) < 2 &&
+          document.getElementById('moduleSchedule').dataset.weekSize === (body.clientWidth < 620 ? 'mini' : 'full');
+      })()`);
+      if (settled) return;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.fail('detail resize did not settle');
+  }
+  await window.webContents.executeJavaScript(`document.getElementById('scheduleDetail').close()`);
+  await resize(960);
+  const before = await window.webContents.executeJavaScript(`(() => {
+    const card = document.querySelectorAll('.week-event')[1];
+    card.focus(); card.click();
+    const dialog = document.getElementById('scheduleDetail');
+    window.fixtureResizeDialog = dialog;
+    window.fixtureResizeFocus = document.activeElement;
+    return { text: dialog.textContent, label: dialog.getAttribute('aria-labelledby'), calls: fixtureCalls.length };
+  })()`);
+  for (const width of [1000, 440, 360, 960]) {
+    await resize(width);
+    const after = await window.webContents.executeJavaScript(`(() => {
+      const dialog = document.getElementById('scheduleDetail');
+      return { open: dialog.open, modal: dialog.matches(':modal'), same: dialog === fixtureResizeDialog,
+        text: dialog.textContent, label: dialog.getAttribute('aria-labelledby'),
+        focused: document.activeElement === fixtureResizeFocus, calls: fixtureCalls.length };
+    })()`);
+    assert.deepEqual(after, { open: true, modal: true, same: true, ...before, focused: true },
+      `open detail must survive the breakpoint at width ${width}`);
+    if (process.env.HKUSTGZ_SCHEDULE_SCREENSHOTS) fs.writeFileSync(path.join(
+      path.resolve(process.env.HKUSTGZ_SCHEDULE_SCREENSHOTS), `detail-open-${width}.png`),
+    (await window.webContents.capturePage()).toPNG());
+  }
+  window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' });
+  window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' });
+  assert.equal(await window.webContents.executeJavaScript(
+    `document.getElementById('scheduleDetail').contains(document.activeElement)`), true);
+  window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+  window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+  await new Promise(resolve => setTimeout(resolve, 80));
+  assert.deepEqual(await window.webContents.executeJavaScript(`({
+    open: document.getElementById('scheduleDetail').open, focused: document.activeElement.id,
+  })`), { open: false, focused: 'scheduleDate' });
+  await resize(440);
+  assert.equal(await window.webContents.executeJavaScript(`document.getElementById('scheduleDetail').open`), false,
+    'a closed detail must not reopen on resize');
+  await window.webContents.executeJavaScript(`document.querySelectorAll('.week-event')[1].click()`);
+  process.stdout.write('schedule open-detail breakpoint continuity: PASS\n');
+}
+
 async function run() {
   await app.whenReady();
   const window = new BrowserWindow({ width: 960, height: 850, show: true,
@@ -213,6 +269,7 @@ async function run() {
     assert.ok(Math.abs(detailBounds.cx-detailBounds.vw/2)<2,'detail dialog must be horizontally centered');
     assert.ok(Math.abs(detailBounds.cy-detailBounds.vh/2)<2,'detail dialog must be vertically centered');
     assert.ok(detailBounds.left>=16 && detailBounds.right<=detailBounds.vw-16 && detailBounds.top>=16 && detailBounds.bottom<=detailBounds.vh-16,'detail dialog retains viewport margins');
+    await detailResizeRegression(window);
     for (const width of [360, 440, 960, 1440]) {
       await window.webContents.executeJavaScript(`document.querySelector('dialog').close()`);
       window.webContents.setZoomFactor(1); window.setSize(width,740);
