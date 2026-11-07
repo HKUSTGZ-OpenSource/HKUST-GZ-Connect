@@ -1245,12 +1245,12 @@ const hkustMyPortalSources = Object.freeze({
 
 class MyPortalDataRuntime {
   constructor({ electronSession, electronNet = null, getPartition, getPortalUrl, getSources = () => ({}),
-    getSessionUrlHint = () => null, now = Date.now,
+    getSessionUrlHint = () => null, getProxyLogin = () => null, now = Date.now,
     cacheMs = CAMPUS_DATA_DAILY_CACHE_MS, timeoutMs = 8_000 } = {}) {
     if (!electronSession || typeof electronSession.fromPartition !== 'function' ||
         typeof getPartition !== 'function' || typeof getPortalUrl !== 'function' ||
         typeof getSources !== 'function' || typeof getSessionUrlHint !== 'function' ||
-        typeof now !== 'function') {
+        typeof getProxyLogin !== 'function' || typeof now !== 'function') {
       throw new TypeError('myPortal data runtime dependencies are incomplete');
     }
     if (!Number.isSafeInteger(cacheMs) || cacheMs < 0 || cacheMs > CAMPUS_DATA_MAX_CACHE_MS ||
@@ -1258,7 +1258,7 @@ class MyPortalDataRuntime {
       throw new TypeError('myPortal data runtime timing is invalid');
     }
     Object.assign(this, { electronSession, electronNet, getPartition, getPortalUrl, getSources, getSessionUrlHint,
-      now, cacheMs, timeoutMs });
+      getProxyLogin, now, cacheMs, timeoutMs });
     this.cached = null;
     this.inflight = null;
     this.calendarCache = new Map();
@@ -1324,7 +1324,13 @@ class MyPortalDataRuntime {
     const requestContext = this.captureContext();
     const { portalUrl, partition } = requestContext;
     const cachedBase = this.cached;
-    const targetSession = portalSessionTransport(this.electronNet, this.electronSession.fromPartition(partition), portalUrl);
+    const proxyLogin = this.getProxyLogin();
+    const answerProxyLogin = (info, callback) => {
+      this.assertContext(requestContext);
+      return proxyLogin?.(info, callback) === true;
+    };
+    const targetSession = portalSessionTransport(this.electronNet,
+      this.electronSession.fromPartition(partition), portalUrl, answerProxyLogin);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     timer.unref?.();

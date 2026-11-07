@@ -36,7 +36,7 @@
     "test:persistence-migration": "electron e2e/persistence-migration.electron.js",
     "test:upgrade-compatibility": "node --test test/unit/persistence/upgrades/profile-workspace-upgrade.test.js && electron e2e/persistence-migration.electron.js",
     "test:profile-asar": "electron e2e/school-profile-asar.electron.js",
-    "test:strict-proxy-auth": "electron e2e/strict-proxy-auth.electron.js",
+    "test:strict-proxy-auth": "electron e2e/strict-proxy-auth.electron.js && electron e2e/portal-proxy-auth.electron.js",
     "make:icons:mac": "bash scripts/make-icons.sh",
     "start": "electron .",
     "dist": "electron-builder --publish never",
