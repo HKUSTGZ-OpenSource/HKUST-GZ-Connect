@@ -57,6 +57,7 @@ function fixture(overrides = {}) {
   const elements = new Map(IDS.map((id) => [id, element()]));
   const calls = [];
   let expiryCallback = null;
+  let expirySchedules = 0;
   const profiles = overrides.profiles || [
     view('hkustgz', { active: true }),
     view(`custom-${'a'.repeat(32)}`, { custom: true }),
@@ -104,11 +105,12 @@ function fixture(overrides = {}) {
     document,
     translate: (key, vars = {}) => `${key}${vars.origin ? `:${vars.origin}:${vars.version}` : ''}`,
     now: () => 1_800_000_000_000,
-    setTimeoutFn: (callback) => { expiryCallback = callback; return { unref() {} }; },
+    setTimeoutFn: (callback) => { expirySchedules += 1; expiryCallback = callback; return { unref() {} }; },
     clearTimeoutFn: () => { expiryCallback = null; },
   });
   return {
     api, calls, document, elements, feature,
+    expirySchedules: () => expirySchedules,
     expire() { assert.equal(typeof expiryCallback, 'function'); expiryCallback(); },
   };
 }
@@ -341,4 +343,195 @@ test('inactive custom Profile requires two clicks before local deletion', async 
   assert.deepEqual(f.calls.find(([name]) => name === 'delete'), ['delete', {
     profileId: `custom-${'a'.repeat(32)}`,
   }]);
+});
+
+
+function localizedProfiles(locale, customActive = false) {
+  return [
+    { ...view('hkustgz', { active: !customActive }),
+      schoolName: locale === 'zh' ? '香港科技大学(广州)' : 'HKUST Guangzhou University',
+      shortName: locale === 'zh' ? '港科广' : 'HKUST(GZ)' },
+    view(`custom-${'a'.repeat(32)}`, { active: customActive, custom: true }),
+  ];
+}
+
+function listResult(locale, customActive = false) {
+  return { ok: true, customGatewayEnabled: true, profiles: localizedProfiles(locale, customActive) };
+}
+
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+test('active Profile presentation replaces cached names without discarding a pending selection', async () => {
+  const f = fixture({ profiles: localizedProfiles('en') });
+  await f.feature.refresh();
+  const select = f.elements.get('schoolProfileSelect');
+  for (const selected of ['hkustgz', `custom-${'a'.repeat(32)}`, OTHER_PROFILE]) {
+    select.value = selected;
+    for (const locale of ['zh', 'en']) {
+      const [current] = localizedProfiles(locale);
+      assert.equal(f.feature.setActiveProfile(current), true);
+      assert.equal(select.value, selected);
+      assert.equal(f.elements.get('connectSchoolName').textContent, current.schoolName);
+      assert.ok(select.children[0].textContent.startsWith(current.schoolName));
+      assert.ok(f.elements.get('brandSub').textContent.startsWith(current.schoolName));
+      assert.equal(f.feature.credentialProfileId(), selected === 'hkustgz' ? 'hkustgz' : null);
+    }
+  }
+});
+
+test('locale list refresh updates inactive built-in names and preserves custom labels', async () => {
+  const f = fixture({ profiles: localizedProfiles('zh', true) });
+  await f.feature.refresh();
+  let calls = 0, nextLocale = 'en';
+  f.api.listSchoolProfiles = async () => { calls += 1; return listResult(nextLocale, true); };
+  for (const locale of ['en', 'zh']) {
+    nextLocale = locale;
+    await f.feature.setTranslator(key => `${locale}:${key}`, locale);
+    const options = f.elements.get('schoolProfileSelect').children;
+    assert.equal(options[0].textContent, localizedProfiles(locale)[0].schoolName);
+    assert.ok(options[1].textContent.startsWith('Example University'));
+    assert.equal(f.elements.get('connectSchoolName').textContent, 'Example University');
+    assert.equal(f.feature.credentialProfileId(), `custom-${'a'.repeat(32)}`);
+    const before = calls;
+    await f.feature.setTranslator(key => `${locale}:${key}`, locale);
+    assert.equal(calls, before, 'same effective locale must not re-list schools');
+  }
+  assert.equal(calls, 2);
+  assert.equal(f.calls.length, 0, 'language changes cannot probe, confirm, switch or delete');
+});
+
+test('locale completion preserves current Other draft, confirmation and original expiry', async () => {
+  const f = fixture();
+  f.feature.start();
+  await new Promise(resolve => setImmediate(resolve));
+  const select = f.elements.get('schoolProfileSelect');
+  const pending = deferred();
+  let lists = 0;
+  f.api.listSchoolProfiles = () => { lists += 1; return pending.promise; };
+  const refresh = f.feature.setTranslator(key => `en:${key}`, 'en');
+  assert.equal(lists, 1);
+  select.value = OTHER_PROFILE;
+  select.listeners.get('change')();
+  f.elements.get('customSchoolName').value = 'Draft University';
+  f.elements.get('customGatewayOrigin').value = 'https://vpn.example.edu';
+  await f.feature.probe();
+  const calls = f.calls.length;
+  const schedules = f.expirySchedules();
+  pending.resolve(listResult('en'));
+  await refresh;
+  assert.equal(select.value, OTHER_PROFILE);
+  assert.equal(f.elements.get('customSchoolName').value, 'Draft University');
+  assert.equal(f.elements.get('customGatewayOrigin').value, 'https://vpn.example.edu');
+  assert.equal(f.elements.get('customGatewayConfirmation').hidden, false);
+  assert.equal(f.elements.get('customSchoolPanel').hidden, true);
+  assert.equal(f.feature.credentialProfileId(), null);
+  assert.equal(f.calls.length, calls);
+  assert.equal(f.expirySchedules(), schedules, 'locale refresh must not restart confirmation expiry');
+  f.expire();
+  assert.equal(f.elements.get('customGatewayConfirmation').hidden, true);
+  assert.equal(f.elements.get('customSchoolPanel').hidden, false);
+  assert.match(f.elements.get('schoolProfileError').textContent, /PROFILE_CONFIRMATION_STALE/);
+});
+
+test('locale completion retains an in-progress probe and its status', async () => {
+  const f = fixture();
+  await f.feature.refresh();
+  f.elements.get('schoolProfileSelect').value = OTHER_PROFILE;
+  f.elements.get('customGatewayOrigin').value = 'https://vpn.example.edu';
+  const probe = deferred();
+  f.api.probeCustomGateway = () => probe.promise;
+  const probing = f.feature.probe();
+  const before = f.elements.get('schoolProfileStatus').textContent;
+  let lists = 0;
+  f.api.listSchoolProfiles = async () => { lists += 1; return listResult('en'); };
+  await f.feature.setTranslator(key => `en:${key}`, 'en');
+  assert.equal(lists, 1);
+  assert.equal(f.elements.get('schoolProfileStatus').textContent, before);
+  assert.equal(f.elements.get('schoolProfileSelect').disabled, true);
+  assert.equal(f.elements.get('lgBtn').disabled, true);
+  assert.equal(f.feature.credentialProfileId(), null);
+  probe.resolve({ ok: false, code: 'GATEWAY_PROBE_FAILED' });
+  await probing;
+  assert.equal(f.elements.get('schoolProfileSelect').disabled, false);
+});
+
+test('older locale list successes and failures cannot replace the newest presentation', async () => {
+  for (const rejectOld of [false, true]) {
+    const f = fixture({ profiles: localizedProfiles('zh') });
+    await f.feature.refresh();
+    const first = deferred(), last = deferred();
+    const queue = [first, last];
+    f.api.listSchoolProfiles = () => queue.shift().promise;
+    const old = f.feature.setTranslator(key => `en:${key}`, 'en');
+    const current = f.feature.setTranslator(key => `zh:${key}`, 'zh');
+    assert.equal(queue.length, 0, 'both actual language changes must request a list');
+    last.resolve(listResult('zh'));
+    await current;
+    if (rejectOld) first.reject(new Error('synthetic stale list failure'));
+    else first.resolve(listResult('en'));
+    await old;
+    assert.equal(f.elements.get('connectSchoolName').textContent, localizedProfiles('zh')[0].schoolName);
+    assert.equal(f.elements.get('schoolProfileError').textContent, '');
+    assert.equal(f.feature.credentialProfileId(), 'hkustgz');
+  }
+});
+
+test('actual active Profile change retires an older pending candidate list', async () => {
+  const f = fixture({ profiles: localizedProfiles('zh') });
+  await f.feature.refresh();
+  const pending = deferred();
+  f.api.listSchoolProfiles = () => pending.promise;
+  const loading = f.feature.refresh();
+  const custom = localizedProfiles('en', true)[1];
+  f.feature.setActiveProfile(custom);
+  pending.resolve(listResult('zh'));
+  await loading;
+  assert.equal(f.elements.get('connectSchoolName').textContent, custom.schoolName);
+  assert.equal(f.elements.get('schoolProfileSelect').value, custom.profileId);
+  assert.equal(f.feature.credentialProfileId(), custom.profileId);
+});
+
+test('first active state does not cancel the pending initial candidate list', async () => {
+  const f = fixture();
+  const pending = deferred();
+  f.api.listSchoolProfiles = () => pending.promise;
+  f.feature.start();
+  f.feature.setActiveProfile(localizedProfiles('zh')[0]);
+  pending.resolve(listResult('zh'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.elements.get('schoolProfileSelect').children.length, 3);
+  assert.equal(f.elements.get('connectSchoolName').textContent, localizedProfiles('zh')[0].schoolName);
+  assert.equal(f.feature.credentialProfileId(), 'hkustgz');
+});
+
+test('current locale list rejection is handled and closes credential admission', async () => {
+  const f = fixture();
+  await f.feature.refresh();
+  f.api.listSchoolProfiles = async () => { throw new Error('synthetic list failure'); };
+  await f.feature.setTranslator(key => `en:${key}`, 'en');
+  assert.match(f.elements.get('schoolProfileError').textContent, /PROFILE_LIST_FAILED/);
+  assert.equal(f.feature.credentialProfileId(), null);
+  for (const id of ['lgUser', 'lgPass', 'lgBtn']) assert.equal(f.elements.get(id).disabled, true);
+});
+
+test('successful locale refresh retains an existing operation error', async () => {
+  const f = fixture({ probeResult: { ok: false, code: 'GATEWAY_PROBE_FAILED' } });
+  await f.feature.refresh();
+  f.elements.get('schoolProfileSelect').value = OTHER_PROFILE;
+  f.elements.get('customGatewayOrigin').value = 'https://vpn.example.edu';
+  await f.feature.probe();
+  const error = f.elements.get('schoolProfileError').textContent;
+  assert.match(error, /GATEWAY_PROBE_FAILED/);
+  let lists = 0;
+  f.api.listSchoolProfiles = async () => { lists += 1; return listResult('en'); };
+  await f.feature.setTranslator(key => `en:${key}`, 'en');
+  assert.equal(lists, 1);
+  assert.equal(f.elements.get('schoolProfileError').textContent, error);
+  assert.equal(f.elements.get('schoolProfileSelect').value, OTHER_PROFILE);
+  assert.equal(f.elements.get('customSchoolPanel').hidden, false);
+  assert.equal(f.feature.credentialProfileId(), null);
 });

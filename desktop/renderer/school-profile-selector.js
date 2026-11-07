@@ -62,6 +62,7 @@
     api,
     document,
     translate,
+    locale = 'zh',
     now = Date.now,
     setTimeoutFn = setTimeout,
     clearTimeoutFn = clearTimeout,
@@ -99,6 +100,8 @@
     const trustDetails = document.getElementById('gatewayCertificateDetails');
     const trustFingerprint = document.getElementById('gatewayObservedFingerprint');
     let t = translate;
+    let currentLocale = locale;
+    let listRevision = 0;
     let profiles = [];
     let active = null;
     let confirmation = null;
@@ -239,8 +242,12 @@
       if (profile?.active) applyActiveProfile(profile);
       updateCredentialGate();
     }
-    async function refresh(preferred = null) {
-      const result = await api.listSchoolProfiles();
+    async function refresh(preferred = null, { preserveInteraction = false } = {}) {
+      const revision = ++listRevision;
+      let result;
+      try { result = await api.listSchoolProfiles(); }
+      catch { result = { ok: false, code: 'PROFILE_LIST_FAILED' }; }
+      if (revision !== listRevision) return false;
       if (!result?.ok || !Array.isArray(result.profiles)) {
         profiles = [];
         customGatewayEnabled = false;
@@ -258,9 +265,11 @@
       }
       const current = profiles.find((profile) => profile.active);
       if (current) applyActiveProfile(current);
-      elements.schoolProfileStatus.textContent = '';
-      setError();
-      renderProfiles(preferred);
+      if (!preserveInteraction) {
+        elements.schoolProfileStatus.textContent = '';
+        setError();
+      }
+      renderProfiles(preserveInteraction ? elements.schoolProfileSelect.value : preferred);
       return true;
     }
     async function cancel({ closePanel = true } = {}) {
@@ -407,22 +416,24 @@
         if (event.key === 'Enter') { event.preventDefault(); probe(); }
       });
     }
-    function setTranslator(next) {
+    function setTranslator(next, nextLocale = currentLocale) {
       if (typeof next !== 'function') return;
       t = next;
       renderConfirmation();
       renderProfiles(elements.schoolProfileSelect.value);
       if (active) applyActiveProfile(active);
+      if (nextLocale === currentLocale) return;
+      currentLocale = nextLocale;
+      return refresh(null, { preserveInteraction: true });
     }
     function setActiveProfile(value) {
-      const editingOther = active?.profileId === value?.profileId &&
-        elements.schoolProfileSelect.value === OTHER_PROFILE;
+      const previousId = active?.profileId;
+      const selected = elements.schoolProfileSelect.value;
       if (!applyActiveProfile(value)) return false;
-      profiles = profiles.map((profile) => Object.freeze({
-        ...profile,
-        active: profile.profileId === active.profileId,
-      }));
-      renderProfiles(editingOther ? OTHER_PROFILE : active.profileId);
+      if (previousId && previousId !== active.profileId) listRevision += 1;
+      profiles = profiles.map((profile) => profile.profileId === active.profileId
+        ? active : Object.freeze({ ...profile, active: false }));
+      renderProfiles(previousId === active.profileId ? selected : active.profileId);
       return true;
     }
     function start() {
@@ -456,9 +467,10 @@ if (typeof window !== 'undefined' && window.document && window.api && window.I18
     api: window.api,
     document: window.document,
     translate: window.I18N.createT(locale()),
+    locale: locale(),
   });
   window.document.addEventListener('app-locale-changed', () => {
-    feature.setTranslator(window.I18N.createT(locale()));
+    feature.setTranslator(window.I18N.createT(locale()), locale());
   });
   window.document.addEventListener('app-state-refreshed', (event) => {
     feature.setActiveProfile(event.detail?.schoolProfile);
