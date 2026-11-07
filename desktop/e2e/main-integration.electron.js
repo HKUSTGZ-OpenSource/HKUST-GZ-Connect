@@ -4,7 +4,10 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { app, BrowserWindow, webContents } = require('electron');
+const { app, BrowserWindow, webContents, dialog, session } = require('electron');
+const { createMainOfflineFixture } = require('./support/main-offline-fixture');
+process.env.HKUSTGZ_SYNTHETIC_NETWORK_E2E = '1';
+const offline = createMainOfflineFixture({ app, session, dialog });
 const { ProfileWorkspaceStartupRuntime } = require('../lib/persistence/runtime/profile-workspace-startup-runtime');
 const { projectRuntimeSettings } = require('../lib/persistence/settings/profile-workspace-settings-bundle');
 const { saveSettings } = require('../lib/persistence/settings/settings-store');
@@ -192,6 +195,7 @@ for (const file of startupProjections) assert.equal(fs.existsSync(file), false,
   'Main must retire both the legacy and selected disposable projections before services start');
 
 async function waitForControlWindow() {
+  offline.stage('control startup');
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     const window = BrowserWindow.getAllWindows().find((candidate) => (
@@ -204,10 +208,12 @@ async function waitForControlWindow() {
 }
 
 async function invoke(window, expression) {
+  offline.stage(/window\.api\.([A-Za-z0-9_]+)/.exec(expression)?.[1] || 'renderer command');
   return window.webContents.executeJavaScript(`(async () => (${expression}))()`);
 }
 
 async function waitFor(condition, message, timeoutMs = 10_000) {
+  offline.stage(message);
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const value = condition();
@@ -218,6 +224,7 @@ async function waitFor(condition, message, timeoutMs = 10_000) {
 }
 
 async function waitForRenderer(window, expression, message) {
+  offline.stage(message);
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
     if (await window.webContents.executeJavaScript(expression)) return;
@@ -229,6 +236,8 @@ async function waitForRenderer(window, expression, message) {
 async function run() {
   await app.whenReady();
   const control = await waitForControlWindow();
+  // Native test windows may be hidden/occluded; frame waits must still progress.
+  control.webContents.setBackgroundThrottling(false);
 
   const initial = await invoke(control, 'window.api.getState()');
   assert.equal(portalDataSources(), portalRuntime.hkustMyPortalSources,
@@ -344,6 +353,7 @@ async function run() {
   })`);
   assert.deepEqual(deletedPin, { ok: true, pins: [] });
 
+  offline.stage('routing dialog animation frame');
   const managerVisible = await control.webContents.executeJavaScript(`(async () => {
     document.getElementById('manageRoutingRules').click();
     await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -423,7 +433,10 @@ async function run() {
   assert.equal(rules.rules[0].host, 'login.microsoftonline.com');
   assert.ok(fs.readFileSync(persistence.paths.externalPac, 'utf8').includes('127.0.0.1:6180'));
   assert.ok(admissionCalls.resume > 0, 'actual routing transactions must use the Connection admission owner');
-  await assertPortalResponseDeadline(require('electron').session);
+  offline.stage('portal response deadline and recovery');
+  await assertPortalResponseDeadline(session);
+  offline.assertIsolation(['https://outlook.office.com', 'https://myportal.hkust-gz.edu.cn']);
+  process.stdout.write(`main outbound isolation: PASS ${JSON.stringify(offline.snapshot())}\n`);
   process.stdout.write('main Connection admission owner: PASS\n');
   process.stdout.write('main integration: PASS\n');
   diagnosticsArmed = true;
@@ -435,7 +448,7 @@ async function run() {
 }
 
 run().then(
-  () => app.quit(),
+  () => { offline.stage('quit retirement'); app.quit(); },
   (error) => {
     process.stderr.write(`${error.stack || error}\n`);
     process.exitCode = 1;
