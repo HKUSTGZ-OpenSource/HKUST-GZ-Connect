@@ -38,6 +38,7 @@ function fixture(overrides = {}) {
       };
     },
     getAuthChallenge: () => null,
+    prepareNetworkEnvironment: async () => {},
     getNetworkEnvironment: () => ({ schemaVersion: 1, status: 'ready' }),
     ...overrides,
   });
@@ -69,7 +70,7 @@ test('projects settings, resources and key-free profile compatibility views', as
 });
 
 test('account labels are masked before entering ordinary Renderer state', () => {
-  assert.equal(maskedAccountLabel('jhe000'), 'jhe***');
+  assert.equal(maskedAccountLabel('sample'), 'sam***');
   assert.equal(maskedAccountLabel('ab'), 'ab***');
   assert.equal(maskedAccountLabel(''), '');
 });
@@ -128,4 +129,78 @@ test('legacy custom URL conflicts cannot make get-state fail', async () => {
 test('rejects an incomplete composition at construction time', () => {
   assert.throws(() => createControlStateSnapshot(), /getStatus must be a function/u);
   assert.throws(() => createControlStateSnapshot({ getStatus() {} }), /loadSettings/u);
+});
+
+test('network preparation finishes before current local state is captured', async () => {
+  let release;
+  const preparation = new Promise((resolve) => { release = resolve; });
+  let phase = { locale: 'en', resources: [{ id: 'old-resource' }], groupIds: ['old-resource'] };
+  const reads = [];
+  const observe = (name, value) => { reads.push(name); return value; };
+  const { snapshot } = fixture({
+    prepareNetworkEnvironment: () => preparation,
+    loadSettings: () => observe('settings', { username: '', language: phase.locale, underlaySourceAddress: '192.0.2.20' }),
+    getStatus: () => observe('status', { connected: false }),
+    getLocale: () => observe('locale', phase.locale),
+    hasCredential: () => observe('credential', true),
+    hasAccountIdentity: () => observe('identity', true),
+    getResources: () => observe('resources', phase.resources),
+    getResourceGroups: () => observe('groups', [{ id: 'group_abcdefghijkl', name: 'Synthetic', resourceIds: phase.groupIds }]),
+    getNetworkEnvironment: (settings = {}) => observe('network-view', { selection: settings.underlaySourceAddress }),
+    getProfilePresentation: (options) => observe('profile', { schoolProfile: { displayLocale: options.locale } }),
+  });
+  const pending = snapshot();
+  try {
+    assert.deepEqual(reads, [], 'no local state is read before observation settles');
+    phase = { locale: 'zh', resources: [{ id: 'new-resource' }], groupIds: ['new-resource'] };
+    release();
+    const value = await pending;
+    assert.equal(value.locale, 'zh');
+    assert.equal(value.settings.language, 'zh');
+    assert.equal(value.schoolProfile.displayLocale, 'zh');
+    assert.deepEqual(value.campusResources.map(({ id }) => id), ['new-resource']);
+    assert.deepEqual(value.resourceGroups[0].resourceIds, ['new-resource']);
+    assert.equal(value.networkEnvironment.selection, value.settings.underlaySourceAddress);
+    assert.equal(reads.filter((name) => name === 'locale').length, 1);
+  } finally { release(); await pending; }
+});
+
+test('failed network preparation rejects without reading local state or credentials', async () => {
+  const failure = new Error('synthetic observation failure');
+  const reads = [];
+  const { snapshot } = fixture({
+    prepareNetworkEnvironment: async () => { throw failure; },
+    loadSettings: () => { reads.push('settings'); return {}; },
+    hasCredential: () => { reads.push('credential'); return false; },
+    getResources: () => { reads.push('resources'); return []; },
+    getProfilePresentation: () => { reads.push('profile'); return {}; },
+  });
+  await assert.rejects(snapshot(), (error) => error === failure);
+  assert.deepEqual(reads, []);
+});
+
+test('settings fallback uses the completed observation and current locale without credentials', async () => {
+  let release;
+  const preparation = new Promise((resolve) => { release = resolve; });
+  let locale = 'en';
+  let credentialReads = 0;
+  const projectedSettings = [];
+  const { snapshot } = fixture({
+    prepareNetworkEnvironment: () => preparation,
+    loadSettings: () => { throw new Error('synthetic settings failure'); },
+    getLocale: () => locale,
+    hasCredential: () => { credentialReads += 1; return true; },
+    getNetworkEnvironment: (settings) => { projectedSettings.push(settings); return { status: 'unknown' }; },
+    getProfilePresentation: (options) => ({ schoolProfile: { displayLocale: options.locale } }),
+  });
+  const pending = snapshot(); locale = 'zh'; release();
+  const value = await pending;
+  assert.equal(value.locale, 'zh');
+  assert.equal(value.schoolProfile.displayLocale, 'zh');
+  assert.equal(value.settings, null);
+  assert.equal(value.loggedIn, false);
+  assert.equal(value.hasPassword, false);
+  assert.deepEqual(value.resourceGroups, []);
+  assert.equal(credentialReads, 0);
+  assert.deepEqual(projectedSettings, [null]);
 });

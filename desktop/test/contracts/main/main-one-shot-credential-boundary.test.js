@@ -18,7 +18,7 @@ function mainIdentityCallback(context) {
   return vm.runInNewContext(`(${expression})`, context);
 }
 
-function identityFixture(t) {
+function identityFixture(t, prepareNetworkEnvironment = async () => {}) {
   const state = { persistent: false, engine: false, profile: 'fixture-profile-a' };
   let opened = 0;
   const persistenceRuntime = { hasCredential: () => state.persistent,
@@ -39,7 +39,7 @@ function identityFixture(t) {
     getPacUrl: () => '', getLocale: () => 'zh', platform: process.platform,
     getVersion: () => 'fixture', getUpdate: () => null, getResources: () => [],
     getResourceGroups: () => [], getFallbackResources: () => [], getProfilePresentation: () => ({}),
-    getAuthChallenge: () => null, getNetworkEnvironment: () => null,
+    getAuthChallenge: () => null, prepareNetworkEnvironment, getNetworkEnvironment: () => null,
   });
   return { state, access: vpnCredentialAccess, snapshot, opened: () => opened };
 }
@@ -138,4 +138,19 @@ test('memory-only credentials never become a cross-launch auto-connect authority
   assert.doesNotMatch(startup, /hasStoredCredential\(\)/u);
   assert.match(source, /disposeLifecycle: \(\) => \{[\s\S]*vpnCredentialAccess\.clear\(\)/u);
   assert.match(source, /clearServerState: \(\) => \{ vpnCredentialAccess\.clear\(\)/u);
+});
+
+test('an awaited Control snapshot does not borrow the previous Profile memory presence', async (t) => {
+  let release;
+  const observation = new Promise((resolve) => { release = resolve; });
+  const f = identityFixture(t, () => observation);
+  f.access.stage({ profileId: f.state.profile, username: 'fixture-user', password: 'fixture-input' });
+  const pending = f.snapshot();
+  f.state.profile = 'fixture-profile-b';
+  release();
+  const value = await pending;
+  assert.equal(value.hasPassword, false, 'the new Profile does not inherit the old presence flag');
+  assert.equal(value.loggedIn, false);
+  assert.equal(f.opened(), 0);
+  assert.doesNotMatch(JSON.stringify(value), /fixture-user|fixture-input/);
 });

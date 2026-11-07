@@ -489,7 +489,7 @@ const controlStateSnapshot = createControlStateSnapshot({
   getProfilePresentation: (options) => activeSchoolProfile.createPresentation(options),
   getServiceDesk: () => activeSchoolProfile.serviceDesk,
   getAuthChallenge: () => authChallengeCoordinator.snapshot(),
-  getNetworkEnvironment: () => networkEnvironmentService.snapshot(loadSettingsOrReport().underlaySourceAddress, { probePublicEgress: false }),
+  prepareNetworkEnvironment: () => networkEnvironmentService.rawSnapshot(), getNetworkEnvironment: (settings) => networkEnvironmentService.presentSnapshot(settings?.underlaySourceAddress),
 });
 
 for (const [channel, handler] of Object.entries(authChallengeCoordinator.ipcHandlers())) {

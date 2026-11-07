@@ -74,9 +74,17 @@ class NetworkEnvironmentService {
 
   async snapshot(selection = '', options = {}) {
     const raw = await this.rawSnapshot(options);
+    return this.#presentSnapshot(raw, selection, options.probePublicEgress === true);
+  }
+  // Accept the current selection without requesting public egress.
+  presentSnapshot(selection = '') {
+    const raw = this.cached || this.fallbackSnapshot();
+    return this.#presentSnapshot(raw, selection, false);
+  }
+  #presentSnapshot(raw, selection, probePublicEgress) {
     this.latestSelection = selection;
     this.#reconcilePublicEgress(raw);
-    if (options.probePublicEgress === true) this.#schedulePublicEgress(raw, selection);
+    if (probePublicEgress) this.#schedulePublicEgress(raw, selection);
     return projectNetworkEnvironment(raw, selection, this.#publicEgressSnapshot(raw));
   }
   cachedSnapshot(selection = '') {
