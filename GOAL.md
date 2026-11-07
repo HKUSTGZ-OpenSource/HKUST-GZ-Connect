@@ -4,9 +4,10 @@
 - Authority: project maintainer
 - Baseline: `main@15738338ff2a280300b66e98a1823659f24630a4`
 - Started: 2026-09-04
-- Last verified: 2026-11-04 (handoff/source/release metadata; older findings retain their dated scope)
+- Last verified: 2026-11-07 (current release/source/receipt metadata; older findings retain their dated scope)
 - Development main at handoff baseline: `e6dfca371ad5e910858832dea8dcd783a1fa020f`
 - Post-baseline code integration: `771f2ac14a2fa05b350efc0219c3d2b779a93689` (#289 closes #273)
+- Verified published/runtime checkpoint: `v2.0.6` / `main@541091d7422132a98e0eca534f58e80c4f0fe931`
 - Scope: repository governance, documentation truth, agent instructions, module boundaries,
   contributor workflow, GitHub protections and organization migration
 
@@ -33,10 +34,30 @@ high-risk rules. No instruction file is treated as a substitute for review or te
   cross-platform artifacts.
 - User data and installed application state are outside repository-governance migrations.
 
-## Current findings
+## Current findings — 2026-11-07
+
+Published stable [v2.0.6](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/tag/v2.0.6)
+resolves to `541091d7422132a98e0eca534f58e80c4f0fe931`, also the `main` source read back on this date.
+The [current status index](docs/2.0-status.md) records the exact tag, build and public receipt links.
+The two downloaded receipts match their published metadata, including the four installer entries;
+this is not a repeat installer/signature, native-platform or live-school acceptance.
+
+The #289 certificate-owner repair and #292 reviewed Gateway policy/diagnostic changes are in
+2.0.6. Open candidate PRs and local integration snapshots do not silently alter that release,
+and this reconciliation does not merge or close their separate review/tracking records.
+Windows/WSL remains the primary development host; the dated
+[handoff](docs/engineering/windows-wsl-handoff.md) remains the operational entrypoint.
+
+M1/M2/M5, G4, the original #127/#177 reporter acceptance and #287 session-policy investigation
+remain separate work. Publication does not complete those gates or this Active goal. Historical
+administrator exceptions remain scoped to their recorded operations; this readback grants no new
+merge, release or settings authority.
+
+## Historical findings — 2026-11-04 handoff and earlier
 
 The 2026-11-04 [Windows/WSL handoff](docs/engineering/windows-wsl-handoff.md) is the current
-development-host and task-queue entrypoint. Stable `v2.0.5` resolves to the baseline above;
+development-host and task-queue entrypoint at that checkpoint. Stable `v2.0.5` resolved to
+`e6dfca371ad5e910858832dea8dcd783a1fa020f`;
 its four installers and two receipts were read back from release metadata. This handoff is not
 a repeat installer/signature or live-school acceptance. Windows/WSL now owns primary development;
 Mac work is macOS-specific changes, native validation and packaging. Findings below retain their
@@ -240,7 +261,7 @@ release assumptions.
 - PR #78 provides the repository-ID-based 2.0.1 transition patch so update discovery remains bound
   to the same public, enabled repository across owner transfer without trusting arbitrary redirects.
 
-## Current decision boundary
+## Historical decision boundary — 2.0.3 source checkpoint
 
 Stable remains immutable `v2.0.3@b57c394c73e0b07a0076e26f58e1666e29f00135`.
 Development source at this checkpoint is

@@ -1,10 +1,10 @@
 # HKUST(GZ) Connect 1.2.3 baseline and roadmap
 
-- Status: Current implementation/evidence ledger with historical 1.x baselines
+- Status: Current evidence ledger; versioned implementation checkpoints below are historical
 - Owner: project maintainers
-- Last verified: 2026-10-03
-- Applies to: immutable stable v2.0.3 and separately verified development main; see
-  [current status](docs/2.0-status.md) for exact source identities
+- Last verified: 2026-11-07 (current-release pointer only; dated findings retain their own scope)
+- Applies to: the historical 1.x/2.0.3 evidence checkpoints below; see
+  [current status](docs/2.0-status.md) for the current published release and runtime source identities
 
 This roadmap is an implementation and evidence ledger, not a promise that an
 unobserved proprietary gateway revision will work forever. A trait, parser,

@@ -1,9 +1,17 @@
 # ADR-0039: Reviewed private Gateway resolution and typed diagnostics
 
-- Status: Proposed for #282; Windows/WSL primary-maintainer review required
+- Status: Proposed ADR; implementation released in 2.0.6, formal ADR approval not asserted
 - Owner: project maintainers
-- Last verified: 2026-11-04
-- Applies to: candidate source after main c4dd13f; not the published 2.0.5 app
+- Last verified: 2026-11-07 (release/source metadata; original observation was 2026-11-04)
+- Applies to: implementation in published `v2.0.6` at `541091d7422132a98e0eca534f58e80c4f0fe931`
+
+## Implementation status
+
+The source change entered main through [#292](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/pull/292)
+at `77c7498b4a93bdbab61d500c10271674786ddbc0` and shipped in
+[2.0.6](../../RELEASE_NOTES_2.0.6.md). It was not in the 2.0.5 app observed below.
+This records the released implementation, not a newly accepted ADR decision or permission to
+extend the exception to another school.
 
 ## Evidence and decision
 
@@ -51,7 +59,7 @@ Preserve current credential and upgrade tests. Record executed Mac/Node/Rust che
 and omissions in the handoff; Mac evidence does not establish Windows or Linux
 native acceptance. No GUI layout change or Engine authentication rewrite is needed.
 
-Windows/WSL is the primary development environment. This Mac contribution is a
-scoped branch for review and native verification, not authorization to merge,
-release, replace the installed app, or change other work queues. Rollback reverts
+Windows/WSL is the primary development environment. The original Mac contribution was scoped
+for review and native verification; that preparation record grants no further authority to merge,
+release, replace an installed app, or change other work queues. A source rollback reverts
 the reviewed flags/digests and diagnostic additions; no user data is removed.

@@ -1,10 +1,28 @@
 # HKUST(GZ) Connect 2.0.6
 
-- Status: Release candidate; maintainer accepted local connection test and authorized publication
+- Status: Published release notes; publication and receipt metadata reconciled below
 - Owner: project maintainers (Windows/WSL primary; Mac native validation/packaging)
-- Last verified: 2026-11-05
-- Applies to: 2.0.6 candidate based on main `77c7498b4a93bdbab61d500c10271674786ddbc0`
-- Tracking: #293; final tag, build and artifact evidence belong to the release receipt
+- Last verified: 2026-11-07 (publication/tag/receipt consistency; no new installer, signature or campus test)
+- Applies to: published `v2.0.6` at `541091d7422132a98e0eca534f58e80c4f0fe931`
+- Preparation baseline: `77c7498b4a93bdbab61d500c10271674786ddbc0`; release preparation merged through #294
+- Tracking: [#293](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/issues/293)
+- Publication: [v2.0.6](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/tag/v2.0.6), 2026-11-05
+- Exact build/package/signing record: [BUILD_RECEIPT.json](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/download/v2.0.6/BUILD_RECEIPT.json)
+  and [SHA256SUMS.txt](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/download/v2.0.6/SHA256SUMS.txt)
+
+The published receipt distinguishes ad-hoc, non-notarized macOS packages and unsigned Windows
+packages from the earlier locally accepted Apple Development-signed candidate. This header update
+does not repeat the receipt's native tests or signature checks.
+
+Public receipt identities checked against GitHub asset metadata on 2026-11-07:
+
+| Downloaded receipt | SHA-256 |
+| --- | --- |
+| `BUILD_RECEIPT.json` | `9f9c4db69706fdbe37650e56816d416ece434344050b251a472577b4aa2c1ab6` |
+| `SHA256SUMS.txt` | `b9cb7f326322c97fdbaae2747b8b101c6eef339cbef92f3eeec65032e8f28017` |
+
+The four installer entries agree across the receipts and asset metadata; their bytes were not
+downloaded or reverified during this documentation check.
 
 ## 中文
 

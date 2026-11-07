@@ -1,20 +1,20 @@
 # 未发布修复索引
 
-- Status: Current source contract
+- Status: Current release-history and unreleased-fix index
 - Owner: project maintainers
-- Last verified: 2026-11-05
-- Applies to: 2.0.5 source history and fixes selected for the 2.0.6 candidate
+- Last verified: 2026-11-07 (published release/source and receipt consistency)
+- Applies to: released 2.0.5/2.0.6 history and future explicitly unreleased entries; runtime checkpoint `541091d7422132a98e0eca534f58e80c4f0fe931`
 
-学校切换、门户读取、浏览器关闭、会话与工具栏修复已纳入 [2.0.5 发布候选说明](RELEASE_NOTES_2.0.5.md)。后续未发布修复在对应章节单独标明；实际安装包和验证结果以 GitHub Release 为准，不改写既有产物。
+学校切换、门户读取、浏览器关闭、会话与工具栏修复已纳入 [2.0.5 发布说明](RELEASE_NOTES_2.0.5.md)。后续未发布修复在对应章节单独标明；实际安装包和验证结果以 GitHub Release 为准，不改写既有产物。
 
-网关地址策略和证书归属修复已选入 [2.0.6 发布候选说明](RELEASE_NOTES_2.0.6.md)；实际发布状态以 GitHub Release 为准。
+网关地址策略和证书归属修复已随 [2.0.6](RELEASE_NOTES_2.0.6.md) 发布。下列已发布条目保留历史；只有明确标为未发布的条目才描述后续改动。未合并 PR 和本地组合结果不属于已发布能力。
 
-## 2.0.6 候选：网关地址策略 / 2.0.6 candidate: Gateway address policy
+## 已随 2.0.6 发布：网关地址策略 / Released in 2.0.6: Gateway address policy
 
 - 港科广内置配置启用已审核的内网网关策略，支持同一学校域名的内外网解析；不硬编码本机地址，不改变未知网关规则、证书校验或系统网络。
 - 网关地址策略拒绝改为独立错误提示，不再建议重装；继续停止自动重试，并引导检查学校、DNS 和代理解析。
 - The reviewed HKUST(GZ) profile accepts private Gateway resolution through the existing policy exception. Unknown/custom gateways, forbidden or mixed scopes and TLS verification remain unchanged.
-- Address-policy rejection has an explicit terminal diagnostic instead of a misleading reinstall message. This candidate is not included in 2.0.5; Windows/WSL primary-maintainer review and native acceptance remain separate.
+- Address-policy rejection has an explicit terminal diagnostic instead of a misleading reinstall message. Released in 2.0.6, not included in 2.0.5; published package evidence and new-host Windows/WSL acceptance remain separate.
 
 ## 已发布学校切换修复 / Released school-switch fixes
 
@@ -23,7 +23,7 @@
 
 - 修复保存、更新或移除登录凭据后无法切回其他学校的问题；切换读取最新的账户凭据版本，继续严格核对学校、账户和工作区身份，不删除其他学校的数据。
 - Fix switching schools after saving, replacing or removing login credentials. Live switching uses the current credential revision while retaining strict profile, account and workspace ownership checks; other schools' data is preserved.
-正式安装包与验收结果以 [GitHub Release](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/tag/v2.0.4) 为准。
+这些学校切换修复随 [2.0.5](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/tag/v2.0.5) 发布；该版本安装包与当时验收记录以其 Release 为准。
 
 ## 门户读取 / Portal reads
 
@@ -60,7 +60,7 @@
 
 ## 证书询问 / Certificate consent
 
-状态：2.0.5 之后的未发布修复。 / Status: Unreleased after 2.0.5.
+状态：已随 2.0.6 发布，不在 2.0.5 安装包中。 / Status: Released in 2.0.6; not included in 2.0.5.
 
 - 证书询问执行前重新检查原浏览器和页面归属；关闭或替换后排队的请求会被拒绝，
   避免把旧页面的询问转交给新窗口。
