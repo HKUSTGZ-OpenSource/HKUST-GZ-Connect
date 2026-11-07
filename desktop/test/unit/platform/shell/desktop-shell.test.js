@@ -212,3 +212,24 @@ test('quit disposes recovery, stops the Engine, cleans secrets and destroys tray
   assert.equal(f.shell.quitAllowed, true);
   assert.equal(f.shell.tray, null);
 });
+
+test('native close cancellation finishes before application quit begins', async () => {
+  let nativeClosePending = true;
+  const quitStates = [];
+  const f = fixture({ getCloseAction: () => 'quit' });
+  f.app.quit = () => quitStates.push({ nativeClosePending, allowed: f.shell.quitAllowed });
+  const nativeDispatchFinished = new Promise((resolve) => setImmediate(() => {
+    nativeClosePending = false;
+    resolve();
+  }));
+  let prevented = false;
+  const closeHandled = f.shell.handleWindowClose({ preventDefault() { prevented = true; } });
+  const operation = f.shell.quitInFlight;
+  assert.equal(f.shell.requestQuit(), operation, 'another quit joins the existing cleanup');
+  await closeHandled;
+  await operation;
+  await nativeDispatchFinished;
+  assert.equal(prevented, true);
+  assert.deepEqual(quitStates, [{ nativeClosePending: false, allowed: true }]);
+  assert.deepEqual(f.calls, ['dispose', 'disconnect', 'cleanup']);
+});
