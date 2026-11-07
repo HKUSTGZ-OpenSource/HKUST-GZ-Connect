@@ -1,11 +1,15 @@
 # Architecture decision index
 
-- [0039: Reviewed private Gateway diagnostics](0039-reviewed-private-gateway-diagnostics.md): proposed for #282; existing school-policy exception and additive terminal error.
+- Status: Current ADR index; release status does not imply new ADR approval
+- Owner: project maintainer unless an ADR states otherwise
+- Last verified: 2026-11-07 (release/status labels only)
+- Applies to: indexed 2.0 decisions; current runtime identities are in the status index below
+
+- [0039: Reviewed private Gateway diagnostics](0039-reviewed-private-gateway-diagnostics.md): proposed ADR; implementation shipped via #292 in 2.0.6. Formal ADR approval is not asserted by the release record.
 
 - Current implementation status: [`../2.0-status.md`](../2.0-status.md)
-- Current indexed implementation baseline: stable `v2.0.0` at
+- Historical indexed implementation baseline: stable `v2.0.0` at
   `415a3b5dfb9d11bffa14cde27e924af486823249`
-- Decision owner: project maintainer unless an ADR states otherwise
 
 ADRs record durable or security-relevant decisions. P3/P6 step-level documents are retained as implementation
 records for review and recovery evidence; future procedural notes belong under `docs/engineering/`.
