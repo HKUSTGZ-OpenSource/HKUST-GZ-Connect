@@ -51,6 +51,7 @@ function createControlStateSnapshot({
   getFallbackResources,
   getProfilePresentation,
   getAuthChallenge,
+  prepareNetworkEnvironment,
   getNetworkEnvironment,
   getServiceDesk,
 } = {}) {
@@ -68,12 +69,13 @@ function createControlStateSnapshot({
     getFallbackResources: requiredFunction(getFallbackResources, 'getFallbackResources'),
     getProfilePresentation: requiredFunction(getProfilePresentation, 'getProfilePresentation'),
     getAuthChallenge: requiredFunction(getAuthChallenge, 'getAuthChallenge'),
+    prepareNetworkEnvironment: requiredFunction(prepareNetworkEnvironment, 'prepareNetworkEnvironment'),
     getNetworkEnvironment: requiredFunction(getNetworkEnvironment, 'getNetworkEnvironment'),
     getServiceDesk: typeof getServiceDesk === 'function' ? getServiceDesk : () => null,
   };
   if (typeof platform !== 'string' || !platform) throw new TypeError('platform is required');
 
-  const common = async () => ({
+  const common = (settings) => ({
     ...dependencies.getStatus(),
     pacUrl: dependencies.getPacUrl(),
     locale: dependencies.getLocale(),
@@ -81,24 +83,27 @@ function createControlStateSnapshot({
     version: dependencies.getVersion(),
     update: dependencies.getUpdate(),
     authChallenge: dependencies.getAuthChallenge(),
-    networkEnvironment: await dependencies.getNetworkEnvironment(),
+    networkEnvironment: dependencies.getNetworkEnvironment(settings),
     serviceDesk: dependencies.getServiceDesk(),
   });
 
   return async function controlStateSnapshot() {
+    // Observe first, then capture local owners without another async boundary.
+    await dependencies.prepareNetworkEnvironment();
     let settings;
     try {
       settings = dependencies.loadSettings();
     } catch {
       const resources = dependencies.getFallbackResources();
+      const shared = common(null);
       return {
-        ...await common(),
+        ...shared,
         settings: null,
         hasPassword: false,
         loggedIn: false,
         campusResources: resources,
         resourceGroups: [],
-        ...dependencies.getProfilePresentation({ locale: dependencies.getLocale() }),
+        ...dependencies.getProfilePresentation({ locale: shared.locale }),
       };
     }
     const passwordPresent = dependencies.hasCredential();
@@ -109,15 +114,16 @@ function createControlStateSnapshot({
     });
     const favoriteCount = resources.filter(({ favorite }) => favorite === true).length;
     const recentCount = resources.filter(({ lastOpenedAt }) => Number.isSafeInteger(lastOpenedAt)).length;
+    const shared = common(settings);
     return {
-      ...await common(),
+      ...shared,
       settings: publicSettings,
       hasPassword: passwordPresent,
       loggedIn: passwordPresent && dependencies.hasAccountIdentity(settings),
       campusResources: resources,
       resourceGroups: projectResourceGroups(dependencies.getResourceGroups()),
       ...dependencies.getProfilePresentation({
-        locale: dependencies.getLocale(),
+        locale: shared.locale,
         hasCredential: passwordPresent,
         resourceCount: resources.length,
         favoriteCount,

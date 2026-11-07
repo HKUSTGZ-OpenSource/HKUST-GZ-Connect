@@ -357,3 +357,89 @@ test('public egress is asynchronous, memory-only, and compared only against same
     .every(({ publicEgress }) => publicEgress === null), true,
   'system-route changes invalidate cached observations even when interface addresses stay identical');
 });
+
+test('presenting current selection uses cached observation without provider or public probe', async () => {
+  let detections = 0;
+  let probes = 0;
+  const service = new NetworkEnvironmentService({
+    platform: 'linux', environment: {},
+    networkInterfaces: () => ({ eth0: [address('192.0.2.20')], tun0: [address('100.64.0.8')] }),
+    run: (_command, args) => {
+      if (args.includes('route')) { detections += 1; return JSON.stringify([{ dst: 'default', dev: 'eth0', metric: 10 }]); }
+      return '';
+    },
+    publicEgressProbe: { probe: async () => { probes += 1; return { address: '8.8.8.8', family: 4 }; } },
+  });
+  try {
+    await service.rawSnapshot();
+    const view = service.presentSnapshot('100.64.0.8');
+    assert.equal(view.selection.sourceAddress, '100.64.0.8');
+    assert.equal(service.latestSelection, '100.64.0.8');
+    service.cachedSnapshot('192.0.2.20'); service.resolveSelection('192.0.2.20');
+    assert.equal(service.latestSelection, '100.64.0.8', 'pure cached reads do not accept a new selection');
+    service.presentSnapshot();
+    assert.equal(service.latestSelection, '');
+    await service.rawSnapshot();
+    assert.equal(detections, 1, 'presentation does not invalidate the ordinary observation TTL');
+    assert.equal(probes, 0, 'synchronous presentation never opts into a public request');
+  } finally { service.dispose(); }
+});
+
+test('current presentation controls candidate limits and later public egress notifications', async () => {
+  const pending = new Map();
+  let probes = 0;
+  let clock = 1000;
+  let changedRoute = false;
+  let cancellations = 0;
+  const observed = [];
+  const service = new NetworkEnvironmentService({
+    platform: 'linux', environment: {}, now: () => clock, maxPublicEgressSources: 1,
+    networkInterfaces: () => ({ eth0: [address('192.0.2.20')], tun0: [address('100.64.0.8')] }),
+    run: (_command, args) => args.includes('route') ? JSON.stringify([
+      { dst: 'default', dev: changedRoute ? 'tun0' : 'eth0', metric: 10 },
+    ]) : '',
+    publicEgressProbe: {
+      probe: ({ sourceAddress }) => { probes += 1; return new Promise((resolve) => pending.set(sourceAddress, resolve)); },
+      cancel: () => { cancellations += 1; },
+    },
+  });
+  const finish = (sourceAddress, address) => pending.get(sourceAddress)({ address, family: 4, binding: 'source-address', provider: 'synthetic' });
+  try {
+    service.setPublicEgressListener((view) => observed.push(view));
+    const first = await service.snapshot('192.0.2.20', { probePublicEgress: true });
+    assert.equal(first.interfaces.find(({ id }) => id === 'eth0').addresses[0].publicEgress.status, 'probing');
+    finish('192.0.2.20', '8.8.8.8');
+    await new Promise((resolve) => setImmediate(resolve));
+    await service.snapshot('100.64.0.8', { probePublicEgress: true });
+    finish('100.64.0.8', '1.1.1.1');
+    await new Promise((resolve) => setImmediate(resolve));
+    await service.snapshot('192.0.2.20');
+    const second = service.presentSnapshot('100.64.0.8');
+    assert.equal(second.interfaces.find(({ id }) => id === 'tun0').addresses[0].publicEgress.address, '1.1.1.1');
+    assert.equal(probes, 2);
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    assert.equal(observed.at(-1).selection.sourceAddress, '100.64.0.8');
+
+    clock += 60_001;
+    await service.snapshot('192.0.2.20', { probePublicEgress: true });
+    service.presentSnapshot('100.64.0.8');
+    const notificationCount = observed.length;
+    finish('192.0.2.20', '8.8.4.4');
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    assert.equal(observed.length, notificationCount + 1, 'the late completion produces a new notification');
+    assert.equal(observed.at(-1).selection.sourceAddress, '100.64.0.8', 'late completion cannot restore an old selection');
+
+    clock += 60_001;
+    await service.snapshot('192.0.2.20', { probePublicEgress: true });
+    const cancelBefore = cancellations;
+    changedRoute = true;
+    await service.rawSnapshot({ force: true });
+    const changed = service.presentSnapshot('100.64.0.8');
+    assert.equal(cancellations, cancelBefore + 1, 'presentation reconciles a newly observed network signature');
+    assert.equal(changed.interfaces.flatMap(({ addresses }) => addresses).every(({ publicEgress }) => publicEgress === null), true);
+    finish('192.0.2.20', '9.9.9.9');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(service.presentSnapshot('192.0.2.20').interfaces.flatMap(({ addresses }) => addresses).every(({ publicEgress }) => publicEgress === null), true,
+      'selecting the retired source must not reveal a late cache refill');
+  } finally { service.dispose(); }
+});

@@ -9,6 +9,13 @@
 
 网关地址策略和证书归属修复已选入 [2.0.6 发布候选说明](RELEASE_NOTES_2.0.6.md)；实际发布状态以 GitHub Release 为准。
 
+## 未发布：一致的界面状态 / Unreleased: Consistent control state
+
+- 等待网络观察期间修改语言、资源或收藏分组后，返回的界面状态会一起读取最新数据，避免旧资源列表配上新分组，或把刚保存的语言切回旧值。
+- 当前网络出口选择及后续观察通知保持一致；不会因此额外发起公网探测，不更改学校凭据、存储格式或系统网络。
+- Capture current control state together after network observation completes, so a language/resource/group edit during the wait cannot return old resources with new group references or reapply the previous language.
+- Network selection and later observation notifications use the current settings without starting extra public probes. Credentials, stored formats and system networking are unchanged.
+
 ## 2.0.6 候选：网关地址策略 / 2.0.6 candidate: Gateway address policy
 
 - 港科广内置配置启用已审核的内网网关策略，支持同一学校域名的内外网解析；不硬编码本机地址，不改变未知网关规则、证书校验或系统网络。
