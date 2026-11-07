@@ -188,6 +188,8 @@ class DesktopShell {
         await this.cleanupQuit();
         if (this.tray && !this.tray.isDestroyed()) this.tray.destroy();
         this.tray = null;
+        // Finish the native close cancellation before starting application quit.
+        await new Promise((resolve) => setImmediate(resolve));
         this.quitAllowed = true;
         this.app.quit();
       }

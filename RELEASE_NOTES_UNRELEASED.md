@@ -9,6 +9,11 @@
 
 网关地址策略和证书归属修复已选入 [2.0.6 发布候选说明](RELEASE_NOTES_2.0.6.md)；实际发布状态以 GitHub Release 为准。
 
+## 未发布：直接关窗退出 / Unreleased: Quit on window close
+
+- 将关闭窗口设为“退出程序”时，应用会在完成断开和清理后正常结束，避免窗口消失后仍留下后台进程。最小化到托盘及询问后退出的行为保持不变。
+- With Quit selected for window closing, the application finishes disconnecting and cleaning up before exiting, without leaving its background process running after the window disappears. Minimize-to-tray and the close confirmation remain available.
+
 ## 2.0.6 候选：网关地址策略 / 2.0.6 candidate: Gateway address policy
 
 - 港科广内置配置启用已审核的内网网关策略，支持同一学校域名的内外网解析；不硬编码本机地址，不改变未知网关规则、证书校验或系统网络。
