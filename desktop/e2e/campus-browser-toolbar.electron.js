@@ -22,6 +22,7 @@ const { CAMPUS_PARTITION, ROUTE_CAMPUS, ROUTE_DIRECT } = require('../lib/routing
 const { scheduleTemporaryProfileCleanup } = require('../scripts/temp-profile-cleanup');
 const { assertNativeSessionOwnership } = require('./support/browser-session-ownership');
 const { assertNativeToolbarRetirement } = require('./support/toolbar-command-retirement');
+const { assertNativeNewTabKeyboard } = require('./support/browser-new-tab-keyboard');
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'hkustgz-browser-toolbar-'));
 fs.chmodSync(profile, 0o700);
@@ -990,6 +991,12 @@ async function main() {
     await runStage('toolbar initialization', () =>
       waitFor(browser.window, '!!window.campusBrowserUI', 'toolbar initialization'));
     await runStage('workspace home', () => assertWorkspaceHome(browser));
+    await runStage('new-tab native keyboard', async () => {
+      await assertNativeNewTabKeyboard({ browser, preference: newTabPreference, configuredUrl: CONFIGURED_HOME, waitForMain, waitForPage });
+      // The helper confirms its old window/pages retired before returning.
+      // The next stage must observe its own synchronous did-navigate records.
+      committedUrls.length = 0;
+    });
     await runStage('active tab attachment', () => assertOnlyActiveTabAttached(browser));
     await runStage('blank new tab', () => assertBlankNewTab(browser));
     await runStage('configured home recovery', () =>

@@ -9,6 +9,11 @@
 
 网关地址策略和证书归属修复已选入 [2.0.6 发布候选说明](RELEASE_NOTES_2.0.6.md)；实际发布状态以 GitHub Release 为准。
 
+## 未发布：浏览器新标签快捷键 / Unreleased: Browser new-tab shortcut
+
+- 浏览器网页、工作台与工具栏聚焦时，按下 Ctrl+T（Windows/Linux）或 ⌘T（macOS）会按已有设置打开一个新标签；松开按键不会再次打开。旧窗口、已关闭工作台和退休上下文的监听器不再接收新标签操作。
+- Browser page, Workspace and toolbar focus now share the configured new-tab action for Ctrl+T on Windows/Linux and Command+T on macOS. Only keyDown creates a tab; release and retired window/Workspace listeners cannot create another. Existing tab limits and destination settings are preserved.
+
 ## 2.0.6 候选：网关地址策略 / 2.0.6 candidate: Gateway address policy
 
 - 港科广内置配置启用已审核的内网网关策略，支持同一学校域名的内外网解析；不硬编码本机地址，不改变未知网关规则、证书校验或系统网络。

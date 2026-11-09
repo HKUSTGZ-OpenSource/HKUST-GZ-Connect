@@ -70,6 +70,7 @@ class CampusBrowserWindowOwner {
     platform,
     windowChrome,
     onToolbarCommand,
+    createNewTabKeyboardHandler = () => () => false,
     onResize,
     onBeforeCreate = () => {},
     onRetireAdmission = () => {},
@@ -81,7 +82,7 @@ class CampusBrowserWindowOwner {
         typeof getProfilePresentation !== 'function' || typeof getLocale !== 'function' ||
         typeof getTranslator !== 'function' || typeof parentWindow !== 'function' ||
         typeof platform !== 'string' || typeof windowChrome !== 'function' ||
-        typeof onToolbarCommand !== 'function' || typeof onResize !== 'function' ||
+        typeof onToolbarCommand !== 'function' || typeof createNewTabKeyboardHandler !== 'function' || typeof onResize !== 'function' ||
         typeof onBeforeCreate !== 'function' || typeof onRetireAdmission !== 'function' ||
         typeof onClosed !== 'function' || typeof onMissingWindow !== 'function') {
       throw new TypeError('Campus Browser window owner dependencies are incomplete');
@@ -89,7 +90,7 @@ class CampusBrowserWindowOwner {
     Object.assign(this, {
       BrowserWindow, toolbarFile, toolbarPreload, getProfilePresentation, getLocale,
       getTranslator, parentWindow, platform, windowChrome,
-      onToolbarCommand, onResize, onBeforeCreate, onRetireAdmission, onClosed, onMissingWindow,
+      onToolbarCommand, createNewTabKeyboardHandler, onResize, onBeforeCreate, onRetireAdmission, onClosed, onMissingWindow,
     });
     this.current = null;
     this.contextRetired = false;
@@ -202,6 +203,7 @@ class CampusBrowserWindowOwner {
       closedListener: null,
       resizeListener: null,
       ipcListener: null,
+      inputListener: null,
     };
     this.current = record;
     window.on('closed', record.closedListener = () => this.retire(record));
@@ -223,12 +225,19 @@ class CampusBrowserWindowOwner {
         if (!this.contextRetired && this.current === record && !record.retired && record.state === 'ready' &&
             channel === 'campus-toolbar-command') this.onToolbarCommand(payload);
       };
+      const handleKeyboard = this.createNewTabKeyboardHandler();
+      record.inputListener = (event, input) => {
+        if (!this.contextRetired && this.current === record && !record.retired && record.state === 'ready' &&
+            !record.window.isDestroyed() && record.window.webContents === record.webContents &&
+            record.webContents.isDestroyed?.() !== true) handleKeyboard(event, input);
+      };
       record.resizeListener = () => {
         if (this.current === record && !record.retired && record.state === 'ready') {
           this.onResize(record.window);
         }
       };
       record.webContents.on('ipc-message', record.ipcListener);
+      record.webContents.on('before-input-event', record.inputListener);
       record.window.on('resize', record.resizeListener);
       record.state = 'ready';
       this.settleReady(record, null, record.window);
@@ -265,6 +274,7 @@ class CampusBrowserWindowOwner {
       [record.window, 'closed', record.closedListener],
       [record.window, 'resize', record.resizeListener],
       [record.webContents, 'ipc-message', record.ipcListener],
+      [record.webContents, 'before-input-event', record.inputListener],
     ];
     for (const [target, event, listener] of listeners) {
       if (!listener) continue;
@@ -274,6 +284,7 @@ class CampusBrowserWindowOwner {
     record.closedListener = null;
     record.resizeListener = null;
     record.ipcListener = null;
+    record.inputListener = null;
     return failure;
   }
 
