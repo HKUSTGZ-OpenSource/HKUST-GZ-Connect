@@ -529,7 +529,7 @@ button:disabled { cursor: wait; opacity: .62; }
   max-height: min(680px, calc(100vh - 32px));
   margin: auto;
 }
-.add-website-dialog .manager-shell { height: auto; }
+.add-website-dialog .manager-shell { height: auto; max-height: inherit; }
 .add-website-body {
   flex: 0 1 auto;
   display: grid;

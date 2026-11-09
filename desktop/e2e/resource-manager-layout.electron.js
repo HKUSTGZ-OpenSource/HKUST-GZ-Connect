@@ -2,8 +2,11 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, session } = require('electron');
+const { exerciseAddWebsiteZoom } = require('./support/add-website-layout');
+app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'hkust-add-website-layout-')));
 
 const renderer = path.join(__dirname, '..', 'renderer', 'index.html');
 const preload = path.join(__dirname, 'resource-manager-layout-preload.js');
@@ -230,11 +233,12 @@ async function exerciseAddWebsiteDialogLayout(window) {
 
 async function main() {
   await app.whenReady();
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => callback({ cancel: !details.url.startsWith('file:') }));
   const window = new BrowserWindow({
     show: false,
     width: 500,
     height: 640,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, preload },
+    webPreferences: { contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, preload },
   });
 
   try {
@@ -243,6 +247,8 @@ async function main() {
     await exerciseIntegrationCenter(window);
     await exerciseAddWebsiteDialogLayout(window);
     assertCustomResourceAddAndOpen(await addAndOpenCustomResource(window));
+    window.show(); window.focus();
+    await exerciseAddWebsiteZoom(window);
     process.stdout.write('renderer layout: PASS\n');
   } finally {
     if (!window.isDestroyed()) window.destroy();

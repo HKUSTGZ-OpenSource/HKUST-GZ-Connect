@@ -9,6 +9,11 @@
 
 网关地址策略和证书归属修复已选入 [2.0.6 发布候选说明](RELEASE_NOTES_2.0.6.md)；实际发布状态以 GitHub Release 为准。
 
+## 未发布：添加网站缩放布局 / Unreleased: Add Website zoom layout
+
+- 高缩放或窗口较小时，“添加网站”中的预览、冲突及错误文字增长会在表单正文内滚动，标题和操作按钮保持完整可见，不再需要先用 Tab 滚动整个对话框找回按钮。保存、取消和网络路径规则保持不变。
+- At high zoom or in shorter windows, growing preview, conflict and error text scrolls within Add Website's body while its heading and actions remain visible. Users no longer need Tab's outer-dialog scrolling fallback to reveal the buttons. Saving, cancellation and routing rules are unchanged.
+
 ## 2.0.6 候选：网关地址策略 / 2.0.6 candidate: Gateway address policy
 
 - 港科广内置配置启用已审核的内网网关策略，支持同一学校域名的内外网解析；不硬编码本机地址，不改变未知网关规则、证书校验或系统网络。
