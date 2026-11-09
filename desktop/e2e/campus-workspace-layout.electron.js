@@ -2,14 +2,17 @@
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, session } = require('electron');
+const { exerciseWorkspaceGroupDialog } = require('./support/workspace-group-dialog');
 const { CampusWorkspaceController } = require('../lib/browser/workspace/campus-workspace-controller');
 const {
   parseBuiltinResourceDocument,
 } = require('../lib/resources/schema/campus-resource-contract');
 const { createDefaultCardBoardLayout } = require('../lib/card-board/runtime/card-board-migration');
 const { applyCardBoardOperations } = require('../lib/card-board/runtime/card-board-runtime');
+app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'hkust-workspace-layout-')));
 
 const favoriteTimes = new Map([
   ['canvas', [true, 900]], ['library', [true, 800]], ['outlook', [true, 600]],
@@ -85,6 +88,9 @@ async function capture(window, label) {
 
 async function main() {
   await app.whenReady();
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    callback({ cancel: !details.url.startsWith('file:') });
+  });
   const commands = [];
   const layoutCommits = [];
   let cardBoardDocument;
@@ -418,6 +424,7 @@ async function main() {
   assert.equal(commands.some(({ command, resourceId }) =>
     command === 'open-resource' && resourceId === 'sis'), true);
   await capture(window, 'manage');
+  await exerciseWorkspaceGroupDialog({ window, controller, capture });
   for (const channel of [
     'get-card-board-layout', 'commit-card-board-layout', 'reset-card-board-layout',
   ]) ipcMain.removeHandler(channel);

@@ -331,12 +331,15 @@ function clearSearch() {
 }
 $('clearWorkspaceSearch').addEventListener('click', clearSearch);
 $('clearWorkspaceFilter').addEventListener('click', clearSearch);
+$('cancelGroup').addEventListener('click', () => $('groupDialog').close('cancel'));
 $('groupDialog').addEventListener('close', () => {
+  if ($('groupDialog').open) return;
   groupDialogRevision += 1;
   editingGroupId = null;
 });
-$('saveGroup').addEventListener('click', async (event) => {
+$('groupDialog').querySelector('form').addEventListener('submit', async (event) => {
   event.preventDefault();
+  if (!$('groupDialog').open || $('saveGroup').disabled) return;
   const name = $('groupName').value.trim();
   if (!name || name.length > 30) {
     $('groupError').textContent = text().invalidGroupName;
