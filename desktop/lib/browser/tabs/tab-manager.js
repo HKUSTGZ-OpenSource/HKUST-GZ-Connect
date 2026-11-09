@@ -135,11 +135,12 @@ class TabManager {
 
 class BrowserTabLifecycle extends TabManager {
   constructor({ maxTabs = DEFAULT_MAX_TABS, WebContentsView, campusPreload,
-    getWindow, getToolbarHeight, getWorkspace, blankUrl = 'about:blank', effects } = {}) {
+    getWindow, getToolbarHeight, getWorkspace, blankUrl = 'about:blank', effects,
+    createNewTabKeyboardHandler = () => () => false } = {}) {
     super({ maxTabs });
     // View construction stays lazy, as it was in CampusBrowser. A download or
     // certificate-only host does not need a page constructor/preload yet.
-    if (![getWindow, getToolbarHeight, getWorkspace].every(value => typeof value === 'function') ||
+    if (![getWindow, getToolbarHeight, getWorkspace, createNewTabKeyboardHandler].every(value => typeof value === 'function') ||
         typeof blankUrl !== 'string' || !effects || [
           'linkPopup', 'closeTabState', 'releasePopup', 'attachPageEvents', 'navigate',
           'scheduleToolbarUpdate', 'updateToolbar', 'beforeDeactivate', 'layout',
@@ -151,6 +152,8 @@ class BrowserTabLifecycle extends TabManager {
     Object.assign(this, { WebContentsView, campusPreload, getWindow, getToolbarHeight, getWorkspace, blankUrl });
     this.effects = Object.freeze({ ...effects });
     this.cleanupContents = new WeakMap();
+    this.createNewTabKeyboardHandler = createNewTabKeyboardHandler;
+    this.workspaceInput = new Map();
     this.view = null;
     this.attachedView = null;
   }
@@ -256,6 +259,19 @@ class BrowserTabLifecycle extends TabManager {
       this.cleanupContents.set(tab, view.webContents);
       this.add(tab);
       view.setVisible(false);
+      const contents = view.webContents, handleKeyboard = this.createNewTabKeyboardHandler();
+      let listening = true;
+      const listener = (event, input) => {
+        if (listening && isCurrent() && view.webContents === contents) handleKeyboard(event, input);
+      };
+      const detach = () => {
+        listening = false;
+        contents.removeListener('before-input-event', listener);
+        contents.removeListener('destroyed', detach);
+        this.workspaceInput.delete(tab);
+      };
+      this.workspaceInput.set(tab, detach);
+      contents.on('before-input-event', listener); contents.once('destroyed', detach);
       if (!isCurrent() || !this.activate(tab.id)) throw new Error('workspace activation failed');
       workspace.load(view).then(() => {
         if (!isCurrent()) return;
@@ -280,7 +296,7 @@ class BrowserTabLifecycle extends TabManager {
       });
       return tab;
     } catch {
-      if (tab) this.remove(tab.id);
+      if (tab) { this.remove(tab.id); this.workspaceInput.get(tab)?.(); }
       if (this.attachedView === view) {
         try { this.window.contentView.removeChildView(view); } catch {}
         this.attachedView = null;
@@ -357,6 +373,7 @@ class BrowserTabLifecycle extends TabManager {
     this.effects.cancelScheduledUpdates();
     this.effects.cancelCertificatePrompts();
     const { tab, replacement, empty } = removal;
+    this.workspaceInput.get(tab)?.();
     this.effects.clearSlowTimer(tab);
     this.effects.closeTabState(tab);
     if (this.attachedView === tab.view) {
@@ -384,7 +401,7 @@ class BrowserTabLifecycle extends TabManager {
   closeViews(closePages = true) {
     const failures = [];
     for (const tab of [...this.tabs]) {
-      for (const operation of [() => this.effects.clearSlowTimer(tab),
+      for (const operation of [() => this.workspaceInput.get(tab)?.(), () => this.effects.clearSlowTimer(tab),
         () => this.effects.clearCredentialCandidate(tab), () => {
           if (!closePages) return;
           const contents = this.cleanupContents.get(tab) || tab.view.webContents;

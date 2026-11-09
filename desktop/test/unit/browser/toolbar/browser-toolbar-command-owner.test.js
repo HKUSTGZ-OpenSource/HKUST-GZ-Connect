@@ -172,3 +172,42 @@ test('a rejected route switch reports an error without navigating', async () => 
   await Promise.resolve();
   assert.deepEqual(f.calls, [['error', 'route.switchFailed']]);
 });
+
+for (const platform of ['darwin', 'win32', 'linux']) {
+  test(`${platform} new-tab admits keyDown once and rejects release-only input`, () => {
+    const f = fixture(); f.owner.platform = platform;
+    const input = { key: 'T', [platform === 'darwin' ? 'meta' : 'control']: true };
+    let prevented = 0;
+    const event = { preventDefault: () => prevented++ };
+    f.owner.handleKeyboard(f.tab, event, { ...input, type: 'keyDown' });
+    f.owner.handleKeyboard(f.tab, event, { ...input, type: 'keyUp' });
+    assert.deepEqual(f.calls, [['openNewTab']]); assert.equal(prevented, 1);
+    f.calls.length = 0;
+    f.owner.handleKeyboard(f.tab, event, { ...input, type: 'keyUp' });
+    assert.deepEqual(f.calls, []); assert.equal(prevented, 1);
+  });
+}
+
+for (const retirement of ['closed', 'replacement', 'context', 'reset', 'destroyed']) {
+  test(`bound new-tab input rejects a saved callback after ${retirement}`, () => {
+    const f = fixture(), listener = f.owner.createNewTabKeyboardHandler();
+    if (retirement === 'closed') f.state.window = null;
+    else if (retirement === 'replacement') f.state.window = { isDestroyed: () => false };
+    else if (retirement === 'context') f.state.current = false;
+    else if (retirement === 'destroyed') f.state.window.isDestroyed = () => true;
+    else f.owner.reset();
+    listener({ preventDefault: () => assert.fail('retired input') }, { meta: true, key: 't', type: 'keyDown' });
+    assert.deepEqual(f.calls, []);
+  });
+}
+
+test('shared new-tab handler does not admit unrelated keys, releases or the wrong platform modifier', () => {
+  const f = fixture(), listener = f.owner.createNewTabKeyboardHandler();
+  const event = { preventDefault: () => assert.fail('unrelated shortcut') };
+  for (const key of ['w', 'l', 'r', 'f', 'k', '+', 'ArrowLeft', '1']) {
+    listener(event, { meta: true, alt: true, key, type: 'keyDown' });
+  }
+  listener(event, { control: true, key: 't', type: 'keyDown' });
+  listener(event, { meta: true, key: 't', type: 'keyUp' });
+  assert.deepEqual(f.calls, []);
+});

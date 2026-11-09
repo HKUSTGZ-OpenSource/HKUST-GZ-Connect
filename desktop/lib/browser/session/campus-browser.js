@@ -170,6 +170,7 @@ class CampusBrowser {
         platform: process.platform,
         windowChrome: campusWindowChrome,
         onToolbarCommand: payload => this.handleToolbarCommand(payload),
+        createNewTabKeyboardHandler: () => this.toolbarCommands.createNewTabKeyboardHandler(),
         onResize: () => this.scheduleLayout(),
         onBeforeCreate: () => this.teardownOwner.beforeCreate(),
         onRetireAdmission: () => this.browserSessionManager.retire(),
@@ -194,6 +195,7 @@ class CampusBrowser {
       getWindow: () => this.window,
       getToolbarHeight: () => TOOLBAR_HEIGHT + (this.findOpen ? FIND_BAR_HEIGHT : 0),
       getWorkspace: () => this.workspaceController,
+      createNewTabKeyboardHandler: () => this.toolbarCommands.createNewTabKeyboardHandler(),
       effects: {
         linkPopup: (reservation, tab) => this.credentialController.linkPopup(reservation, tab),
         closeTabState: tab => {
@@ -490,7 +492,6 @@ class CampusBrowser {
   openBlankTab() { return this.navigationOwner.openBlankTab(); }
 
   async openNewTab() { return this.navigationOwner.openNewTab(); }
-
   async ensureRoutingReady(resolution, port = this.configuredPort || 1080, admissionCurrent) {
     return this.routingActivationOwner.ensureReady(resolution, port, admissionCurrent);
   }
@@ -627,7 +628,6 @@ class CampusBrowser {
   attachPageEvents(tab) {
     if (!this.pagePresentationOwner.attach(tab)) throw new Error('Campus Browser page is retired');
   }
-
   tabOrigin(tab) {
     return tabCredentialOrigin(tab);
   }

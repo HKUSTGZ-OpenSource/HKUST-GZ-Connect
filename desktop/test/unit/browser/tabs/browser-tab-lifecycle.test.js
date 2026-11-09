@@ -52,6 +52,7 @@ function fixture(overrides = {}) {
     WebContentsView: View, campusPreload: '/synthetic/preload.js',
     getWindow: () => context.window, getToolbarHeight: () => context.height,
     getWorkspace: () => context.workspace, effects,
+    createNewTabKeyboardHandler: () => (...args) => calls.push(['keyboard', ...args]),
   });
   const session = {};
   const page = (options = {}) => owner.createPage({
@@ -304,4 +305,46 @@ test('a replaced Workspace owner cannot receive a previous owner load result', a
   f.resolve();
   await new Promise(setImmediate);
   assert.deepEqual(f.calls, []);
+});
+
+for (const retirement of ['closed', 'window', 'workspace', 'contents', 'destroyed', 'teardown']) {
+  test(`Workspace native keyboard rejects saved callbacks after ${retirement}`, () => {
+    const f = workspaceFixture(), contents = f.tab.view.webContents;
+    const external = () => {}; contents.on('before-input-event', external);
+    const listener = contents.listeners('before-input-event').find(value => value !== external);
+    assert.equal(typeof listener, 'function');
+    contents.emit('before-input-event', {}, { type: 'keyDown', key: 't' });
+    assert.equal(f.calls.filter(([name]) => name === 'keyboard').length, 1);
+    assert.equal(f.calls.some(([name]) => name === 'attachPageEvents'), false);
+    if (retirement === 'closed') f.owner.close(f.tab.id);
+    else if (retirement === 'window') f.context.window = f.makeWindow();
+    else if (retirement === 'workspace') f.context.workspace = {};
+    else if (retirement === 'contents') f.tab.view.webContents = new f.View({}).webContents;
+    else if (retirement === 'destroyed') { contents.destroyed = true; contents.emit('destroyed'); }
+    else f.owner.closeViews();
+    f.calls.length = 0; listener({}, { type: 'keyDown', key: 't' });
+    assert.deepEqual(f.calls, []);
+    if (['closed', 'destroyed', 'teardown'].includes(retirement)) {
+      assert.deepEqual(contents.listeners('before-input-event'), [external]);
+    }
+    f.resolve();
+  });
+}
+
+test('failed Workspace activation removes its native input listener and retires saved callbacks', () => {
+  const f = fixture(); let saved;
+  f.context.construct = view => {
+    f.context.failFor = view;
+    const on = view.webContents.on.bind(view.webContents);
+    view.webContents.on = (name, listener) => {
+      if (name === 'before-input-event') saved = listener;
+      return on(name, listener);
+    };
+  };
+  f.context.workspace = { createView: View => new View({}), load: () => assert.fail('failed activation loaded') };
+  assert.equal(f.owner.createWorkspace(f.session), null);
+  assert.equal(typeof saved, 'function');
+  assert.equal(f.created[0].webContents.listenerCount('before-input-event'), 0);
+  assert.equal(f.created[0].webContents.closeCount, 1);
+  f.calls.length = 0; saved({}, { type: 'keyDown', key: 't' }); assert.deepEqual(f.calls, []);
 });

@@ -623,7 +623,24 @@ class BrowserToolbarCommandOwner {
     return true;
   }
 
+  createNewTabKeyboardHandler() {
+    const admission = this.capture();
+    return this.bound(admission, (event, input) => this.handleNewTabKeyboard(event, input));
+  }
+
+  handleNewTabKeyboard(event, input) {
+    const admission = this.capture();
+    if (!admission.window || !this.current(admission) || input.type !== 'keyDown' ||
+        !(this.platform === 'darwin' ? input.meta : input.control) ||
+        String(input.key || '').toLowerCase() !== 't') return false;
+    event.preventDefault();
+    Promise.resolve(this.actions.openNewTab())
+      .catch(this.bound(admission, () => this.reportError(this.translate('tab.createFailed'))));
+    return true;
+  }
+
   handleKeyboard(tab, event, input) {
+    if (this.handleNewTabKeyboard(event, input)) return true;
     const admission = this.capture();
     if (!admission.window || !this.current(admission)) return false;
     const contents = tab.view.webContents;
@@ -631,11 +648,7 @@ class BrowserToolbarCommandOwner {
     const key = String(input.key || '').toLowerCase();
     const navigation = this.navigationForContents(contents);
     const action = this.actions;
-    if (commandKey && key === 't') {
-      event.preventDefault();
-      Promise.resolve(action.openNewTab())
-        .catch(this.bound(admission, () => this.reportError(this.translate('tab.createFailed'))));
-    } else if (commandKey && key === 'w') {
+    if (commandKey && key === 'w') {
       event.preventDefault(); action.closeTab(tab.id);
     } else if (commandKey && key === 'l') {
       event.preventDefault();

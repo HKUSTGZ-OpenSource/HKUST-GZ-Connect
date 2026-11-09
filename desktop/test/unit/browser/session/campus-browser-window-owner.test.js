@@ -68,6 +68,7 @@ function createOwner(options = {}) {
     platform: 'linux',
     windowChrome: platform => ({ titleBarStyle: platform === 'darwin' ? 'hiddenInset' : 'default' }),
     onToolbarCommand: payload => commands.push(payload),
+    createNewTabKeyboardHandler: () => options.keyboard || (() => {}),
     onResize: window => resized.push(window),
     onBeforeCreate: () => options.onBeforeCreate?.(),
     onClosed: window => {
@@ -645,4 +646,24 @@ test('Campus Browser window owner remains below the M2 owner line ceiling', () =
   assert.ok(start >= 0 && end > start, 'public manager defines an independently testable window owner');
   const lines = source.slice(start, end).split('\n').length - 1;
   assert.ok(lines <= 600, `window owner is ${lines} lines`);
+});
+
+test('toolbar owns a ready-only keyboard listener and retires saved callbacks', async () => {
+  const calls = [], f = createOwner({ keyboard: (...args) => calls.push(args) });
+  const window = await f.owner.createWindow(), contents = window.webContents;
+  const external = () => {}; contents.on('before-input-event', external);
+  const listener = contents.listeners('before-input-event').find(value => value !== external);
+  assert.equal(typeof listener, 'function');
+  const event = {}, input = { type: 'keyDown', control: true, key: 't' };
+  contents.emit('before-input-event', event, input); assert.deepEqual(calls, [[event, input]]);
+  f.owner.requestClose(); listener(event, input); assert.equal(calls.length, 1);
+  f.owner.clear(); assert.deepEqual(contents.listeners('before-input-event'), [external]);
+  await f.owner.createWindow(); listener(event, input); assert.equal(calls.length, 1);
+});
+
+test('retired context cannot receive a native toolbar shortcut', async () => {
+  const calls = [], f = createOwner({ keyboard: () => calls.push('input') });
+  const window = await f.owner.createWindow(); f.owner.retireAdmission();
+  window.webContents.emit('before-input-event', {}, { type: 'keyDown', key: 't', control: true });
+  assert.deepEqual(calls, []);
 });
