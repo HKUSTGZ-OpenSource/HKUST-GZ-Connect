@@ -50,6 +50,16 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
     weekCache.clear(); scheduleRequest++; lastScheduleLayout = null; scheduleNotice = '';
     setScheduleRefreshBusy(false);
   }
+  function publishSnapshotCatalog(value, allowReady = true) {
+    const epoch = displayEpoch;
+    // A schedule permission denial can coexist with an authenticated catalog.
+    const retired = value?.sessionState === 'unauthenticated' ||
+      ['not-authenticated', 'session-expired'].includes(value?.modules?.schedule?.state) ||
+      ['not-authenticated', 'session-expired', 'forbidden'].includes(value?.catalog?.state);
+    if (retired) publishCatalog(null);
+    else if (allowReady && value?.catalog?.state === 'ready') publishCatalog(value.catalog);
+    return epoch === displayEpoch;
+  }
   function remember(date, module) {
     if (!reusable(module)) return;
     const key = weekKey(date);
@@ -249,9 +259,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
       if (denied) revokeSchedule();
       loaded = true;
       lastLoadedAt = Date.now();
-      const publicationEpoch = displayEpoch;
-      publishCatalog(value?.catalog || null);
-      if (publicationEpoch !== displayEpoch) return null;
+      if (!publishSnapshotCatalog(value)) return null;
       if (!denied) remember(campusDate(value?.checkedAt || Date.now()), value?.modules?.schedule);
       if (!denied && weekRange(Date.parse(`${selectedDate}T12:00:00+08:00`), true).start !== weekRange(Date.now(), true).start &&
           typeof api.getCampusScheduleWeek === 'function') {
@@ -323,6 +331,8 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
       }
       loaded = true;
       lastLoadedAt = Date.now();
+      // Week replies carry a cached catalog; only full loads publish a new one.
+      if (!publishSnapshotCatalog(value, false)) return null;
       render();
       return value;
     }).catch(() => {

@@ -380,8 +380,8 @@ campusDataFeature = rendererFeatures.mount('campus-data', {
   escapeHtml: esc,
   openDeepLink,
   onCatalog: (catalog) => {
-    if (catalog?.state !== 'ready') return;
-    portalServiceDeskData = {
+    if (catalog !== null && catalog?.state !== 'ready') return;
+    portalServiceDeskData = catalog === null ? null : {
       schemaVersion: 1,
       applicationGroups: catalog.applicationGroups,
       applications: catalog.applications,
