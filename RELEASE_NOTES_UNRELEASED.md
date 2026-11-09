@@ -9,6 +9,11 @@
 
 网关地址策略和证书归属修复已选入 [2.0.6 发布候选说明](RELEASE_NOTES_2.0.6.md)；实际发布状态以 GitHub Release 为准。
 
+## 未发布：平台快捷键提示 / Unreleased: Platform shortcut hints
+
+- 工作台搜索、新标签页说明和浏览器按钮提示现在按平台显示快捷键：Windows/Linux 使用 Ctrl，macOS 使用 ⌘；中英文切换后保持一致。
+- Workspace search, new-tab settings and Browser button hints now show Ctrl on Windows/Linux and Command on macOS, including after language changes. Keyboard behavior is unchanged.
+
 ## 2.0.6 候选：网关地址策略 / 2.0.6 candidate: Gateway address policy
 
 - 港科广内置配置启用已审核的内网网关策略，支持同一学校域名的内外网解析；不硬编码本机地址，不改变未知网关规则、证书校验或系统网络。

@@ -22,6 +22,7 @@ export default [
   ["resources.routeAuto","自动"],
   ["resources.sourceReviewed","学校预设"],
   ["resources.sourceLocal","本机添加"],
+  ["resources.searchShortcut","{shortcutK}"],
   ["resources.searchPlaceholder","搜索网站"],
   ["resources.viewLabel","网站分类"],
   ["resources.viewAll","全部"],

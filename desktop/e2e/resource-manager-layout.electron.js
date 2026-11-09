@@ -4,6 +4,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { app, BrowserWindow } = require('electron');
+// Each fixture phase owns a fresh window; keep Electron alive between them.
+app.on('window-all-closed', () => {});
 
 const renderer = path.join(__dirname, '..', 'renderer', 'index.html');
 const preload = path.join(__dirname, 'resource-manager-layout-preload.js');
@@ -228,16 +230,77 @@ async function exerciseAddWebsiteDialogLayout(window) {
   }
 }
 
+async function exercisePlatformShortcutHints(window) {
+  const modifier = process.platform === 'darwin' ? '⌘' : 'Ctrl+';
+  const output = process.env.HKUSTGZ_SHORTCUT_E2E_OUTPUT;
+  if (output) fs.mkdirSync(output, { recursive: true });
+  const rows = [];
+  window.show(); window.focus(); window.webContents.focus();
+  await waitFor(window, 'document.hasFocus() && !document.hidden', 'shortcut window focus');
+  for (const locale of ['en', 'zh']) {
+    await window.webContents.executeJavaScript(`document.getElementById('language').value = '${locale}'; document.getElementById('language').dispatchEvent(new Event('change'));`);
+    await waitFor(window, `document.documentElement.lang === '${locale === 'zh' ? 'zh-CN' : 'en'}'`, 'shortcut locale redraw');
+    for (const [width, height, zoom] of [[440, 560, 1], [840, 900, 1.25], [1180, 900, 1]]) {
+      window.setContentSize(width, height); window.webContents.setZoomFactor(zoom);
+      await waitFor(window, `Math.abs(innerWidth * ${zoom} - ${width}) <= 1`, 'shortcut requested width');
+      const actualSize = window.getContentSize();
+      assert.equal(actualSize[0], width); assert.ok(actualSize[1] > 0 && actualSize[1] <= height);
+      await waitFor(window, `Math.abs(innerHeight * ${zoom} - ${actualSize[1]}) <= 1`, 'shortcut actual native height');
+      for (const tab of ['serviceTabOfficial', 'serviceTabPersonal']) {
+        await window.webContents.executeJavaScript(`document.getElementById('${tab}').click(); document.getElementById('${tab}').focus();`);
+        const modifiers = [process.platform === 'darwin' ? 'meta' : 'control'];
+        for (const type of ['keyDown', 'keyUp']) window.webContents.sendInputEvent({ type, keyCode: 'K', modifiers });
+        await waitFor(window, "document.activeElement.id === 'resourceSearch'", 'advertised native search shortcut');
+        const row = await window.webContents.executeJavaScript(`(() => {
+          const search = document.getElementById('resourceSearch'), badge = document.querySelector('.ws-search kbd');
+          const box = badge.getBoundingClientRect(), group = badge.parentElement.getBoundingClientRect(), style = getComputedStyle(search);
+          return { platform: navigator.platform, locale: document.documentElement.lang,
+            shortcut: badge.textContent, settingHint: document.querySelector('[data-i18n="settings.newTabHint"]').textContent,
+            focused: document.activeElement.id, personal: !document.getElementById('servicePersonalView').hidden,
+            badgeContained: box.left >= group.left && box.right <= group.right && box.width > 0,
+            badgeOverflow: badge.scrollWidth - badge.clientWidth,
+            searchOverflow: badge.parentElement.scrollWidth - badge.parentElement.clientWidth,
+            focusVisible: search.matches(':focus-visible') && (style.outlineStyle !== 'none' || style.boxShadow !== 'none'),
+            reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches };
+        })()`);
+        assert.equal(row.shortcut, modifier + 'K'); assert.ok(row.settingHint.includes(modifier + 'T'));
+        assert.equal(row.focused, 'resourceSearch'); assert.equal(row.personal, tab === 'serviceTabPersonal');
+        assert.equal(row.badgeContained, true); assert.ok(row.badgeOverflow <= 1 && row.searchOverflow <= 1);
+        rows.push({ width, height, actualSize, zoom, tab, ...row });
+        if (output) {
+          fs.writeFileSync(path.join(output, `shortcuts-${locale}-${width}-${tab}.png`), (await window.webContents.capturePage()).toPNG());
+          fs.writeFileSync(path.join(output, 'shortcut-hints.json'), JSON.stringify(rows, null, 2));
+        }
+      }
+    }
+  }
+  process.stdout.write('platform shortcut hints and native search: PASS\n');
+}
+
 async function main() {
   await app.whenReady();
-  const window = new BrowserWindow({
+  const options = {
     show: false,
     width: 500,
     height: 640,
     webPreferences: { contextIsolation: true, nodeIntegration: false, preload },
-  });
+  };
+  let window = null;
+  const shortcutWindow = new BrowserWindow(options);
 
   try {
+    await shortcutWindow.loadFile(renderer);
+    await waitFor(shortcutWindow, "document.getElementById('dash').hidden === false", 'shortcut dashboard initialization');
+    await exercisePlatformShortcutHints(shortcutWindow);
+    shortcutWindow.destroy();
+    assert.equal(shortcutWindow.isDestroyed(), true);
+    window = new BrowserWindow(options);
+    assert.equal(window.isVisible(), false, 'original checks need a fresh never-shown window');
+    assert.equal(window.webContents.getZoomFactor(), 1);
+    if (process.env.HKUSTGZ_SHORTCUT_E2E_OUTPUT) fs.writeFileSync(
+      path.join(process.env.HKUSTGZ_SHORTCUT_E2E_OUTPUT, 'shortcut-window-isolation.json'),
+      JSON.stringify({ shortcutWindowDestroyed: true, originalWindowCreatedAfterShortcut: true,
+        originalVisible: window.isVisible(), originalZoom: window.webContents.getZoomFactor() }));
     await window.loadFile(renderer);
     await waitFor(window, "document.getElementById('dash').hidden === false", 'dashboard initialization');
     await exerciseIntegrationCenter(window);
@@ -245,7 +308,8 @@ async function main() {
     assertCustomResourceAddAndOpen(await addAndOpenCustomResource(window));
     process.stdout.write('renderer layout: PASS\n');
   } finally {
-    if (!window.isDestroyed()) window.destroy();
+    if (!shortcutWindow.isDestroyed()) shortcutWindow.destroy();
+    if (window && !window.isDestroyed()) window.destroy();
   }
 }
 

@@ -33,11 +33,13 @@ function interpolate(template, vars) {
   ));
 }
 
-export function createT(locale) {
+export function createT(locale, platform = '') {
   const dict = dictionaries[locale] || dictionaries.zh;
+  const modifier = /Mac|iPhone|iPad/u.test(platform) ? '⌘' : 'Ctrl+';
+  const shortcuts = { shortcutK: `${modifier}K`, shortcutT: `${modifier}T` };
   return (key, vars) => {
     const template = dict[key] ?? dictionaries.zh[key];
-    return template === undefined ? key : interpolate(template, vars);
+    return template === undefined ? key : interpolate(template, vars ? { ...shortcuts, ...vars } : shortcuts);
   };
 }
 

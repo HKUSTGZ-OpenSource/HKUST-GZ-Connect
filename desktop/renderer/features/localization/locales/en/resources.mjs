@@ -22,6 +22,7 @@ export default [
   ["resources.routeAuto","Auto"],
   ["resources.sourceReviewed","School preset"],
   ["resources.sourceLocal","Added on this device"],
+  ["resources.searchShortcut","{shortcutK}"],
   ["resources.searchPlaceholder","Search sites"],
   ["resources.viewLabel","Site category"],
   ["resources.viewAll","All"],

@@ -44,7 +44,7 @@ export default [
   ["settings.gatewayHint","网关及协议参数由受版本控制的引擎配置提供，避免本机设置漂移。"],
   ["settings.windowBehavior","窗口行为"],
   ["settings.newTabTitle","校园浏览器新标签页"],
-  ["settings.newTabHint","点击“＋”或按 ⌘T 时打开；留空恢复 Bing，输入 about:blank 使用空白页。"],
+  ["settings.newTabHint","点击“＋”或按 {shortcutT} 时打开；留空恢复 Bing，输入 about:blank 使用空白页。"],
   ["settings.newTabUrl","新标签页地址"],
   ["settings.newTabPlaceholder","https://www.bing.com/"],
   ["settings.saveNewTab","保存"],
