@@ -66,3 +66,10 @@
   避免把旧页面的询问转交给新窗口。
 - Deferred certificate consent rechecks the admitted Browser and page ownership before dispatch.
   Retired or replaced requests are denied without borrowing another Browser's trust decision.
+
+## 工作台搜索焦点 / Workspace search focus
+
+状态：未发布源码修复（#328）。 / Status: Unreleased source fix (#328).
+
+- 校园工作台搜索框在快捷键或 Tab 导航聚焦时恢复共享焦点轮廓，保留原有布局与指针聚焦语义。
+- Workspace search reuses the shared visible focus outline for shortcut and Tab navigation, preserving layout and pointer-focus semantics.
