@@ -19,7 +19,7 @@ export default [
   ["browser.workspace","校园工作台"],
   ["browser.tabs","网页标签"],
   ["browser.newTab","新建标签页"],
-  ["browser.newTabShortcut","新建标签页 (⌘T)"],
+  ["browser.newTabShortcut","新建标签页 ({shortcutT})"],
   ["browser.newTabFallback","新标签页"],
   ["browser.closeTab","关闭标签页"],
   ["browser.back","后退"],

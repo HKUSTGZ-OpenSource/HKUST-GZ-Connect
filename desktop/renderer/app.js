@@ -3,7 +3,7 @@ const rendererFeatures = createRendererFeatures({ target: window });
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // Active UI language. Chinese until get-state reports the real system locale.
-let t = window.I18N.createT('zh');
+let t = window.I18N.createT('zh', window.navigator?.platform || '');
 const { evaluateLoginProgress } = window.loginFlow;
 let st = {
   connected: false,
@@ -54,7 +54,7 @@ function show(view) { $('login').hidden = view !== 'login'; $('dash').hidden = v
 
 function applyLocale(rawLocale) {
   const locale = window.I18N.resolveLocale(rawLocale);
-  t = window.I18N.createT(locale);
+  t = window.I18N.createT(locale, window.navigator?.platform || '');
   document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
   window.I18N.applyStatic(t, document);
   // Labels whose text depends on runtime state, not just the locale.

@@ -266,6 +266,13 @@ async function assertTabCreationAdmission(browser) {
   process.stdout.write('native Browser tab creation admission: PASS\n');
 }
 
+async function assertNewTabShortcutHint(browser) {
+  const shortcut = process.platform === 'darwin' ? '⌘T' : 'Ctrl+T';
+  const label = browser.locale === 'zh' ? '新建标签页' : 'New Tab';
+  assert.equal(await evaluate(browser.window.webContents, "document.getElementById('newTab').title"),
+    `${label} (${shortcut})`, 'platform new-tab shortcut hint');
+}
+
 async function assertLocaleProjection(browser) {
   const originalLocale = browser.locale, originalTranslator = browser.t;
   const originalRefresh = browser.refreshWorkspaceHomes, originalUpdate = browser.updateToolbar;
@@ -280,6 +287,7 @@ async function assertLocaleProjection(browser) {
       browser.setLocale(locale);
       await waitFor(window, `document.documentElement.lang === ${JSON.stringify(locale === 'zh' ? 'zh-CN' : 'en')}`,
         'owned live toolbar locale');
+      await assertNewTabShortcutHint(browser);
       assert.equal(titles.at(-1), browser.t('browser.windowTitleForSchool', {
         school: browser.profilePresentation.schoolName,
         trust: browser.profilePresentation.unverified ? browser.t('browser.unverifiedSuffix') : '',
@@ -989,6 +997,7 @@ async function main() {
     browser.window.hide();
     await runStage('toolbar initialization', () =>
       waitFor(browser.window, '!!window.campusBrowserUI', 'toolbar initialization'));
+    await runStage('initial shortcut hint', () => assertNewTabShortcutHint(browser));
     await runStage('workspace home', () => assertWorkspaceHome(browser));
     await runStage('active tab attachment', () => assertOnlyActiveTabAttached(browser));
     await runStage('blank new tab', () => assertBlankNewTab(browser));

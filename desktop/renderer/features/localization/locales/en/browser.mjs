@@ -19,7 +19,7 @@ export default [
   ["browser.workspace","Campus Workspace"],
   ["browser.tabs","Tabs"],
   ["browser.newTab","New Tab"],
-  ["browser.newTabShortcut","New Tab (⌘T)"],
+  ["browser.newTabShortcut","New Tab ({shortcutT})"],
   ["browser.newTabFallback","New Tab"],
   ["browser.closeTab","Close Tab"],
   ["browser.back","Back"],

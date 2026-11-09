@@ -44,7 +44,7 @@ export default [
   ["settings.gatewayHint","Gateway and protocol parameters come from the version-controlled engine config to prevent local settings drift."],
   ["settings.windowBehavior","Window Behavior"],
   ["settings.newTabTitle","Campus Browser New Tab"],
-  ["settings.newTabHint","Opens with “+” or Command/Ctrl+T. Leave empty for Bing, or enter about:blank for a blank page."],
+  ["settings.newTabHint","Opens with “+” or {shortcutT}. Leave empty for Bing, or enter about:blank for a blank page."],
   ["settings.newTabUrl","New tab address"],
   ["settings.newTabPlaceholder","https://www.bing.com/"],
   ["settings.saveNewTab","Save"],

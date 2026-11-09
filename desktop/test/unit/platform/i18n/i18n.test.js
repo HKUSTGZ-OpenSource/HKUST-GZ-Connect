@@ -110,3 +110,52 @@ test('main.js never shadows the module-level translator with a local t', () => {
   const main = fs.readFileSync(path.join(desktopRoot, 'main.js'), 'utf8');
   assert.doesNotMatch(main, /\bconst t =/);
 });
+
+
+function shortcutMarkup() {
+  const control = fs.readFileSync(path.join(desktopRoot, 'renderer/index.html'), 'utf8');
+  const browser = fs.readFileSync(path.join(desktopRoot, 'renderer/campus-browser.html'), 'utf8');
+  const fragments = [
+    control.match(/<kbd\b[^>]*>[^<]*<\/kbd>/u)?.[0],
+    control.match(/<p\b[^>]*data-i18n="settings\.newTabHint"[^>]*>[^<]*<\/p>/u)?.[0],
+    browser.match(/<button\b[^>]*id="newTab"[^>]*>/u)?.[0],
+  ];
+  assert.ok(fragments.every(Boolean), 'The three actual shortcut surfaces must exist');
+  return fragments.map(markup => {
+    const attributes = Object.fromEntries([...markup.matchAll(/([\w:-]+)="([^"]*)"/gu)].map(match => [match[1], match[2]]));
+    return { attributes, textContent: markup.match(/>([^<]*)</u)?.[1] || '',
+      getAttribute: name => attributes[name],
+      setAttribute: (name, value) => { attributes[name] = value; } };
+  });
+}
+
+for (const [platform, modifier] of [['Win32', 'Ctrl+'], ['Linux x86_64', 'Ctrl+'], ['MacIntel', '⌘']]) {
+  test(`platform shortcut hints survive locale redraws on ${platform}`, () => {
+    const elements = shortcutMarkup();
+    const doc = { querySelectorAll: selector => elements.filter(element => (
+      Object.hasOwn(element.attributes, selector.slice(1, -1))
+    )) };
+    for (const locale of ['en', 'zh', 'en']) {
+      const t = rendererI18n.createT(locale, platform);
+      rendererI18n.applyStatic(t, doc);
+      assert.equal(elements[0].textContent, modifier + 'K');
+      assert.ok(elements[1].textContent.includes(modifier + 'T'));
+      assert.equal(elements[2].attributes.title,
+        `${locale === 'zh' ? '新建标签页' : 'New Tab'} (${modifier}T)`);
+      assert.equal(elements[2].attributes['aria-label'], locale === 'zh' ? '新建标签页' : 'New Tab');
+      assert.doesNotMatch(elements[1].textContent, /\{shortcut[KT]\}/u);
+      if (modifier === 'Ctrl+') assert.doesNotMatch(elements[1].textContent, /⌘/u);
+      else assert.doesNotMatch(elements[1].textContent, /Ctrl/u);
+      assert.equal(t('dialog.editing', { name: 'Fixture' }), locale === 'zh' ? '正在编辑：Fixture' : 'Editing: Fixture');
+      assert.equal(t('dialog.editing'), locale === 'zh' ? '正在编辑：{name}' : 'Editing: {name}');
+      assert.equal(t('no.such.key'), 'no.such.key');
+    }
+  });
+}
+
+test('untranslated shortcut markup does not claim a platform-specific modifier', () => {
+  const [search, settings, newTab] = shortcutMarkup();
+  assert.equal(search.textContent, '');
+  assert.doesNotMatch(settings.textContent, /⌘|Ctrl|Command/u);
+  assert.doesNotMatch(newTab.attributes.title, /⌘|Ctrl|Command/u);
+});

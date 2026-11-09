@@ -3,7 +3,7 @@
 // The main process passes the resolved UI locale as ?lang= on loadFile, and
 // can switch it live later through campusBrowserUI.setLocale.
 let locale = 'zh';
-let t = window.I18N.createT(locale);
+let t = window.I18N.createT(locale, window.navigator?.platform || '');
 const launchQuery = new URLSearchParams(location.search);
 const rawProfileName = launchQuery.get('school') || '';
 const profileName = rawProfileName && rawProfileName.length <= 160 &&
@@ -20,7 +20,7 @@ function browserTitle(pageTitle = '') {
 
 function applyLang(lang) {
   locale = window.I18N.resolveLocale(lang);
-  t = window.I18N.createT(locale);
+  t = window.I18N.createT(locale, window.navigator?.platform || '');
   document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en';
   window.I18N.applyStatic(t, document);
   document.title = browserTitle();

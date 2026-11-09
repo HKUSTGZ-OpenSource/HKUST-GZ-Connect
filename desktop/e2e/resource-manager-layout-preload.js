@@ -262,6 +262,7 @@ contextBridge.exposeInMainWorld('api', {
   refreshCampusSchedule: async () => campusDataSnapshot(),
   save: async (patch) => {
     state.settings = { ...state.settings, ...(patch || {}) };
+    if (Object.hasOwn(patch || {}, 'language')) state.locale = ['zh', 'en'].includes(patch.language) ? patch.language : fixtureLocale;
     if (Object.hasOwn(patch || {}, 'underlaySourceAddress')) {
       const selected = state.networkEnvironment.interfaces.find((item) => item.addresses.some(({ address }) => (
         address === patch.underlaySourceAddress
