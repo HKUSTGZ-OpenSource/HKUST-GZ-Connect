@@ -43,8 +43,19 @@ async function main() {
   window.webContents.on('console-message', event => { if (event.level === 'error') errors.push(event.message); });
   const emptyLayout = { schemaVersion: 1, revision: 0, placements: [], decks: [] };
   ipcMain.handle('get-card-board-layout', () => ({ document: emptyLayout }));
-  const run = source => window.webContents.executeJavaScript(source);
+  let stage = 'initial load';
+  const run = async source => {
+    try { return await window.webContents.executeJavaScript(source); }
+    catch (error) { throw new Error(`${stage}: ${error.message}`); }
+  };
   const wait = () => new Promise(resolve => setTimeout(resolve, 100));
+  const repaint = async () => {
+    controller.sendState(window.webContents);
+    await wait();
+    // State delivery starts a layout reload that can retire an open overlay.
+    // Await the same owner before exercising the next keyboard interaction.
+    await run('workspaceBoardFeature.reload()');
+  };
   const key = async keyCode => {
     window.focus(); window.webContents.focus();
     window.webContents.sendInputEvent({ type: 'keyDown', keyCode });
@@ -58,7 +69,7 @@ async function main() {
   await wait();
   for (const [sequence, nextLocale] of ['zh', 'en', 'zh'].entries()) {
     locale = nextLocale;
-    controller.sendState(window.webContents); await wait();
+    await repaint();
     for (const [size, width, height, zoom] of [
       ['narrow', 660, 720, 1], ['standard', 1040, 740, 1],
       ['wide', 1400, 900, 1], ['zoom125', 1000, 760, 1.25],
@@ -66,6 +77,7 @@ async function main() {
       window.setContentSize(width, height);
       window.webContents.setZoomFactor(zoom); await wait();
       for (const primary of ['workspace', 'catalog']) {
+        stage = `${sequence}-${locale}-${primary}-${size}`;
         const host = primary === 'catalog' ? 'workspaceCatalogBoardHost' : 'workspacePersonalBoardHost';
         await run(`document.querySelector('[data-primary-view="${primary}"]').click()`); await wait();
         const snapshot = await run(`(() => {
@@ -112,7 +124,7 @@ async function main() {
         await key('Escape');
         assert.equal(await run(`document.activeElement.matches('#${host} .cb-card-more')`), true);
         await run(`document.querySelector('[data-primary-view="${primary}"]').focus()`);
-        controller.sendState(window.webContents); await wait();
+        await repaint();
         assert.equal(await run(`document.activeElement.dataset.primaryView`), primary);
         await run(`document.getElementById('openManage').click()`);
         assert.equal(await run(`document.querySelector('#${host} [data-card-board]').dataset.editing`), 'true');
@@ -128,8 +140,9 @@ async function main() {
   });
   assert.equal(await run(`matchMedia('(prefers-reduced-motion: reduce)').matches`), true);
   for (const nextLocale of ['en', 'zh']) {
-    locale = nextLocale; controller.sendState(window.webContents); await wait();
+    locale = nextLocale; await repaint();
     for (const primary of ['workspace', 'catalog']) {
+      stage = `reduced-motion-${locale}-${primary}`;
       const host = primary === 'catalog' ? 'workspaceCatalogBoardHost' : 'workspacePersonalBoardHost';
       await run(`document.querySelector('[data-primary-view="${primary}"]').click(); document.querySelector('#${host} .cb-card-more').focus()`);
       await key('Return');
