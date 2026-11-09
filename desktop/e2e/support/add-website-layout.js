@@ -8,12 +8,27 @@ async function exerciseAddWebsiteZoom(window) {
   const run = source => window.webContents.executeJavaScript(source);
   const pause = () => new Promise(resolve => setTimeout(resolve, 100));
   const observations = [];
-  async function waitFor(expression, deadline = Date.now() + 3000) {
+  let currentCase = 'setup';
+  async function inputState(stage) {
+    const input = await run(`(() => {const field=document.getElementById('addWebsiteUrl');return {
+      value:field.value.slice(0,2048),valueLength:field.value.length,
+      selectionStart:field.selectionStart,selectionEnd:field.selectionEnd,disabled:field.disabled,
+      documentFocused:document.hasFocus(),focus:document.activeElement.id,
+      preview:document.getElementById('addWebsitePreview').textContent.slice(0,512),
+      previewHidden:document.getElementById('addWebsitePreview').hidden,
+      route:document.getElementById('addWebsiteRoute').value,
+      conflictHidden:document.getElementById('addWebsiteConflict').hidden,
+      error:document.getElementById('addWebsiteError').textContent.slice(0,512)};})()`);
+    return { stage, case: currentCase, locale: process.env.HKUSTGZ_E2E_LOCALE || 'zh',
+      zoom: window.webContents.getZoomFactor(), windowFocused: window.isFocused(), ...input };
+  }
+  async function waitFor(expression, deadline = Date.now() + 3000, stage = 'condition') {
     while (Date.now() < deadline) {
       if (await run(expression)) return;
       await new Promise(resolve => setTimeout(resolve, 20));
     }
-    throw new Error(`Add Website fixture did not settle: ${expression}`);
+    const input = await inputState(stage).catch(() => ({ stage, case: currentCase, unavailable: true }));
+    throw new Error(`Add Website fixture did not settle: ${expression}; input=${JSON.stringify(input)}`);
   }
   async function key(keyCode, modifiers = []) {
     window.focus(); window.webContents.focus();
@@ -25,9 +40,21 @@ async function exerciseAddWebsiteZoom(window) {
   }
   const open = async () => { await run(`document.getElementById('addWebsite').click()`); await pause(); };
   async function typeUrl(value, previewExpression) {
-    await run(`document.getElementById('addWebsiteUrl').focus()`);
-    await key('A', [process.platform === 'darwin' ? 'meta' : 'control']); await window.webContents.insertText(value);
-    await waitFor(previewExpression);
+    const deadline = Date.now() + 3000;
+    window.focus(); window.webContents.focus();
+    await waitFor('document.hasFocus()', deadline, 'input-focus');
+    // Select fixture text directly; menu accelerators are not under test here.
+    await run(`(() => {const field=document.getElementById('addWebsiteUrl');field.focus();field.select();})()`);
+    const selected = await inputState('selected');
+    assert.ok(selected.documentFocused && selected.focus === 'addWebsiteUrl' && !selected.disabled &&
+      selected.selectionStart === 0 && selected.selectionEnd === selected.valueLength,
+      `URL selection was not ready: ${JSON.stringify(selected)}`);
+    await window.webContents.insertText(value);
+    const inserted = await inputState('inserted');
+    assert.equal(inserted.value, value, `Native URL input differed: ${JSON.stringify(inserted)}`);
+    assert.ok(inserted.selectionStart === value.length && inserted.selectionEnd === value.length,
+      `Native URL caret did not collapse: ${JSON.stringify(inserted)}`);
+    await waitFor(previewExpression, deadline, 'preview');
   }
   const validUrl = () => typeUrl('https://fixture-0.example.edu/zoom',
     `document.getElementById('addWebsitePreview').textContent.includes('fixture-0.example.edu')`);
@@ -103,12 +130,16 @@ async function exerciseAddWebsiteZoom(window) {
     ['narrow', 660, 720], ['standard', 1040, 740], ['wide', 1400, 900],
   ].flatMap(([label, width, height]) => [1, 1.25, 2].map(zoom => [label, width, height, zoom]))];
   for (const [label, width, height, zoom] of cases) {
+    currentCase = `${label}/${zoom}`;
     const viewport = await resize(width, height, zoom); await open();
     await typeUrl('https://', `document.getElementById('addWebsitePreview').classList.contains('error')`);
     await key('Return'); await waitFor(`document.getElementById('addWebsiteError').textContent.length > 0`);
     await inspect(`${label}/${zoom} validation`);
     await validUrl(); await inspect(`${label}/${zoom} preview`);
-    await run(`document.getElementById('addWebsiteRoute').focus()`); await key('End');
+    // Prepare the existing option through its change owner, which renders the conflict text.
+    await run(`(() => {const route=document.getElementById('addWebsiteRoute');
+      if(![...route.options].some(option=>option.value==='direct'))throw new Error('Direct route option is missing');
+      route.focus();route.value='direct';route.dispatchEvent(new Event('change',{bubbles:true}));})()`);
     await waitFor(`document.getElementById('addWebsiteRoute').value === 'direct' && !document.getElementById('addWebsiteConflict').hidden`);
     const frame = await wheelBody(`${label}/${zoom} conflict`);
     observations.push({ label, ...viewport, frame });
@@ -121,6 +152,7 @@ async function exerciseAddWebsiteZoom(window) {
     await key('Escape'); assert.equal(await run(`document.getElementById('addWebsiteDialog').open`), false);
   }
   // The same open form must shrink and grow without a forced tall layout.
+  currentCase = 'resize-recovery';
   await resize(1400, 900, 1); await open(); await validUrl(); const natural = await inspect('natural height');
   await resize(1000, 900, 2); await wheelBody('shrunken open form');
   await resize(1400, 900, 1); const grown = await inspect('grown open form');
@@ -128,6 +160,7 @@ async function exerciseAddWebsiteZoom(window) {
   await key('Escape');
   await resize(1000, 900, 2);
   for (const action of ['pointer-save', 'pointer-cancel', 'enter-save', 'space-cancel']) {
+    currentCase = action;
     const before = await count(); await open(); await validUrl(); await wheelBody(action);
     if (action.startsWith('pointer')) await pointer(action.endsWith('save') ? 'submitAddWebsite' : 'cancelAddWebsite');
     else {
@@ -148,6 +181,7 @@ async function exerciseAddWebsiteZoom(window) {
   window.webContents.debugger.attach('1.3');
   await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   assert.equal(await run(`matchMedia('(prefers-reduced-motion: reduce)').matches`), true);
+  currentCase = 'reduced-motion';
   await open(); await validUrl(); await wheelBody('reduced motion'); await key('Escape');
   window.webContents.debugger.detach(); window.webContents.setZoomFactor(1);
   if (process.env.HKUSTGZ_ADD_WEBSITE_LAYOUT_DIR) {
