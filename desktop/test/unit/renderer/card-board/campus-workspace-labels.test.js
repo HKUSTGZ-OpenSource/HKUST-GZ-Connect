@@ -73,8 +73,8 @@ test('Browser Workspace page and actual board bridge localize More after locale 
       });
       assert.ok(markup.includes(`>${expected}</button>`), `${locale} ${options.boardId}: More must match canonical localization`);
       assert.doesNotMatch(markup, />workspace\.more</u);
-      assert.equal(options.translate('resources.favorite'), createT(locale)('resources.favorite'));
-      assert.equal(options.translate('resources.unfavorite'), createT(locale)('resources.unfavorite'));
+      assert.equal(options.translate('resources.favorite'), locale === 'en' ? 'Favorite' : '收藏');
+      assert.equal(options.translate('resources.unfavorite'), locale === 'en' ? 'Remove favorite' : '取消收藏');
     }
   }
 });

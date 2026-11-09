@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { app, BrowserWindow, WebContentsView, ipcMain, session } = require('electron');
+const { app, BrowserWindow, ipcMain, session } = require('electron');
 const { CampusWorkspaceController } = require('../lib/browser/workspace/campus-workspace-controller');
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'hkust-workspace-labels-')));
 
@@ -35,35 +35,36 @@ async function main() {
     getLocale: () => locale,
     onCommand: async command => { commands.push(command); return { ok: true }; },
   });
-  const window = new BrowserWindow({ width: 1040, height: 740, show: true });
-  const view = controller.createView(WebContentsView, browserSession);
-  window.contentView.addChildView(view);
-  view.webContents.on('console-message', event => { if (event.level === 'error') errors.push(event.message); });
+  const window = new BrowserWindow({ width: 1040, height: 740, show: true, webPreferences: {
+    session: browserSession, preload: controller.workspacePreload,
+    sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false,
+  } });
+  controller.attach(window.webContents);
+  window.webContents.on('console-message', event => { if (event.level === 'error') errors.push(event.message); });
   const emptyLayout = { schemaVersion: 1, revision: 0, placements: [], decks: [] };
   ipcMain.handle('get-card-board-layout', () => ({ document: emptyLayout }));
-  const run = source => view.webContents.executeJavaScript(source);
+  const run = source => window.webContents.executeJavaScript(source);
   const wait = () => new Promise(resolve => setTimeout(resolve, 100));
   const key = async keyCode => {
-    window.focus(); view.webContents.focus();
-    view.webContents.sendInputEvent({ type: 'keyDown', keyCode });
-    if (keyCode === 'Return') view.webContents.sendInputEvent({ type: 'char', keyCode: '\r' });
-    view.webContents.sendInputEvent({ type: 'keyUp', keyCode });
+    window.focus(); window.webContents.focus();
+    window.webContents.sendInputEvent({ type: 'keyDown', keyCode });
+    if (keyCode === 'Return') window.webContents.sendInputEvent({ type: 'char', keyCode: '\r' });
+    window.webContents.sendInputEvent({ type: 'keyUp', keyCode });
     await wait();
   };
   const output = process.env.HKUSTGZ_WORKSPACE_LABEL_SCREENSHOT_DIR;
   if (output) fs.mkdirSync(output, { recursive: true });
-  await controller.load(view);
+  await controller.load(window);
   await wait();
   for (const [sequence, nextLocale] of ['zh', 'en', 'zh'].entries()) {
     locale = nextLocale;
-    controller.sendState(view.webContents); await wait();
+    controller.sendState(window.webContents); await wait();
     for (const [size, width, height, zoom] of [
       ['narrow', 660, 720, 1], ['standard', 1040, 740, 1],
       ['wide', 1400, 900, 1], ['zoom125', 1000, 760, 1.25],
     ]) {
       window.setContentSize(width, height);
-      view.setBounds({ x: 0, y: 0, width, height });
-      view.webContents.setZoomFactor(zoom); await wait();
+      window.webContents.setZoomFactor(zoom); await wait();
       for (const primary of ['workspace', 'catalog']) {
         const host = primary === 'catalog' ? 'workspaceCatalogBoardHost' : 'workspacePersonalBoardHost';
         await run(`document.querySelector('[data-primary-view="${primary}"]').click()`); await wait();
@@ -75,13 +76,18 @@ async function main() {
               const card = button.closest('.cb-card'), rect = button.getBoundingClientRect();
               return { text: button.textContent, aria: button.getAttribute('aria-label'),
                 title: card.querySelector('.cb-card-title').textContent,
+                resources: [...card.querySelectorAll('[data-card-resource-id]')].map(el => el.dataset.cardResourceId),
                 fits: rect.right <= card.getBoundingClientRect().right && button.scrollWidth <= button.clientWidth };
             }),
             emptyMore: host.querySelector('[data-card-ref-id="group_mnopqrstuvwx"] .cb-card-more') !== null,
           };
         })()`);
         const label = `${sequence}-${locale}-${primary}-${size}`;
-        if (output) fs.writeFileSync(path.join(output, `${label}.png`), (await window.capturePage()).toPNG());
+        if (output) {
+          const image = await window.webContents.capturePage();
+          assert.equal(image.isEmpty(), false, `${label}: missing screenshot surface`);
+          fs.writeFileSync(path.join(output, `${label}.png`), image.toPNG());
+        }
         assert.ok(snapshot.more.length > 0);
         assert.equal(snapshot.lang, locale === 'en' ? 'en' : 'zh-CN');
         assert.ok(Math.abs(snapshot.width - width / zoom) <= 1);
@@ -100,14 +106,14 @@ async function main() {
           return { name:dialog?.getAttribute('aria-label'), sites:[...dialog.querySelectorAll('[data-card-resource-id]')].map(el=>el.dataset.cardResourceId),
             close:dialog.querySelector('.cb-overlay-close').getAttribute('aria-label'), closeFocused:document.activeElement.matches('.cb-overlay-close') }; })()`);
         assert.equal(overlay.name, snapshot.more[0].title);
-        assert.equal(overlay.sites.length, 1);
+        assert.deepEqual(overlay.sites, snapshot.more[0].resources);
         assert.equal(overlay.close, locale === 'en' ? 'Close' : '关闭');
         assert.equal(overlay.closeFocused, true);
         await key('Escape');
         assert.equal(await run(`document.activeElement.matches('#${host} .cb-card-more')`), true);
-        // Locale/state redraws retain the existing card-tab focus policy.
-        controller.sendState(view.webContents); await wait();
-        assert.equal(await run(`document.activeElement.matches('#${host} .cb-card-tab')`), true);
+        await run(`document.querySelector('[data-primary-view="${primary}"]').focus()`);
+        controller.sendState(window.webContents); await wait();
+        assert.equal(await run(`document.activeElement.dataset.primaryView`), primary);
         await run(`document.getElementById('openManage').click()`);
         assert.equal(await run(`document.querySelector('#${host} [data-card-board]').dataset.editing`), 'true');
         assert.equal(await run(`document.querySelectorAll('#${host} .cb-card-more').length`), 0);
@@ -116,18 +122,26 @@ async function main() {
       }
     }
   }
-  view.webContents.debugger.attach('1.3');
-  await view.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
+  window.webContents.debugger.attach('1.3');
+  await window.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', {
     features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
   });
   assert.equal(await run(`matchMedia('(prefers-reduced-motion: reduce)').matches`), true);
-  await run(`document.querySelector('#workspaceCatalogBoardHost .cb-card-more').focus()`);
-  await key('Return'); await key('Escape');
+  for (const nextLocale of ['en', 'zh']) {
+    locale = nextLocale; controller.sendState(window.webContents); await wait();
+    for (const primary of ['workspace', 'catalog']) {
+      const host = primary === 'catalog' ? 'workspaceCatalogBoardHost' : 'workspacePersonalBoardHost';
+      await run(`document.querySelector('[data-primary-view="${primary}"]').click(); document.querySelector('#${host} .cb-card-more').focus()`);
+      await key('Return');
+      assert.equal(await run(`document.querySelector('#${host} .cb-overlay').open`), true);
+      await key('Escape');
+    }
+  }
   await run(`document.querySelector('#workspaceCatalogBoardHost .resource-favorite').click()`); await wait();
   assert.deepEqual(commands.map(({ command }) => command), ['toggle-favorite']);
   assert.deepEqual(errors, []);
   if (output) fs.writeFileSync(path.join(output, 'receipt.json'), JSON.stringify({ evidence, commands, errors }, null, 2));
-  view.webContents.debugger.detach();
+  window.webContents.debugger.detach();
   ipcMain.removeHandler('get-card-board-layout');
   window.destroy();
   process.stdout.write(`workspace labels: PASS (${evidence.length} layouts, zh/en/zh, keyboard, existing aria/focus, reduced motion)\n`);

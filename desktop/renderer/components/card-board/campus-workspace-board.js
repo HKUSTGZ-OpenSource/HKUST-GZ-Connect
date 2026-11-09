@@ -98,6 +98,7 @@
         escapeHtml,
         translate: (key) => {
           const text = getText();
+          if (key === 'workspace.more') return text.more;
           if (key === 'resources.routeDirect') return text.direct;
           if (key === 'resources.routeCampus') return text.campus;
           if (key === 'resources.favorite') return text.favorite;
