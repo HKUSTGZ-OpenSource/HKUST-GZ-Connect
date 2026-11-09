@@ -4,6 +4,14 @@ const { contextBridge } = require('electron');
 const fixtureLocale = process.env.HKUSTGZ_E2E_LOCALE === 'en' ? 'en' : 'zh';
 const authChallengeListeners = new Set();
 let authResponseCount = 0;
+const websiteHolds = [];
+const websitePending = [];
+async function websiteRequest(kind) {
+  const index = websiteHolds.indexOf(kind);
+  if (index < 0) return null;
+  websiteHolds.splice(index, 1);
+  return new Promise((resolve, reject) => websitePending.push({ kind, resolve, reject }));
+}
 
 function reviewedPreviewResources() {
   const payload = process.env.HKUSTGZ_CONTROL_PREVIEW_RESOURCES_JSON || '';
@@ -291,6 +299,8 @@ contextBridge.exposeInMainWorld('api', {
     return { ok: true };
   },
   openResource: async (resourceId) => {
+    const failure = await websiteRequest('open');
+    if (failure) return failure;
     lastOpenRequest = { resourceId };
     resources = resources.map((resource) => (
       resource.id === resourceId ? { ...resource, lastOpenedAt: Date.now() } : resource
@@ -338,6 +348,8 @@ contextBridge.exposeInMainWorld('api', {
     return { ok: true, resource: saved, resources };
   },
   createFavoriteResource: async (resource) => {
+    const failure = await websiteRequest('create');
+    if (failure) return failure;
     const saved = {
       id: `custom-test-${nextCustomId++}`,
       name: resource.name,
@@ -399,6 +411,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   listRoutingRules: async () => ({ ok: true, rules: routingRules }),
   previewRoutingTarget: async (target) => {
+    const failure = await websiteRequest('preview');
+    if (failure) return failure;
     try {
       const input = String(target || '').trim();
       const parsed = new URL(/^[a-z][a-z0-9+.-]*:\/\//iu.test(input) ? input : `https://${input}`);
@@ -491,4 +505,12 @@ contextBridge.exposeInMainWorld('api', {
   testState: () => ({ lastOpenRequest, workspaceOpenCount, bookmarkManagerOpenCount,
     resources, resourceGroups: state.resourceGroups, cardBoardRequests,
     cardBoardDocument: cloneCardBoardDocument(cardBoardDocument) }),
+  testHoldWebsiteRequest: (kind) => { websiteHolds.push(kind); },
+  testPendingWebsiteRequests: () => websitePending.map(({ kind }) => kind),
+  testFinishWebsiteRequest: (index, outcome = 'success') => {
+    const pending = websitePending.splice(index, 1)[0];
+    if (!pending) throw new Error('Missing synthetic website request');
+    if (outcome === 'reject') pending.reject(new Error('Synthetic rejected request'));
+    else pending.resolve(outcome === 'failure' ? { ok: false, error: 'Synthetic failed request' } : null);
+  },
 });

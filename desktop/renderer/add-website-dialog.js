@@ -33,7 +33,7 @@
     }
     if (!api || typeof api.previewRoutingTarget !== 'function' ||
         typeof api.createFavoriteResource !== 'function' ||
-        typeof api.openResource !== 'function' || !doc) {
+        typeof api.openResource !== 'function' || typeof api.getState !== 'function' || !doc) {
       throw new TypeError('add website environment is incomplete');
     }
     const $ = (id) => doc.getElementById(id);
@@ -43,6 +43,22 @@
     let previewRevision = 0;
     let previewTimer = null;
     let nameEdited = false;
+    let submission = null;
+    let modelRevision = 0;
+
+    // A retired save still committed in Main. Read current data instead of
+    // publishing its old response; another publication invalidates this read.
+    async function reconcileResources() {
+      const revision = ++modelRevision;
+      const resources = getResources(), groups = getGroups();
+      try {
+        const state = await api.getState();
+        if (revision !== modelRevision || getResources() !== resources || getGroups() !== groups ||
+            !Array.isArray(state?.campusResources) || !Array.isArray(state?.resourceGroups)) return;
+        setResources(state.campusResources);
+        setGroups(state.resourceGroups);
+      } catch { /* The committed resource remains available on the next state refresh. */ }
+    }
 
     function groupOptions(selected = '') {
       const options = [{ id: '', name: translate('addWebsite.noGroup') }, ...getGroups()];
@@ -87,7 +103,8 @@
       return getResources().filter((resource) => !resource.builtin && hostnameFor(resource.url) === host);
     }
 
-    async function preview() {
+    async function preview(forSubmission = false) {
+      if (busy && !forSubmission) return null;
       const value = $('addWebsiteUrl').value.trim();
       if (!value) { clearPreview(); return null; }
       const revision = ++previewRevision;
@@ -128,7 +145,7 @@
       return result;
     }
 
-    function reset() {
+    function resetFields() {
       clearPreview();
       nameEdited = false;
       $('addWebsiteForm').reset();
@@ -139,6 +156,11 @@
       setBusy(false);
     }
 
+    function reset() {
+      submission = null;
+      resetFields();
+    }
+
     function open() {
       reset();
       if (!dialog.open) dialog.showModal();
@@ -147,19 +169,27 @@
 
     async function submit(event) {
       event.preventDefault();
-      if (busy) return;
+      if (busy || !dialog.open) return;
+      const operation = { closed: false };
+      submission = operation;
+      const current = () => submission === operation;
+      const editing = () => current() && dialog.open;
       $('addWebsiteError').textContent = '';
-      const checked = await preview();
-      if (!checked?.ok) {
-        $('addWebsiteError').textContent = checked?.error || translate('addWebsite.invalidUrl');
-        $('addWebsiteUrl').focus();
-        return;
-      }
-      if (!$('addWebsiteName').value.trim()) {
-        $('addWebsiteName').value = checked.target.host.slice(0, 40);
-      }
+      clearTimeoutFn(previewTimer);
+      previewTimer = null;
       setBusy(true);
       try {
+        const checked = await preview(true);
+        if (!editing()) return;
+        if (!checked?.ok) {
+          $('addWebsiteError').textContent = checked?.error || translate('addWebsite.invalidUrl');
+          setBusy(false);
+          $('addWebsiteUrl').focus();
+          return;
+        }
+        if (!$('addWebsiteName').value.trim()) {
+          $('addWebsiteName').value = checked.target.host.slice(0, 40);
+        }
         const result = await api.createFavoriteResource({
           name: $('addWebsiteName').value,
           url: $('addWebsiteUrl').value,
@@ -168,21 +198,29 @@
           routePreference: $('addWebsiteRoute').value,
         });
         if (!result?.ok || !result.resource) {
-          $('addWebsiteError').textContent = result?.error || translate('addWebsite.failed');
+          if (editing()) $('addWebsiteError').textContent = result?.error || translate('addWebsite.failed');
           return;
         }
+        if (!editing()) { void reconcileResources(); return; }
+        modelRevision += 1;
         setResources(result.resources || getResources());
         setGroups(result.groups || getGroups());
+        // This close completes our save intent; a user close/reopen retires it.
+        operation.closed = true;
         dialog.close();
         toast(translate(result.affectedResourceIds?.length
           ? 'addWebsite.savedSameHost' : 'addWebsite.saved'));
         const opened = await api.openResource(result.resource.id);
-        if (Array.isArray(opened?.resources)) setResources(opened.resources);
+        if (!current()) { if (opened?.ok) void reconcileResources(); return; }
+        if (Array.isArray(opened?.resources)) {
+          modelRevision += 1;
+          setResources(opened.resources);
+        }
         if (!opened?.ok) toast(opened?.error || translate('quick.browserOpenFailed'), 'error');
       } catch (error) {
-        $('addWebsiteError').textContent = error?.message || translate('addWebsite.failed');
+        if (current()) $('addWebsiteError').textContent = error?.message || translate('addWebsite.failed');
       } finally {
-        setBusy(false);
+        if (current()) setBusy(false);
       }
     }
 
@@ -200,7 +238,11 @@
       });
       $('addWebsiteUrl').addEventListener('blur', () => { void preview(); });
       $('addWebsiteForm').addEventListener('submit', submit);
-      dialog.addEventListener('close', reset);
+      dialog.addEventListener('close', () => {
+        if (dialog.open) return; // Native close events may arrive after a reopen.
+        if (submission?.closed) resetFields();
+        else reset();
+      });
       doc.addEventListener('app-locale-changed', () => {
         if (dialog.open) groupOptions($('addWebsiteGroup').value);
       });
