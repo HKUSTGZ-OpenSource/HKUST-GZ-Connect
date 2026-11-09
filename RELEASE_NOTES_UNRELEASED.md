@@ -9,6 +9,11 @@
 
 网关地址策略和证书归属修复已选入 [2.0.6 发布候选说明](RELEASE_NOTES_2.0.6.md)；实际发布状态以 GitHub Release 为准。
 
+## 未发布：工作台分类键盘提交 / Unreleased: Workspace category keyboard submission
+
+- 浏览器工作台“新建分类”现可按 Enter 保存；无效名称保留现有错误提示，取消和 Escape 不会保存。等待结果时重复提交只执行一次，旧结果或排队关闭事件不会改变新对话框。
+- Enter now saves a new Browser Workspace category. Invalid names retain the existing feedback, while Cancel and Escape remain cancellation actions. Pending submissions run once, and retired results or queued close events cannot alter a newer dialog.
+
 ## 2.0.6 候选：网关地址策略 / 2.0.6 candidate: Gateway address policy
 
 - 港科广内置配置启用已审核的内网网关策略，支持同一学校域名的内外网解析；不硬编码本机地址，不改变未知网关规则、证书校验或系统网络。
