@@ -9,6 +9,11 @@
 
 网关地址策略和证书归属修复已选入 [2.0.6 发布候选说明](RELEASE_NOTES_2.0.6.md)；实际发布状态以 GitHub Release 为准。
 
+## 未发布：添加网站对话框 / Unreleased: Add Website dialog
+
+- 关闭并重新打开“添加网站”后，旧请求不再清空新草稿、显示旧错误或打开旧网页。已保存的网站保留，并通过现有状态读取核对收藏列表；当前提交的校验、重试和“添加并打开”行为保持不变。
+- Closing and reopening Add Website retires the earlier request's dialog and navigation effects. A late result preserves the new draft and pending submission. Already saved sites remain stored and are reconciled through the existing state read; current validation, retry, and save-and-open behavior are preserved.
+
 ## 2.0.6 候选：网关地址策略 / 2.0.6 candidate: Gateway address policy
 
 - 港科广内置配置启用已审核的内网网关策略，支持同一学校域名的内外网解析；不硬编码本机地址，不改变未知网关规则、证书校验或系统网络。
