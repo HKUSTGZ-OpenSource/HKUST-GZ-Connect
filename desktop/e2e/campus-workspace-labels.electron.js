@@ -81,7 +81,7 @@ async function main() {
           };
         })()`);
         const label = `${sequence}-${locale}-${primary}-${size}`;
-        if (output) fs.writeFileSync(path.join(output, `${label}.png`), (await view.webContents.capturePage()).toPNG());
+        if (output) fs.writeFileSync(path.join(output, `${label}.png`), (await window.capturePage()).toPNG());
         assert.ok(snapshot.more.length > 0);
         assert.equal(snapshot.lang, locale === 'en' ? 'en' : 'zh-CN');
         assert.ok(Math.abs(snapshot.width - width / zoom) <= 1);
