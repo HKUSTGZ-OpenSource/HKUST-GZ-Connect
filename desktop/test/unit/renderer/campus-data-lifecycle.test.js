@@ -26,12 +26,13 @@ function harness(){
   win.ResizeObserver=class {constructor(callback){this.callback=callback;this.disconnections=0;observers.push(this);}observe(){}disconnect(){this.disconnections++;}};
   doc.documentElement={lang:'en'};doc.defaultView=win;doc.getElementById=id=>nodes.get(id)||null;
   const load=deferred(),week=deferred();
-  const feature=create({document:doc,api:{
+  const api={
     getCampusData:()=>{calls.push('load');return load.promise;},refreshCampusData:()=>{calls.push('full');return load.promise;},
     refreshCampusSchedule:()=>{calls.push('refresh');return week.promise;},getCampusScheduleWeek:()=>{calls.push('week');return week.promise;},
-  },translate:key=>key,escapeHtml:String,openDeepLink:()=>calls.push('open'),onCatalog:item=>{published.push(item);hooks.onCatalog?.();}});
+  };
+  const feature=create({document:doc,api,translate:key=>key,escapeHtml:String,openDeepLink:()=>calls.push('open'),onCatalog:item=>{published.push(item);hooks.onCatalog?.();}});
   const targets=[doc,win,...nodes.values(),...['scheduleBody','loansBody','newsBody'].map(id=>nodes.get(id).shell)];
-  return {feature,load,week,nodes,doc,win,observers,published,calls,hooks,listenerCount:()=>targets.reduce((n,t)=>n+t.count(),0)};
+  return {feature,api,load,week,nodes,doc,win,observers,published,calls,hooks,listenerCount:()=>targets.reduce((n,t)=>n+t.count(),0)};
 }
 
 test('campus-data start is idempotent and disposal removes only owned listeners',()=>{
@@ -136,4 +137,124 @@ test('account display clearing retires every surface and pending result even whe
     assert.equal(h.feature.snapshot(),null);
     assert.equal(await h.feature.ensureLoaded(),null);
   } finally {dialog.close=()=>{dialog.open=false;};h.feature.dispose();}
+});
+
+
+for (const method of ['load', 'refreshSchedule']) {
+  for (const state of ['not-authenticated', 'session-expired', 'forbidden']) {
+    test(method + ' retires the catalog on confirmed ' + state + ' and publishes later recovery', async () => {
+      const h=harness(),ready=value();
+      try {
+        h.load.resolve(ready); await h.feature.load();
+        const denied={...ready,catalog:{state},
+          modules:{schedule:{state:'empty',items:[]}}};
+        h.api.refreshCampusData=async()=>denied; h.week.resolve(denied);
+        await h.feature[method](true);
+        assert.deepEqual(h.published,[ready.catalog,null]);
+        const recovered={...value(),catalog:{state:'ready',applications:[{id:'synthetic-recovered'}]}};
+        h.api.refreshCampusData=async()=>recovered;
+        h.api.getCampusScheduleWeek=async()=>recovered;
+        await h.feature.load(true);
+        assert.deepEqual(h.published,[ready.catalog,null,recovered.catalog]);
+      } finally {h.feature.dispose();}
+    });
+  }
+}
+
+test('transient or absent full-load catalogs do not retire the last-good catalog', async () => {
+  const h=harness(),ready=value();
+  try {
+    h.load.resolve(ready); await h.feature.load();
+    for (const catalog of [undefined,{state:'failed'},{state:'source-unavailable'}]) {
+      h.api.refreshCampusData=async()=>({...value(),catalog});
+      await h.feature.load(true);
+    }
+    h.api.refreshCampusData=async()=>{throw Error('synthetic offline');};
+    await h.feature.load(true);
+    assert.deepEqual(h.published,[ready.catalog]);
+  } finally {h.feature.dispose();}
+});
+
+test('retirement publication fences a full result and a pending week from restoring the catalog', async () => {
+  const h=harness(),late=deferred();
+  try {
+    h.load.resolve(value()); await h.feature.load();
+    const week=h.feature.refreshSchedule(); await Promise.resolve();
+    h.api.getCampusData=()=>late.promise;
+    const full=h.feature.load(false);
+    h.week.resolve({sessionState:'unauthenticated',catalog:{state:'not-authenticated'},
+      modules:{schedule:{state:'not-authenticated',items:[]}}});
+    await week;
+    late.resolve(value()); await full;
+    assert.equal(h.published.at(-1),null);
+    assert.equal(h.published.length,2);
+  } finally {h.feature.dispose();}
+});
+
+test('week catalog publication cannot restore data after synchronous owner retirement', async () => {
+  const h=harness();
+  try {
+    h.load.resolve(value()); await h.feature.load();
+    h.hooks.onCatalog=()=>{h.hooks.onCatalog=null;h.feature.clearDisplay(true);};
+    const pending=h.feature.refreshSchedule();
+    h.week.resolve({...value(),sessionState:'unauthenticated'}); await pending;
+    assert.equal(h.feature.snapshot(),null);
+    assert.equal(h.published.at(-1),null);
+  } finally {h.feature.dispose();}
+});
+
+test('a schedule-only permission refusal does not revoke an authenticated ready catalog', async () => {
+  const h=harness(),ready=value();
+  try {
+    h.load.resolve(ready); await h.feature.load();
+    const limited={...value(),modules:{schedule:{state:'forbidden',items:[]}}};
+    h.api.refreshCampusData=async()=>limited; await h.feature.load(true);
+    h.week.resolve(limited); await h.feature.refreshSchedule();
+    assert.ok(h.published.every(catalog=>catalog?.state==='ready'));
+    assert.equal(h.published.at(-1),limited.catalog);
+  } finally {h.feature.dispose();}
+});
+
+test('explicit catalog expiry retires the catalog even while the probe and schedule remain authenticated', async () => {
+  const h=harness();
+  try {
+    h.load.resolve(value()); await h.feature.load();
+    h.api.refreshCampusData=async()=>({...value(),catalog:{state:'session-expired'}});
+    await h.feature.load(true);
+    assert.equal(h.published.at(-1),null);
+  } finally {h.feature.dispose();}
+});
+
+test('weekly cached ready catalogs cannot replace a newer full-load catalog', async () => {
+  const h=harness(),old=value(),newCatalog={state:'ready',applications:[{id:'synthetic-new'}]};
+  try {
+    h.load.resolve(old); await h.feature.load();
+    h.api.refreshCampusData=async()=>({...value(),catalog:newCatalog});
+    await h.feature.load(true);
+    h.week.resolve(old); await h.feature.refreshSchedule();
+    assert.deepEqual(h.published,[old.catalog,newCatalog]);
+  } finally {h.feature.dispose();}
+});
+
+for (const method of ['load','refreshSchedule']) {
+  test(method + ' retires on isolated schedule session-expired without treating forbidden as expiry', async () => {
+    const h=harness(),ready=value();
+    try {
+      h.load.resolve(ready); await h.feature.load();
+      const expired={...ready,modules:{schedule:{state:'session-expired',items:[]}}};
+      h.api.refreshCampusData=async()=>expired; h.week.resolve(expired);
+      await h.feature[method](true);
+      assert.deepEqual(h.published,[ready.catalog,null]);
+    } finally {h.feature.dispose();}
+  });
+}
+
+test('an unauthenticated snapshot retires even a carried ready catalog', async () => {
+  const h=harness(),ready=value();
+  try {
+    h.load.resolve(ready); await h.feature.load();
+    h.api.refreshCampusData=async()=>({...ready,sessionState:'unauthenticated'});
+    await h.feature.load(true);
+    assert.deepEqual(h.published,[ready.catalog,null]);
+  } finally {h.feature.dispose();}
 });

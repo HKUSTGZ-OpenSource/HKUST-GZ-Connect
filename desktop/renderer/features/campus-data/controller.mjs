@@ -1,15 +1,12 @@
 import { weekRange } from './calendar-model.mjs';
 import { renderSchedule } from './calendar-view.mjs';
+import { validModule, reusable, catalogProjection } from './snapshot-model.mjs';
 
 const MODULES = Object.freeze({
   schedule: { body: 'scheduleBody', sourceId: 'official-portal', sourceUrl: 'https://myportal.hkust-gz.edu.cn/' },
   loans: { body: 'loansBody', sourceId: 'library', sourceUrl: 'https://library.hkust-gz.edu.cn/' },
   news: { body: 'newsBody', sourceId: 'home', sourceUrl: 'https://www.hkust-gz.edu.cn/' },
 });
-const ACCEPTED_STATES = new Set([
-  'not-authenticated', 'authenticating', 'loading', 'ready', 'empty', 'forbidden',
-  'session-expired', 'source-unavailable', 'tunnel-required', 'failed',
-]);
 const SCHEDULE_AUTO_REFRESH_MS = 24 * 60 * 60 * 1_000;
 
 export function create({ document: doc, api, translate, escapeHtml, openDeepLink, onCatalog = null } = {}) {
@@ -41,7 +38,6 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
   let scheduleViewKey = null;
   let lastScheduleLayout = null;
   const weekKey = date => weekRange(Date.parse(`${date}T12:00:00+08:00`), true).start;
-  const reusable = module => validModule(module) && ['ready', 'empty'].includes(module.state);
   const revoked = value => value?.sessionState === 'unauthenticated' ||
     ['not-authenticated', 'session-expired', 'forbidden'].includes(value?.modules?.schedule?.state);
   function revokeSchedule() {
@@ -49,6 +45,12 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
     clearTimeout(scheduleRefreshTimer); scheduleRefreshTimer = null;
     weekCache.clear(); scheduleRequest++; lastScheduleLayout = null; scheduleNotice = '';
     setScheduleRefreshBusy(false);
+  }
+  function publishSnapshotCatalog(value, allowReady = true) {
+    const epoch = displayEpoch;
+    const catalog = catalogProjection(value, allowReady);
+    if (catalog !== undefined) publishCatalog(catalog);
+    return epoch === displayEpoch;
   }
   function remember(date, module) {
     if (!reusable(module)) return;
@@ -78,11 +80,6 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
   const formatDate = (value) => new Intl.DateTimeFormat(locale(), {
     month: 'short', day: 'numeric',
   }).format(new Date(value));
-
-  function validModule(module) {
-    return module && typeof module === 'object' && ACCEPTED_STATES.has(module.state) &&
-      Array.isArray(module.items);
-  }
 
   function stateCopy(state, moduleId) {
     if (state === 'source-unavailable' &&
@@ -249,9 +246,7 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
       if (denied) revokeSchedule();
       loaded = true;
       lastLoadedAt = Date.now();
-      const publicationEpoch = displayEpoch;
-      publishCatalog(value?.catalog || null);
-      if (publicationEpoch !== displayEpoch) return null;
+      if (!publishSnapshotCatalog(value)) return null;
       if (!denied) remember(campusDate(value?.checkedAt || Date.now()), value?.modules?.schedule);
       if (!denied && weekRange(Date.parse(`${selectedDate}T12:00:00+08:00`), true).start !== weekRange(Date.now(), true).start &&
           typeof api.getCampusScheduleWeek === 'function') {
@@ -323,6 +318,8 @@ export function create({ document: doc, api, translate, escapeHtml, openDeepLink
       }
       loaded = true;
       lastLoadedAt = Date.now();
+      // Week replies carry a cached catalog; only full loads publish a new one.
+      if (!publishSnapshotCatalog(value, false)) return null;
       render();
       return value;
     }).catch(() => {

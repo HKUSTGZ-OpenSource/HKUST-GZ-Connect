@@ -25,6 +25,13 @@
 - Fix switching schools after saving, replacing or removing login credentials. Live switching uses the current credential revision while retaining strict profile, account and workspace ownership checks; other schools' data is preserved.
 正式安装包与验收结果以 [GitHub Release](https://github.com/HKUSTGZ-OpenSource/HKUST-GZ-Connect/releases/tag/v2.0.4) 为准。
 
+## 门户目录显示 / Portal catalog display
+
+状态：2.0.6 之后的未发布修复。 / Status: Unreleased after 2.0.6.
+
+- 显式清除浏览器数据或确认门户会话失效后，工作区不再保留旧门户目录；展开目录和已打开的搜索同步恢复学校静态入口，保留搜索词及可用焦点。个人收藏和分组不变；普通临时读取失败仍保留最近可用目录。
+- Explicit browser-data clearing or confirmed portal session revocation retires the transient catalog from Workspace, expanded lists and active search. Static school entries, search text, usable focus and personal favorites/groups are preserved; transient read failures retain the last-good catalog.
+
 ## 门户读取 / Portal reads
 
 - 修复门户分类、课表和新闻请求收到响应头后超时提前结束的问题。截止时间覆盖正文读取；

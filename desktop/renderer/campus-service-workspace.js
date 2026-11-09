@@ -207,6 +207,19 @@
       };
     }
 
+    function refreshEntryFocus(container, fallback, redraw) {
+      const focus = doc.activeElement;
+      const owned = container.contains?.(focus);
+      const attribute = ['data-entry-open', 'data-favorite-entry', 'data-personal-category', 'data-personal-site']
+        .find(name => focus?.hasAttribute?.(name));
+      const key = attribute && focus.getAttribute(attribute);
+      redraw();
+      if (!owned) return;
+      const replacement = attribute && [...container.querySelectorAll('[' + attribute + ']')]
+        .find(node => node.getAttribute(attribute) === key);
+      (replacement || fallback).focus({ preventScroll: true });
+    }
+
     function renderExpanded() {
       if (!expandedRegion) return;
       const definition = expandedDefinition();
@@ -221,9 +234,11 @@
       $('officialCatalogCount').textContent = translate('workspace.expandedCount', {
         count: entries.length,
       });
-      $('officialCatalogList').innerHTML = entries.length
-        ? entries.map(rowHtml).join('')
-        : `<div class="olist-empty">${escapeHtml(translate('workspace.emptyList'))}</div>`;
+      const list = $('officialCatalogList');
+      refreshEntryFocus(list, $('closeOfficialCatalog'), () => {
+        list.innerHTML = entries.length ? entries.map(rowHtml).join('')
+          : `<div class="olist-empty">${escapeHtml(translate('workspace.emptyList'))}</div>`;
+      });
     }
 
     function openExpanded(region) {
@@ -400,6 +415,7 @@
 
     function render() {
       renderOfficial();
+      if (searching) refreshEntryFocus($('searchResults'), input, () => runSearch(input.value.trim()));
     }
 
     function handleOfficialClick(event) {

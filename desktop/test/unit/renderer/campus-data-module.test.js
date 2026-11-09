@@ -14,7 +14,7 @@ test('campus data exposes one native public entrypoint without reintroducing its
   assert.ok(app.includes("rendererFeatures.mount('campus-data', {"));
   assert.ok(!app.includes('campusDataFeature.start()'));
   assert.doesNotMatch(app,/window\.campusDataModules/u);
-  for(const name of ['calendar-model.mjs','calendar-view.mjs','controller.mjs','index.mjs']) {
+  for(const name of ['calendar-model.mjs','calendar-view.mjs','snapshot-model.mjs','controller.mjs','index.mjs']) {
     const source=fs.readFileSync(path.join(renderer,'features/campus-data',name),'utf8');
     assert.doesNotMatch(source,/\b(?:window|globalThis|self)\.[A-Za-z_$][\w$]*\s*=/u);
     assert.ok(source.split('\n').length<=500,`${name} stays below its feature-owner limit`);
