@@ -17,6 +17,9 @@ function harness() {
     if (!nodes.has(id)) nodes.set(id, {
       dataset: {}, classList: { add() {}, toggle() {} }, addEventListener() {},
       setAttribute() {}, replaceChildren() {}, prepend() {}, closest() { return this; },
+      querySelector(selector) {
+        return id === 'groupDialog' && selector === 'form' ? node('groupDialog form') : null;
+      },
     });
     return nodes.get(id);
   };
