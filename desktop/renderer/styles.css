@@ -1168,7 +1168,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .ws-search svg { width: 16px; height: 16px; flex: 0 0 auto; }
 .ws-search input {
-  flex: 1; min-width: 0; border: 0; outline: 0; background: transparent;
+  flex: 1; min-width: 0; border: 0; background: transparent;
   color: var(--ink); font: inherit; font-size: 13px;
 }
 .ws-search input::placeholder { color: #8a98ad; }
