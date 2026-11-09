@@ -3,7 +3,7 @@
 const I18N = Object.freeze({
   zh: Object.freeze({
     title: '校园工作台', manage: '整理收藏', clear: '返回工作台',
-    backToServices: '返回校园服务',
+    backToServices: '返回校园服务', more: '查看更多',
     primaryWorkspace: '我的工作区', primaryRecent: '最近使用', primaryCatalog: '网站库',
     favorites: '我的收藏', recent: '最近使用', starter: '常用入口', catalogTitle: '网站库',
     manageTitle: '整理收藏', resourcePool: '收藏', groups: '我的分类', createGroup: '＋ 新建分类',
@@ -26,7 +26,7 @@ const I18N = Object.freeze({
   }),
   en: Object.freeze({
     title: 'Campus Workspace', manage: 'Organize Favorites', clear: 'Back to Workspace',
-    backToServices: 'Back to Services',
+    backToServices: 'Back to Services', more: 'More',
     primaryWorkspace: 'My Workspace', primaryRecent: 'Recently Used', primaryCatalog: 'Site Library',
     favorites: 'Favorites', recent: 'Recently Used', starter: 'Common Services', catalogTitle: 'Site Library',
     manageTitle: 'Organize Favorites', resourcePool: 'Favorites', groups: 'My Categories', createGroup: '+ New Category',

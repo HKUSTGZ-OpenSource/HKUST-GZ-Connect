@@ -9,6 +9,13 @@
 
 网关地址策略和证书归属修复已选入 [2.0.6 发布候选说明](RELEASE_NOTES_2.0.6.md)；实际发布状态以 GitHub Release 为准。
 
+## 浏览器工作台卡片标签 / Browser Workspace card labels
+
+状态：2.0.6 之后的未发布修复。 / Status: Unreleased after 2.0.6.
+
+- 浏览器工作台的个人分类和网站库卡片显示“查看更多”或“More”，不再显示翻译键。切换语言后文案同步更新，原有分类名称提示和展开操作保持不变。
+- Browser Workspace personal and catalog cards now show the localized More label instead of a translation key, including after language changes. Existing category-specific accessible names and expansion behavior are preserved.
+
 ## 2.0.6 候选：网关地址策略 / 2.0.6 candidate: Gateway address policy
 
 - 港科广内置配置启用已审核的内网网关策略，支持同一学校域名的内外网解析；不硬编码本机地址，不改变未知网关规则、证书校验或系统网络。
